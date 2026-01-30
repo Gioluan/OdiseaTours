@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Odisea Tours — Management System</title>
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#ffb400">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Odisea CRM">
+<link rel="apple-touch-icon" href="img/icon-192.png">
+<!-- Fonts & Styles -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<nav id="sidebar">
+  <div class="logo">
+    <div class="logo-icon">O</div>
+    <span class="logo-text">Odisea Tours</span>
+  </div>
+  <ul class="nav-links">
+    <li class="nav-item active" data-tab="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>Dashboard</span>
+    </li>
+    <li class="nav-item" data-tab="new-quote">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      <span>New Quote</span>
+    </li>
+    <li class="nav-item" data-tab="crm">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      <span>Quotes &amp; CRM</span>
+    </li>
+    <li class="nav-item" data-tab="tours">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10A15.3 15.3 0 0112 2z"/></svg>
+      <span>Confirmed Tours</span>
+    </li>
+    <li class="nav-item" data-tab="invoicing">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span>Invoicing</span>
+    </li>
+    <li class="nav-item" data-tab="email">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      <span>Email Center</span>
+    </li>
+    <li class="nav-item" data-tab="passengers">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+      <span>Passengers</span>
+    </li>
+    <li class="nav-item" data-tab="clients">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4-4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span>Clients</span>
+    </li>
+    <li class="nav-item" data-tab="providers">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span>Providers</span>
+    </li>
+  </ul>
+  <div class="sidebar-footer">
+    <button id="btn-export-all" class="btn btn-sm btn-outline" onclick="App.exportAllData()">Export Data</button>
+    <button id="btn-import-all" class="btn btn-sm btn-outline" onclick="document.getElementById('import-file').click()">Import Data</button>
+    <input type="file" id="import-file" accept=".json" style="display:none" onchange="App.importAllData(event)">
+  </div>
+</nav>
+
+<main id="main-content">
+  <!-- DASHBOARD -->
+  <section id="tab-dashboard" class="tab-content active">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem">
+      <div>
+        <h1>Dashboard</h1>
+        <p class="subtitle">Overview of your tour operations</p>
+      </div>
+      <div class="mobile-data-btns" style="display:flex;gap:0.4rem">
+        <button class="btn btn-sm btn-outline" onclick="App.exportAllData()">Export</button>
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('import-file').click()">Import</button>
+      </div>
+    </div>
+    <div class="stats-grid" id="dashboard-stats"></div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Recent Quotes</h3>
+        <div id="dashboard-recent-quotes" class="list-container"></div>
+      </div>
+      <div class="card">
+        <h3>Upcoming Tours</h3>
+        <div id="dashboard-upcoming-tours" class="list-container"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <h3>Overdue Payments</h3>
+      <div id="dashboard-overdue" class="list-container"></div>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <h3>Confirmed Groups — Profit Summary</h3>
+      <div id="dashboard-confirmed-groups"></div>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <h3>Provider Payments Due</h3>
+      <div id="dashboard-provider-alerts"></div>
+    </div>
+  </section>
+
+  <!-- NEW QUOTE -->
+  <section id="tab-new-quote" class="tab-content">
+    <div class="page-header">
+      <h1>New Quote</h1>
+      <p class="subtitle">Build a tour pricing proposal</p>
+    </div>
+    <div class="quote-steps">
+      <div class="step-indicators" id="quote-step-indicators"></div>
+      <div id="quote-wizard"></div>
+      <div class="step-nav">
+        <button class="btn btn-outline" id="btn-prev-step" onclick="Quote.prevStep()">Back</button>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn btn-danger" id="btn-reset-quote" onclick="Quote.resetQuote()">Reset Quote</button>
+          <button class="btn btn-primary" id="btn-next-step" onclick="Quote.nextStep()">Next</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUOTES & CRM -->
+  <section id="tab-crm" class="tab-content">
+    <div class="page-header">
+      <h1>Quotes &amp; CRM</h1>
+      <p class="subtitle">Manage quote requests and client follow-ups</p>
+    </div>
+    <div class="toolbar">
+      <div class="filter-group">
+        <select id="crm-filter-status" onchange="CRM.render()">
+          <option value="">All Statuses</option>
+          <option value="Draft">Draft</option>
+          <option value="Sent">Sent</option>
+          <option value="Follow-up">Follow-up</option>
+          <option value="Confirmed">Confirmed</option>
+          <option value="Lost">Lost</option>
+        </select>
+        <select id="crm-filter-dest" onchange="CRM.render()">
+          <option value="">All Destinations</option>
+          <option value="Madrid">Madrid</option>
+          <option value="Valencia">Valencia</option>
+          <option value="Barcelona">Barcelona</option>
+          <option value="Tenerife">Tenerife</option>
+        </select>
+        <input type="text" id="crm-search" placeholder="Search client or tour..." oninput="CRM.render()">
+      </div>
+    </div>
+    <div id="crm-table-container"></div>
+    <!-- CRM Detail Modal -->
+    <div id="crm-modal" class="modal-overlay" style="display:none">
+      <div class="modal" id="crm-modal-content"></div>
+    </div>
+  </section>
+
+  <!-- CONFIRMED TOURS -->
+  <section id="tab-tours" class="tab-content">
+    <div class="page-header">
+      <h1>Confirmed Tours</h1>
+      <p class="subtitle">Track tours that have been booked</p>
+    </div>
+    <div class="toolbar">
+      <select id="tours-filter-status" onchange="Tours.render()">
+        <option value="">All Statuses</option>
+        <option value="Preparing">Preparing</option>
+        <option value="In Progress">In Progress</option>
+        <option value="Completed">Completed</option>
+      </select>
+    </div>
+    <div id="tours-list-container"></div>
+    <div id="tours-modal" class="modal-overlay" style="display:none">
+      <div class="modal" id="tours-modal-content"></div>
+    </div>
+  </section>
+
+  <!-- INVOICING -->
+  <section id="tab-invoicing" class="tab-content">
+    <div class="page-header">
+      <h1>Invoicing &amp; Payments</h1>
+      <p class="subtitle">Manage invoices and track payments</p>
+    </div>
+    <div class="stats-grid" id="invoicing-stats"></div>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="Invoicing.showCreateModal()">+ New Invoice</button>
+      <select id="inv-filter-status" onchange="Invoicing.render()">
+        <option value="">All</option>
+        <option value="Unpaid">Unpaid</option>
+        <option value="Partial">Partial</option>
+        <option value="Paid">Paid</option>
+      </select>
+    </div>
+    <div id="invoicing-table-container"></div>
+    <div id="inv-modal" class="modal-overlay" style="display:none">
+      <div class="modal" id="inv-modal-content"></div>
+    </div>
+  </section>
+
+  <!-- EMAIL CENTER -->
+  <section id="tab-email" class="tab-content">
+    <div class="page-header">
+      <h1>Email Center</h1>
+      <p class="subtitle">Send emails via Outlook and track communications</p>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Compose Email</h3>
+        <div id="email-compose-form"></div>
+      </div>
+      <div class="card">
+        <h3>Email Templates</h3>
+        <div id="email-templates-list"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <h3>Email Log</h3>
+      <div id="email-log-container"></div>
+    </div>
+  </section>
+
+  <!-- PASSENGERS -->
+  <section id="tab-passengers" class="tab-content">
+    <div class="page-header">
+      <h1>Passenger Registration</h1>
+      <p class="subtitle">Manage passenger details and generate documents</p>
+    </div>
+    <div class="toolbar">
+      <select id="pax-tour-select" onchange="Passengers.render()">
+        <option value="">Select a tour...</option>
+      </select>
+      <button class="btn btn-primary" onclick="Passengers.addPassenger()">+ Add Passenger</button>
+      <button class="btn btn-outline" onclick="Passengers.printForm()">Print Registration Form</button>
+      <button class="btn btn-outline" onclick="Passengers.exportList()">Export Passenger List</button>
+      <button class="btn btn-outline" onclick="Passengers.generateRoomingList()">Rooming List</button>
+    </div>
+    <div id="passengers-table-container"></div>
+    <div id="pax-modal" class="modal-overlay" style="display:none">
+      <div class="modal" id="pax-modal-content"></div>
+    </div>
+  </section>
+
+  <!-- CLIENTS -->
+  <section id="tab-clients" class="tab-content">
+    <div class="page-header">
+      <h1>Client Database</h1>
+      <p class="subtitle">Manage clients and potential clients</p>
+    </div>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="Clients.showAddModal()">+ Add Client</button>
+      <select id="cli-filter-type" onchange="Clients.render()">
+        <option value="">All Types</option>
+        <option value="School">School</option>
+        <option value="Sports Club">Sports Club</option>
+        <option value="Corporate">Corporate</option>
+        <option value="Private">Private</option>
+        <option value="Other">Other</option>
+      </select>
+      <input type="text" id="cli-search" placeholder="Search clients..." oninput="Clients.render()">
+    </div>
+    <div id="clients-table-container"></div>
+    <div id="cli-modal" class="modal-overlay" style="display:none">
+      <div class="modal" id="cli-modal-content"></div>
+    </div>
+  </section>
+
+  <!-- PROVIDERS -->
+  <section id="tab-providers" class="tab-content">
+    <div class="page-header">
+      <h1>Provider Database</h1>
+      <p class="subtitle">Manage suppliers and request quotes</p>
+    </div>
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="Providers.showAddModal()">+ Add Provider</button>
+      <select id="prov-filter-cat" onchange="Providers.render()">
+        <option value="">All Categories</option>
+        <option value="Hotel">Hotel</option>
+        <option value="Transport">Transport</option>
+        <option value="Activity">Activity</option>
+        <option value="Restaurant">Restaurant</option>
+        <option value="Other">Other</option>
+      </select>
+      <select id="prov-filter-city" onchange="Providers.render()">
+        <option value="">All Cities</option>
+        <option value="Madrid">Madrid</option>
+        <option value="Valencia">Valencia</option>
+        <option value="Barcelona">Barcelona</option>
+        <option value="Tenerife">Tenerife</option>
+      </select>
+      <input type="text" id="prov-search" placeholder="Search providers..." oninput="Providers.render()">
+      <button class="btn btn-outline" onclick="Providers.bulkRFQ()">Bulk RFQ</button>
+    </div>
+    <div id="providers-table-container"></div>
+    <div id="prov-modal" class="modal-overlay" style="display:none">
+      <div class="modal" id="prov-modal-content"></div>
+    </div>
+  </section>
+</main>
+
+<script src="js/data.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/quote.js"></script>
+<script src="js/crm.js"></script>
+<script src="js/tours.js"></script>
+<script src="js/invoicing.js"></script>
+<script src="js/email.js"></script>
+<script src="js/passengers.js"></script>
+<script src="js/clients.js"></script>
+<script src="js/providers.js"></script>
+<script src="js/pdf-quote.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
