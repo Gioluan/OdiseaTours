@@ -6,12 +6,16 @@ const Dashboard = {
     const quotes = DB.getQuotes();
     const tours = DB.getTours();
     const invoices = DB.getInvoices();
+    const clients = DB.getClients();
 
+    // Invoice metrics
     const pendingPayments = invoices.filter(i => {
       const paid = (i.payments || []).reduce((s, p) => s + Number(p.amount), 0);
       return paid < Number(i.amount);
     });
     const totalInvoiced = invoices.reduce((s, i) => s + Number(i.amount || 0), 0);
+    const totalCollected = invoices.reduce((s, i) => s + (i.payments || []).reduce((ps, p) => ps + Number(p.amount), 0), 0);
+    const outstanding = totalInvoiced - totalCollected;
 
     // Profit metrics across all confirmed tours
     let totalRevenue = 0, totalCosts = 0, totalProfit = 0;
@@ -23,16 +27,49 @@ const Dashboard = {
       }
     });
 
-    // Stats — 2 rows of 4 cards
+    // Traveler counts
+    let totalTravelers = 0, totalStudents = 0, totalSiblings = 0, totalAdults = 0, totalFOC = 0;
+    tours.forEach(t => {
+      totalStudents += (t.numStudents || 0);
+      totalSiblings += (t.numSiblings || 0);
+      totalAdults += (t.numAdults || 0);
+      totalFOC += (t.numFOC || 0);
+    });
+    totalTravelers = totalStudents + totalSiblings + totalAdults + totalFOC;
+
+    // Quote pipeline
+    const quoteDraft = quotes.filter(q => q.status === 'Draft').length;
+    const quoteSent = quotes.filter(q => q.status === 'Sent').length;
+    const quoteFollowUp = quotes.filter(q => q.status === 'Follow-up').length;
+    const quoteConfirmed = quotes.filter(q => q.status === 'Confirmed').length;
+    const quoteLost = quotes.filter(q => q.status === 'Lost').length;
+    const conversionRate = quotes.length > 0 ? ((quoteConfirmed / quotes.length) * 100).toFixed(0) : 0;
+
+    // Tour status
+    const toursPreparing = tours.filter(t => t.status === 'Preparing').length;
+    const toursInProgress = tours.filter(t => t.status === 'In Progress').length;
+    const toursCompleted = tours.filter(t => t.status === 'Completed').length;
+
+    // Provider expenses totals
+    let providerOwed = 0, providerPaid = 0;
+    tours.forEach(t => {
+      (t.providerExpenses || []).forEach(e => {
+        providerOwed += (e.amount || 0);
+        providerPaid += (e.paidAmount || 0);
+      });
+    });
+
+    // Stats cards — 3 rows
     document.getElementById('dashboard-stats').innerHTML = `
-      <div class="stat-card amber"><div class="stat-label">Total Quotes</div><div class="stat-value">${quotes.length}</div></div>
-      <div class="stat-card green"><div class="stat-label">Confirmed Tours</div><div class="stat-value">${tours.length}</div></div>
-      <div class="stat-card red"><div class="stat-label">Pending Payments</div><div class="stat-value">${pendingPayments.length}</div></div>
-      <div class="stat-card blue"><div class="stat-label">Total Invoiced</div><div class="stat-value">${fmt(totalInvoiced)}</div></div>
-      <div class="stat-card green"><div class="stat-label">Total Revenue</div><div class="stat-value">${fmt(totalRevenue)}</div></div>
-      <div class="stat-card amber"><div class="stat-label">Total Costs</div><div class="stat-value">${fmt(totalCosts)}</div></div>
-      <div class="stat-card" style="border-left-color:${totalProfit >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="stat-label">Total Profit</div><div class="stat-value" style="color:${totalProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(totalProfit)}</div></div>
-      <div class="stat-card blue"><div class="stat-label">Avg Margin</div><div class="stat-value">${totalRevenue > 0 ? (totalProfit / totalRevenue * 100).toFixed(1) + '%' : '—'}</div></div>
+      <div class="stat-card amber"><div class="stat-label">Total Quotes</div><div class="stat-value">${quotes.length}</div><div class="stat-sub">${quoteDraft} draft, ${quoteSent} sent, ${quoteFollowUp} follow-up</div></div>
+      <div class="stat-card green"><div class="stat-label">Confirmed Tours</div><div class="stat-value">${tours.length}</div><div class="stat-sub">${toursPreparing} preparing, ${toursInProgress} active, ${toursCompleted} done</div></div>
+      <div class="stat-card blue"><div class="stat-label">Total Travelers</div><div class="stat-value">${totalTravelers}</div><div class="stat-sub">${totalStudents} students, ${totalSiblings} siblings, ${totalAdults} adults, ${totalFOC} FOC</div></div>
+      <div class="stat-card amber"><div class="stat-label">Conversion Rate</div><div class="stat-value">${conversionRate}%</div><div class="stat-sub">${quoteConfirmed} confirmed / ${quotes.length} quotes${quoteLost ? ', ' + quoteLost + ' lost' : ''}</div></div>
+      <div class="stat-card green"><div class="stat-label">Total Revenue</div><div class="stat-value">${fmt(totalRevenue)}</div><div class="stat-sub">From ${tours.length} confirmed tour${tours.length!==1?'s':''}</div></div>
+      <div class="stat-card red"><div class="stat-label">Total Costs</div><div class="stat-value">${fmt(totalCosts)}</div><div class="stat-sub">Providers owed: ${fmt(providerOwed)} (${fmt(providerPaid)} paid)</div></div>
+      <div class="stat-card" style="border-left-color:${totalProfit >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="stat-label">Total Profit</div><div class="stat-value" style="color:${totalProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(totalProfit)}</div><div class="stat-sub">Margin: ${totalRevenue > 0 ? (totalProfit / totalRevenue * 100).toFixed(1) + '%' : '—'}</div></div>
+      <div class="stat-card blue"><div class="stat-label">Cash Flow</div><div class="stat-value" style="color:${outstanding > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(outstanding)}</div><div class="stat-sub">outstanding of ${fmt(totalInvoiced)} invoiced (${fmt(totalCollected)} collected)</div></div>
+      <div class="stat-card amber"><div class="stat-label">Clients</div><div class="stat-value">${clients.length}</div><div class="stat-sub">${pendingPayments.length} pending payment${pendingPayments.length!==1?'s':''}</div></div>
     `;
 
     // Recent quotes
@@ -84,14 +121,18 @@ const Dashboard = {
         </tr></thead>
         <tbody>${sorted.map(t => {
           const c = t.costs || {};
-          const groupSize = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0);
+          const students = t.numStudents || 0;
+          const siblings = t.numSiblings || 0;
+          const adults = t.numAdults || 0;
+          const foc = t.numFOC || 0;
+          const groupSize = students + siblings + adults + foc;
           const profit = c.profit || 0;
           const margin = c.margin || 0;
           return `<tr class="row-clickable" ondblclick="App.switchTab('tours');setTimeout(()=>Tours.viewTour(${t.id}),100)">
             <td><strong>${t.tourName || '—'}</strong></td>
             <td>${t.clientName || '—'}</td>
             <td>${fmtDate(t.startDate)} — ${fmtDate(t.endDate)}</td>
-            <td>${groupSize}</td>
+            <td title="${students} students, ${siblings} siblings, ${adults} adults, ${foc} FOC">${groupSize}</td>
             <td>${fmt(c.grand || 0, t.currency)}</td>
             <td>${fmt(c.totalRevenue || 0, t.currency)}</td>
             <td style="color:${profit >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:600">${fmt(profit, t.currency)}</td>

@@ -463,7 +463,14 @@ const CRM = {
       numAdults: q.numAdults,
       numFOC: q.numFOC || 0,
       status: 'Preparing',
-      costs: q.costs,
+      costs: (() => {
+        const c = q.costs ? JSON.parse(JSON.stringify(q.costs)) : {};
+        const rev = ((q.priceStudent||0)*(q.numStudents||0)) + ((q.priceSibling||0)*(q.numSiblings||0)) + ((q.priceAdult||0)*(q.numAdults||0));
+        c.totalRevenue = rev;
+        c.profit = rev - (c.grand || 0);
+        c.margin = rev > 0 ? (c.profit / rev * 100) : 0;
+        return c;
+      })(),
       priceStudent: q.priceStudent,
       priceSibling: q.priceSibling,
       priceAdult: q.priceAdult,
