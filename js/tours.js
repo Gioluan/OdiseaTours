@@ -284,6 +284,8 @@ const Tours = {
         <button class="btn btn-danger" onclick="if(confirm('Delete this tour?')){Tours.deleteTour(${t.id})}">Delete</button>
         <button class="btn btn-outline" onclick="closeModal('tours-modal')">Close</button>
       </div>`;
+    // Initialize map after innerHTML is set
+    setTimeout(() => this._initMap(), 100);
   },
 
   updateStatus(id, status) {
@@ -1848,7 +1850,6 @@ const Tours = {
 
   // === Interactive Itinerary Map ===
   _renderItineraryMap(t) {
-    const days = t.itinerary || [];
     const hotels = t.hotels || [];
     const activities = t.activities || [];
 
@@ -1861,70 +1862,65 @@ const Tours = {
 
     if (!locations.length) return '';
 
-    const locationsJSON = JSON.stringify(locations);
+    // Store locations on the tour object so _initMap can access them
+    this._pendingMapData = { tourId: t.id, locations };
 
     return `
       <h3 style="margin-top:1.5rem">Itinerary Map</h3>
-      <div id="tour-map-${t.id}" style="height:400px;border-radius:var(--radius-lg);overflow:hidden;border:1.5px solid var(--gray-200);margin-bottom:1rem"></div>
-      <script>
-      (function() {
-        if (typeof L === 'undefined') return;
+      <div id="tour-map-${t.id}" style="height:400px;border-radius:var(--radius-lg);overflow:hidden;border:1.5px solid var(--gray-200);margin-bottom:1rem"></div>`;
+  },
 
-        setTimeout(function() {
-          var mapEl = document.getElementById('tour-map-${t.id}');
-          if (!mapEl || mapEl._leaflet_id) return;
+  _initMap() {
+    if (typeof L === 'undefined' || !this._pendingMapData) return;
+    const { tourId, locations } = this._pendingMapData;
+    this._pendingMapData = null;
 
-          var map = L.map(mapEl).setView([40.4168, -3.7038], 6);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors',
-            maxZoom: 18
-          }).addTo(map);
+    const mapEl = document.getElementById('tour-map-' + tourId);
+    if (!mapEl || mapEl._leaflet_id) return;
 
-          var locations = ${locationsJSON};
-          var markers = [];
-          var geocoded = 0;
+    const map = L.map(mapEl).setView([40.4168, -3.7038], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 18
+    }).addTo(map);
 
-          var icons = {
-            destination: L.divIcon({ className: '', html: '<div style="background:var(--amber);color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u{1F4CD}</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
-            hotel: L.divIcon({ className: '', html: '<div style="background:var(--navy);color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u{1F3E8}</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
-            activity: L.divIcon({ className: '', html: '<div style="background:var(--green);color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u26BD</div>', iconSize: [28, 28], iconAnchor: [14, 14] })
-          };
+    const markers = [];
+    const icons = {
+      destination: L.divIcon({ className: '', html: '<div style="background:#ffb400;color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u{1F4CD}</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
+      hotel: L.divIcon({ className: '', html: '<div style="background:#1a1a2e;color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u{1F3E8}</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
+      activity: L.divIcon({ className: '', html: '<div style="background:#22c55e;color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u26BD</div>', iconSize: [28, 28], iconAnchor: [14, 14] })
+    };
+    const coords = [];
 
-          var coords = [];
+    function geocodeNext(idx) {
+      if (idx >= locations.length) {
+        if (coords.length > 1) {
+          L.polyline(coords, { color: '#ffb400', weight: 3, dashArray: '10,10', opacity: 0.7 }).addTo(map);
+        }
+        if (markers.length) {
+          map.fitBounds(L.featureGroup(markers).getBounds().pad(0.2));
+        }
+        return;
+      }
 
-          function geocodeNext(idx) {
-            if (idx >= locations.length) {
-              if (coords.length > 1) {
-                L.polyline(coords, { color: '#ffb400', weight: 3, dashArray: '10,10', opacity: 0.7 }).addTo(map);
-              }
-              if (markers.length) {
-                var group = L.featureGroup(markers);
-                map.fitBounds(group.getBounds().pad(0.2));
-              }
-              return;
-            }
-
-            var loc = locations[idx];
-            fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(loc.name) + '&limit=1')
-              .then(function(r) { return r.json(); })
-              .then(function(data) {
-                if (data && data[0]) {
-                  var lat = parseFloat(data[0].lat);
-                  var lon = parseFloat(data[0].lon);
-                  var marker = L.marker([lat, lon], { icon: icons[loc.type] || icons.destination })
-                    .bindPopup('<strong>' + (loc.label || loc.name) + '</strong><br><span style="font-size:0.82rem;color:gray">' + loc.type + '</span>')
-                    .addTo(map);
-                  markers.push(marker);
-                  if (loc.type === 'destination' || loc.type === 'hotel') coords.push([lat, lon]);
-                }
-                setTimeout(function() { geocodeNext(idx + 1); }, 300);
-              })
-              .catch(function() { setTimeout(function() { geocodeNext(idx + 1); }, 300); });
+      const loc = locations[idx];
+      fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(loc.name) + '&limit=1')
+        .then(r => r.json())
+        .then(data => {
+          if (data && data[0]) {
+            const lat = parseFloat(data[0].lat);
+            const lon = parseFloat(data[0].lon);
+            const marker = L.marker([lat, lon], { icon: icons[loc.type] || icons.destination })
+              .bindPopup('<strong>' + (loc.label || loc.name) + '</strong><br><span style="font-size:0.82rem;color:gray">' + loc.type + '</span>')
+              .addTo(map);
+            markers.push(marker);
+            if (loc.type === 'destination' || loc.type === 'hotel') coords.push([lat, lon]);
           }
+          setTimeout(() => geocodeNext(idx + 1), 300);
+        })
+        .catch(() => setTimeout(() => geocodeNext(idx + 1), 300));
+    }
 
-          geocodeNext(0);
-        }, 200);
-      })();
-      <\/script>`;
+    geocodeNext(0);
   }
 };
