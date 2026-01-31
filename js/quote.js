@@ -234,12 +234,77 @@ const Quote = {
     container.insertAdjacentHTML('beforeend', this.roomRowHTML({ type: 'Twin', qty: 1, costPerNight: 0 }));
   },
 
+  _hotelOptions(city, selectedName) {
+    const providers = DB.getProviders().filter(p => p.category === 'Hotel' && (!city || p.city === city));
+    let opts = '<option value="">— Select hotel —</option>';
+    providers.forEach(p => {
+      const stars = p.starRating ? ' ' + '★'.repeat(p.starRating) : '';
+      const sel = (p.companyName === selectedName) ? 'selected' : '';
+      opts += `<option value="${p.companyName}" data-stars="${p.starRating||3}" data-email="${p.email||''}" ${sel}>${p.companyName}${stars}</option>`;
+    });
+    opts += '<option value="__new__">+ Add New Hotel...</option>';
+    // If selectedName exists but isn't in the provider list, add it as a custom option
+    if (selectedName && !providers.find(p => p.companyName === selectedName)) {
+      opts = opts.replace('— Select hotel —', '— Select hotel —</option><option value="' + selectedName.replace(/"/g,'&quot;') + '" selected>' + selectedName);
+    }
+    return opts;
+  },
+
+  onHotelSelect(sel, idx) {
+    const val = sel.value;
+    const card = sel.closest('.hotel-card');
+    if (val === '__new__') {
+      // Show inline "add hotel" form
+      const city = card.dataset.hotelCity || '';
+      const panel = card.querySelector('.h-new-panel');
+      if (panel) panel.style.display = 'block';
+      sel.value = '';
+      return;
+    }
+    // Fill star rating from provider data
+    const opt = sel.options[sel.selectedIndex];
+    if (opt && opt.dataset.stars) {
+      card.querySelector('.h-stars').value = opt.dataset.stars;
+    }
+  },
+
+  saveNewHotel(idx) {
+    const card = document.querySelectorAll('.hotel-card')[idx];
+    if (!card) return;
+    const name = card.querySelector('.h-new-name').value.trim();
+    const city = card.querySelector('.h-new-city').value.trim();
+    const stars = Number(card.querySelector('.h-new-stars').value) || 3;
+    const email = card.querySelector('.h-new-email').value.trim();
+    if (!name) { alert('Please enter a hotel name.'); return; }
+    // Save to providers DB
+    DB.saveProvider({
+      companyName: name,
+      category: 'Hotel',
+      city: city,
+      contactPerson: '',
+      email: email,
+      phone: '',
+      starRating: stars,
+      website: '',
+      notes: 'Added from quote wizard'
+    });
+    // Set the hotel name and stars on the card
+    const sel = card.querySelector('.h-select');
+    // Re-render options and select the new one
+    const destCity = card.dataset.hotelCity || city;
+    sel.innerHTML = this._hotelOptions(destCity, name);
+    card.querySelector('.h-stars').value = stars;
+    // Hide the panel
+    card.querySelector('.h-new-panel').style.display = 'none';
+  },
+
   hotelCardHTML(h, idx, currency, isMulti) {
     const rooms = h.rooms || [{ type: 'Twin', qty: 10, costPerNight: 0 }];
-    return `<div class="card hotel-card" data-hotel-idx="${idx}" style="margin-bottom:1rem;border-left:4px solid var(--amber)">
+    const city = h.city || '';
+    return `<div class="card hotel-card" data-hotel-idx="${idx}" data-hotel-city="${city}" style="margin-bottom:1rem;border-left:4px solid var(--amber)">
       ${isMulti ? `<h4 style="margin-bottom:0.8rem;color:var(--amber);font-family:var(--font-heading)">📍 ${h.city}</h4>` : ''}
       <div class="form-row form-row-${isMulti ? '4' : '3'}">
-        <div class="form-group"><label>Hotel Name</label><input class="h-name" value="${h.hotelName}" placeholder="e.g. Hotel Gran Via"></div>
+        <div class="form-group"><label>Hotel</label><select class="h-select" onchange="Quote.onHotelSelect(this,${idx})">${this._hotelOptions(city, h.hotelName)}</select></div>
         <div class="form-group"><label>Star Rating</label><select class="h-stars">${[1,2,3,4,5].map(s=>`<option value="${s}" ${h.starRating==s?'selected':''}>${'★'.repeat(s)}</option>`).join('')}</select></div>
         <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:0.55rem">
           <label class="checkbox-label" style="font-size:0.9rem">
@@ -248,6 +313,19 @@ const Quote = {
           </label>
         </div>
         ${isMulti ? `<div class="form-group"><label>Nights at ${h.city}</label><input class="h-nights" type="number" min="0" value="${h.nights}"></div>` : ''}
+      </div>
+      <div class="h-new-panel" style="display:none;background:var(--gray-50);border:1.5px dashed var(--amber);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:0.8rem">
+        <strong style="font-size:0.88rem;color:var(--amber)">Add New Hotel to Database</strong>
+        <div class="form-row form-row-4" style="margin-top:0.5rem">
+          <div class="form-group"><label>Hotel Name</label><input class="h-new-name" placeholder="e.g. Hotel Gran Via"></div>
+          <div class="form-group"><label>City</label><input class="h-new-city" value="${city}" placeholder="City"></div>
+          <div class="form-group"><label>Stars</label><select class="h-new-stars">${[1,2,3,4,5].map(s=>`<option value="${s}" ${s===3?'selected':''}>${'★'.repeat(s)}</option>`).join('')}</select></div>
+          <div class="form-group"><label>Email</label><input class="h-new-email" placeholder="hotel@email.com"></div>
+        </div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.3rem">
+          <button class="btn btn-sm btn-primary" onclick="Quote.saveNewHotel(${idx})">Save & Select</button>
+          <button class="btn btn-sm btn-outline" onclick="this.closest('.h-new-panel').style.display='none'">Cancel</button>
+        </div>
       </div>
       <div style="margin-bottom:0.8rem">
         <label style="font-weight:600;font-size:0.85rem;display:block;margin-bottom:0.4rem">Room Types & Costs (${currency})</label>
@@ -281,7 +359,7 @@ const Quote = {
       });
       d.hotels.push({
         city: this.getDestLabel(dest),
-        hotelName: card.querySelector('.h-name').value,
+        hotelName: card.querySelector('.h-select').value || '',
         starRating: Number(card.querySelector('.h-stars').value) || 3,
         hotelConfirmed: card.querySelector('.h-confirmed').checked,
         rooms: rooms.length ? rooms : [{ type: 'Twin', qty: 0, costPerNight: 0 }],
