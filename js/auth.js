@@ -168,6 +168,10 @@ const Auth = {
         const alive = Array.from(merged.values());
         DB._set(col, alive);
 
+        // 4b. Track highest remote ID so _nextId won't collide
+        if (!DB._remoteMaxIds) DB._remoteMaxIds = {};
+        DB._remoteMaxIds[col] = alive.reduce((m, item) => Math.max(m, item.id || 0), 0);
+
         // 5. Push to Firestore
         await DB.syncToFirestore(col, alive);
         if (pulled > 0) console.log(`Pulled ${pulled} updated items for ${col}`);

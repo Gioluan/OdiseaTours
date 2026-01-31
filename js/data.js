@@ -13,7 +13,22 @@ const DB = {
   },
   _nextId(key) {
     const items = this._get(key);
-    return items.length ? Math.max(...items.map(i => i.id || 0)) + 1 : 1;
+    const maxLocal = items.length ? Math.max(...items.map(i => i.id || 0)) : 0;
+    const maxRemote = (this._remoteMaxIds && this._remoteMaxIds[key]) || 0;
+    const ts = Date.now();
+    return Math.max(maxLocal + 1, maxRemote + 1, ts);
+  },
+  _remoteMaxIds: {},
+  _pushToFirestore(collection, item) {
+    if (!this._firebaseReady) return;
+    const clean = JSON.parse(JSON.stringify(item));
+    if (clean.providerExpenses) {
+      clean.providerExpenses.forEach(e => {
+        if (e.invoiceFile) e.invoiceFile = { name: e.invoiceFile.name, uploadedAt: e.invoiceFile.uploadedAt };
+      });
+    }
+    this.firestore.collection(collection).doc(String(item.id))
+      .set(clean, { merge: true }).catch(err => console.warn('Push failed:', err.message));
   },
   _softDelete(key, id) {
     // Remove from localStorage
@@ -53,6 +68,7 @@ const DB = {
     }
     q.updatedAt = new Date().toISOString();
     this._set('quotes', quotes);
+    this._pushToFirestore('quotes', q);
     return q;
   },
   deleteQuote(id) {
@@ -73,6 +89,7 @@ const DB = {
     }
     t.updatedAt = new Date().toISOString();
     this._set('tours', tours);
+    this._pushToFirestore('tours', t);
     return t;
   },
   deleteTour(id) {
@@ -95,6 +112,7 @@ const DB = {
     }
     inv.updatedAt = new Date().toISOString();
     this._set('invoices', invoices);
+    this._pushToFirestore('invoices', inv);
     return inv;
   },
   deleteInvoice(id) {
@@ -113,6 +131,7 @@ const DB = {
       providers.push(p);
     }
     this._set('providers', providers);
+    this._pushToFirestore('providers', p);
     return p;
   },
   deleteProvider(id) {
@@ -151,6 +170,7 @@ const DB = {
     }
     c.updatedAt = new Date().toISOString();
     this._set('clients', clients);
+    this._pushToFirestore('clients', c);
     return c;
   },
   deleteClient(id) {
