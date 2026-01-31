@@ -123,13 +123,23 @@ const Tours = {
           <p><strong>Group:</strong> ${groupSize} pax (${t.numStudents} students, ${t.numSiblings} siblings, ${t.numAdults} adults${t.numFOC ? ', ' + t.numFOC + ' FOC' : ''})</p>
         </div>
       </div>
-      <div class="form-group">
-        <label>Tour Status</label>
-        <select onchange="Tours.updateStatus(${t.id}, this.value)">
-          <option ${t.status==='Preparing'?'selected':''}>Preparing</option>
-          <option ${t.status==='In Progress'?'selected':''}>In Progress</option>
-          <option ${t.status==='Completed'?'selected':''}>Completed</option>
-        </select>
+      <div class="form-row form-row-2">
+        <div class="form-group">
+          <label>Tour Status</label>
+          <select onchange="Tours.updateStatus(${t.id}, this.value)">
+            <option ${t.status==='Preparing'?'selected':''}>Preparing</option>
+            <option ${t.status==='In Progress'?'selected':''}>In Progress</option>
+            <option ${t.status==='Completed'?'selected':''}>Completed</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Payment Flow</label>
+          <select onchange="Tours.updatePaymentFlow(${t.id}, this.value)">
+            <option value="" ${!t.paymentFlow?'selected':''}>— Not Set (Legacy)</option>
+            <option value="single" ${t.paymentFlow==='single'?'selected':''}>Single Payer (School/Org)</option>
+            <option value="family" ${t.paymentFlow==='family'?'selected':''}>Family Pays (Per Family)</option>
+          </select>
+        </div>
       </div>
       <div class="cost-summary" style="margin:1rem 0">
         <h3>Cost Summary</h3>
@@ -189,7 +199,7 @@ const Tours = {
 
       ${Tours._renderProviderExpenses(t)}
 
-      ${Tours._renderIndividualClients(t)}
+      ${Tours._renderPaymentFlowSection(t)}
 
       <h3 style="margin-top:1.5rem">Linked Invoices</h3>
       ${invoices.length ? `<table class="data-table" style="margin-bottom:1rem">
@@ -571,10 +581,192 @@ const Tours = {
     this.viewTour(id);
   },
 
+  updatePaymentFlow(id, flow) {
+    const t = DB.getTours().find(x => x.id === id);
+    if (!t) return;
+    t.paymentFlow = flow;
+    DB.saveTour(t);
+    this.viewTour(id);
+  },
+
+  _renderPaymentFlowSection(t) {
+    if (t.paymentFlow === 'single') return this._renderSinglePayerSection(t);
+    if (t.paymentFlow === 'family') return this._renderIndividualClients(t, true);
+    return this._renderIndividualClients(t, false);
+  },
+
+  _renderSinglePayerSection(t) {
+    const invoices = DB.getInvoices().filter(i => i.tourId === t.id && !i.individualClientRef);
+    const groupSize = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0);
+    const revenueStudents = (t.priceStudent || 0) * (t.numStudents || 0);
+    const revenueSiblings = (t.priceSibling || 0) * (t.numSiblings || 0);
+    const revenueAdults = (t.priceAdult || 0) * (t.numAdults || 0);
+    const totalRevenue = revenueStudents + revenueSiblings + revenueAdults;
+    const cur = t.currency || 'EUR';
+    const hasGroupInvoice = invoices.length > 0;
+
+    return `
+      <h3 style="margin-top:1.5rem">Single Payer <span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">— one client pays for the entire group</span></h3>
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem">
+        <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1rem">
+          <div>
+            <div style="font-size:0.78rem;color:var(--gray-400);text-transform:uppercase;font-weight:600;letter-spacing:0.05em">Client</div>
+            <div style="font-weight:700;font-size:1rem;color:var(--navy)">${t.clientName || '—'}</div>
+          </div>
+          <div>
+            <div style="font-size:0.78rem;color:var(--gray-400);text-transform:uppercase;font-weight:600;letter-spacing:0.05em">Email</div>
+            <div style="font-size:0.9rem">${t.clientEmail || '—'}</div>
+          </div>
+          <div>
+            <div style="font-size:0.78rem;color:var(--gray-400);text-transform:uppercase;font-weight:600;letter-spacing:0.05em">Group Size</div>
+            <div style="font-size:0.9rem">${groupSize} pax</div>
+          </div>
+        </div>
+        <div style="background:white;border-radius:var(--radius);padding:0.8rem 1rem;margin-bottom:1rem;border:1.5px solid var(--gray-100)">
+          <div style="font-size:0.82rem;font-weight:600;color:var(--gray-500);margin-bottom:0.5rem">Group Revenue Calculation</div>
+          <div style="display:flex;flex-direction:column;gap:0.25rem;font-size:0.85rem">
+            <div style="display:flex;justify-content:space-between"><span>${t.numStudents||0} Students x ${fmt(t.priceStudent||0, cur)}</span><span>${fmt(revenueStudents, cur)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span>${t.numSiblings||0} Siblings x ${fmt(t.priceSibling||0, cur)}</span><span>${fmt(revenueSiblings, cur)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span>${t.numAdults||0} Adults x ${fmt(t.priceAdult||0, cur)}</span><span>${fmt(revenueAdults, cur)}</span></div>
+            <div style="display:flex;justify-content:space-between;border-top:1.5px solid var(--gray-100);padding-top:0.4rem;margin-top:0.2rem;font-weight:700;font-size:0.95rem;color:var(--green)"><span>Total</span><span>${fmt(totalRevenue, cur)}</span></div>
+          </div>
+        </div>
+        ${hasGroupInvoice
+          ? `<div style="font-size:0.85rem;color:var(--green);font-weight:600">Group invoice exists: ${invoices.map(i => i.number).join(', ')}</div>`
+          : `<button class="btn btn-primary" onclick="Tours.createSinglePayerInvoice(${t.id})">Create Full Group Invoice (${fmt(totalRevenue, cur)})</button>`}
+      </div>`;
+  },
+
+  createSinglePayerInvoice(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    if (!t.clientName) { alert('Please set a client name for this tour first.'); return; }
+
+    const revenueStudents = (t.priceStudent || 0) * (t.numStudents || 0);
+    const revenueSiblings = (t.priceSibling || 0) * (t.numSiblings || 0);
+    const revenueAdults = (t.priceAdult || 0) * (t.numAdults || 0);
+    const totalRevenue = revenueStudents + revenueSiblings + revenueAdults;
+    if (!totalRevenue) { alert('Total revenue is zero. Set prices and group sizes first.'); return; }
+
+    // Check if a non-individual-client invoice already exists
+    const existing = DB.getInvoices().find(i => i.tourId === t.id && !i.individualClientRef);
+    if (existing) { alert('Group invoice already exists: ' + existing.number); return; }
+
+    const inv = DB.saveInvoice({
+      clientName: t.clientName,
+      tourId: t.id,
+      tourName: t.tourName,
+      amount: totalRevenue,
+      currency: t.currency || 'EUR',
+      dueDate: '',
+      description: `Full group booking — ${t.tourName} (${t.destination})\n${t.numStudents||0} student(s), ${t.numSiblings||0} sibling(s), ${t.numAdults||0} adult(s)`
+    });
+    inv.clientEmail = t.clientEmail;
+    inv.clientPhone = t.clientPhone;
+    DB.saveInvoice(inv);
+
+    alert(`Invoice ${inv.number} created for ${t.clientName} — ${fmt(totalRevenue, t.currency)}`);
+    this.viewTour(tourId);
+  },
+
+  addFromExistingClient(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const sel = document.getElementById('existing-client-select');
+    if (!sel || !sel.value) { alert('Please select a client.'); return; }
+    const clientId = Number(sel.value);
+    const client = DB.getClients().find(c => c.id === clientId);
+    if (!client) return;
+
+    if (!t.individualClients) t.individualClients = [];
+    // Check for duplicate by name
+    if (t.individualClients.some(ic => ic.name === client.name)) {
+      alert(client.name + ' is already added as an individual client.');
+      return;
+    }
+
+    t.individualClients.push({
+      id: Date.now(),
+      name: client.name,
+      email: client.email || '',
+      phone: client.phone || '',
+      numStudents: 1,
+      numSiblings: 0,
+      numAdults: 0,
+      amountDue: 0,
+      notes: '',
+      systemClientId: client.id
+    });
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  async importFamiliesFromPortal(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    if (!DB._firebaseReady) { alert('Firebase not configured. Cannot import portal passengers.'); return; }
+
+    const passengers = await DB.getTourPassengers(String(tourId));
+    if (!passengers.length) { alert('No portal passengers found for this tour.'); return; }
+
+    if (!t.individualClients) t.individualClients = [];
+    const existingNames = new Set(t.individualClients.map(ic => ic.name.toLowerCase()));
+
+    // Group passengers by family field
+    const families = {};
+    passengers.forEach(p => {
+      const familyKey = (p.family || p.lastName || 'Unknown').trim();
+      if (!families[familyKey]) families[familyKey] = [];
+      families[familyKey].push(p);
+    });
+
+    let imported = 0, skipped = 0;
+    Object.entries(families).forEach(([familyName, members]) => {
+      const displayName = familyName + ' Family';
+      if (existingNames.has(displayName.toLowerCase())) { skipped++; return; }
+
+      // Count by role
+      let numStudents = 0, numSiblings = 0, numAdults = 0;
+      members.forEach(m => {
+        const role = (m.role || 'player').toLowerCase();
+        if (role === 'player' || role === 'student') numStudents++;
+        else if (role === 'sibling') numSiblings++;
+        else if (role === 'adult' || role === 'parent' || role === 'guardian') numAdults++;
+        else numStudents++; // default to student
+      });
+
+      // Calculate amount
+      const amount = (numStudents * (t.priceStudent || 0)) +
+                     (numSiblings * (t.priceSibling || 0)) +
+                     (numAdults * (t.priceAdult || 0));
+
+      // Use first member's contact info as family contact
+      const contact = members.find(m => m.email || m.emergencyContact) || members[0];
+
+      t.individualClients.push({
+        id: Date.now() + imported,
+        name: displayName,
+        email: contact.email || '',
+        phone: contact.phone || contact.emergencyContact || '',
+        numStudents,
+        numSiblings,
+        numAdults,
+        amountDue: amount,
+        notes: 'Imported from portal. Members: ' + members.map(m => (m.firstName || '') + ' ' + (m.lastName || '')).join(', '),
+        portalImported: true
+      });
+      imported++;
+    });
+
+    DB.saveTour(t);
+    alert(`Imported ${imported} families from portal.${skipped ? ' ' + skipped + ' skipped (already added).' : ''}`);
+    this.viewTour(tourId);
+  },
+
   /* ============================================================
      INDIVIDUAL CLIENTS (families / individuals paying separately)
      ============================================================ */
-  _renderIndividualClients(t) {
+  _renderIndividualClients(t, isFamilyMode) {
     const clients = t.individualClients || [];
     const invoices = DB.getInvoices();
 
@@ -592,7 +784,7 @@ const Tours = {
     const icAdults = clients.reduce((s, ic) => s + (ic.numAdults || 0), 0);
 
     return `
-      <h3 style="margin-top:1.5rem">Individual Clients <span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">— families / individuals paying separately</span></h3>
+      <h3 style="margin-top:1.5rem">${isFamilyMode ? 'Family Pays' : 'Individual Clients'} <span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">— ${isFamilyMode ? 'each family pays separately' : 'families / individuals paying separately'}</span></h3>
       ${clients.length ? `
       <div style="display:flex;gap:1rem;margin-bottom:0.8rem;font-size:0.85rem;flex-wrap:wrap">
         <span><strong>Clients:</strong> ${clients.length}</span>
@@ -624,8 +816,16 @@ const Tours = {
           </tr>`;
         }).join('')}</tbody>
       </table>` : '<p style="color:var(--gray-400);margin-bottom:0.5rem;font-size:0.85rem">No individual clients added yet. Use this for groups where families pay separately.</p>'}
-      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
         <button class="btn btn-sm btn-outline" onclick="Tours.addIndividualClient(${t.id})">+ Add Individual Client</button>
+        ${isFamilyMode ? `
+        <select id="existing-client-select" style="padding:0.35rem 0.5rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);max-width:180px">
+          <option value="">— Add from Clients —</option>
+          ${DB.getClients().map(c => `<option value="${c.id}">${(c.name||'').replace(/"/g,'&quot;')}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="Tours.addFromExistingClient(${t.id})">Add</button>
+        <button class="btn btn-sm btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.importFamiliesFromPortal(${t.id})">Import from Portal</button>
+        ` : ''}
         ${clients.length > 0 ? `<button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.autoCalcIndividualAmounts(${t.id})">Auto-Calculate Amounts</button>
         <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="Tours.createAllIndividualInvoices(${t.id})">Create All Invoices</button>` : ''}
       </div>`;
@@ -1197,9 +1397,11 @@ const Tours = {
         </div>
         <div style="padding:1rem">
           ${passengers.length ? `<table class="data-table" style="font-size:0.82rem">
-            <thead><tr><th>Name</th><th>DOB</th><th>Nationality</th><th>Passport</th><th>Dietary</th><th>Emergency</th><th>Registered</th></tr></thead>
+            <thead><tr><th>Name</th><th>Role</th><th>Family</th><th>DOB</th><th>Nationality</th><th>Passport</th><th>Dietary</th><th>Emergency</th><th>Registered</th></tr></thead>
             <tbody>${passengers.map(p => `<tr>
               <td><strong>${p.firstName||''} ${p.lastName||''}</strong></td>
+              <td>${p.role||'—'}</td>
+              <td>${p.family||'—'}</td>
               <td>${p.dateOfBirth ? new Date(p.dateOfBirth).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
               <td>${p.nationality||'—'}</td>
               <td>${p.passportNumber||'—'}</td>
