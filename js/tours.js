@@ -1867,15 +1867,33 @@ const Tours = {
 
     return `
       <h3 style="margin-top:1.5rem">Itinerary Map</h3>
-      <div id="tour-map-${t.id}" style="height:400px;border-radius:var(--radius-lg);overflow:hidden;border:1.5px solid var(--gray-200);margin-bottom:1rem"></div>`;
+      <div id="tour-map-${t.id}" style="height:400px;border-radius:var(--radius-lg);overflow:hidden;border:1.5px solid var(--gray-200);margin-bottom:1rem">
+        <div style="padding:2rem;text-align:center;color:var(--gray-400)">Loading map...</div>
+      </div>`;
   },
 
   _initMap() {
-    if (typeof L === 'undefined' || !this._pendingMapData) return;
+    if (!this._pendingMapData) return;
     const { tourId, locations } = this._pendingMapData;
-    this._pendingMapData = null;
-
     const mapEl = document.getElementById('tour-map-' + tourId);
+
+    if (typeof L === 'undefined') {
+      // Leaflet not loaded yet — retry in 500ms (async script may still be loading)
+      if (!this._mapRetries) this._mapRetries = 0;
+      if (this._mapRetries < 10) {
+        this._mapRetries++;
+        if (mapEl) mapEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--gray-400)">Loading map library...</div>';
+        setTimeout(() => this._initMap(), 500);
+        return;
+      }
+      if (mapEl) mapEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--red)">Map library failed to load. Check your internet connection.</div>';
+      this._pendingMapData = null;
+      return;
+    }
+
+    this._pendingMapData = null;
+    this._mapRetries = 0;
+
     if (!mapEl || mapEl._leaflet_id) return;
 
     const map = L.map(mapEl).setView([40.4168, -3.7038], 6);
