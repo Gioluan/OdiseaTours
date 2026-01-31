@@ -566,11 +566,17 @@ const PDFQuote = {
       else included.push(`${a.name} (complimentary)`);
     });
 
-    // Line items breakdown
+    // Line items breakdown — use individual client counts for family invoices
     const lineItems = [];
-    if (src.numStudents) lineItems.push({ desc: `Student / Player × ${src.numStudents}`, unit: f(src.priceStudent || 0), total: f((src.priceStudent || 0) * src.numStudents) });
-    if (src.numSiblings) lineItems.push({ desc: `Sibling × ${src.numSiblings}`, unit: f(src.priceSibling || 0), total: f((src.priceSibling || 0) * src.numSiblings) });
-    if (src.numAdults) lineItems.push({ desc: `Adult × ${src.numAdults}`, unit: f(src.priceAdult || 0), total: f((src.priceAdult || 0) * src.numAdults) });
+    const ic = inv.individualClientRef && src.individualClients
+      ? (src.individualClients || []).find(c => c.id === inv.individualClientRef)
+      : null;
+    const liStudents = ic ? (ic.numStudents || 0) : (src.numStudents || 0);
+    const liSiblings = ic ? (ic.numSiblings || 0) : (src.numSiblings || 0);
+    const liAdults = ic ? (ic.numAdults || 0) : (src.numAdults || 0);
+    if (liStudents) lineItems.push({ desc: `Student / Player × ${liStudents}`, unit: f(src.priceStudent || 0), total: f((src.priceStudent || 0) * liStudents) });
+    if (liSiblings) lineItems.push({ desc: `Sibling × ${liSiblings}`, unit: f(src.priceSibling || 0), total: f((src.priceSibling || 0) * liSiblings) });
+    if (liAdults) lineItems.push({ desc: `Adult × ${liAdults}`, unit: f(src.priceAdult || 0), total: f((src.priceAdult || 0) * liAdults) });
     if (!lineItems.length) lineItems.push({ desc: inv.description || 'Tour Services', unit: f(inv.amount), total: f(inv.amount) });
 
     // Payment history
