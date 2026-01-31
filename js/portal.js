@@ -607,7 +607,7 @@ const Portal = {
       <div class="rp-actions">
         <button class="btn-primary btn-sm" onclick="Portal.addRoom()">+ Add Room</button>
         <button class="btn-outline btn-sm" onclick="Portal.autoAssignRooms()">Auto-Assign</button>
-        ${this._roomPlan.length ? '<button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlan()">Download PDF</button><button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlanExcel()">Download Excel</button>' : ''}
+        ${this._roomPlan.length ? '<button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlan()">Download PDF</button><button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlanExcel()">Download CSV</button>' : ''}
       </div>
 
       ${this._roomPlan.length ? `<div class="rp-rooms">
@@ -854,91 +854,64 @@ const Portal = {
     rooms.forEach(r => (r.passengers || []).forEach(id => assigned.add(id)));
     const unassigned = passengers.filter(p => !assigned.has(p.id));
 
-    // Build Excel XML (SpreadsheetML)
-    let rows = '';
-    // Header row
-    rows += '<Row>' +
-      '<Cell><Data ss:Type="String">Room</Data></Cell>' +
-      '<Cell><Data ss:Type="String">Guest Name</Data></Cell>' +
-      '<Cell><Data ss:Type="String">Role</Data></Cell>' +
-      '<Cell><Data ss:Type="String">Family</Data></Cell>' +
-      '<Cell><Data ss:Type="String">Nationality</Data></Cell>' +
-      '<Cell><Data ss:Type="String">Date of Birth</Data></Cell>' +
-      '<Cell><Data ss:Type="String">Dietary</Data></Cell>' +
-      '<Cell><Data ss:Type="String">Medical</Data></Cell>' +
-      '<Cell><Data ss:Type="String">Passport</Data></Cell>' +
-      '</Row>';
+    const esc = v => {
+      const s = String(v || '').replace(/"/g, '""');
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s + '"' : s;
+    };
+
+    const lines = [];
+    // Header
+    lines.push(['Room', 'Guest Name', 'Role', 'Family', 'Nationality', 'Date of Birth', 'Dietary', 'Medical', 'Passport'].map(esc).join(','));
 
     // Room rows
     rooms.forEach(room => {
       const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean);
       if (roomPax.length) {
         roomPax.forEach(p => {
-          rows += '<Row>' +
-            '<Cell><Data ss:Type="String">' + Portal._xmlEscape(room.name || 'Room') + '</Data></Cell>' +
-            '<Cell><Data ss:Type="String">' + Portal._xmlEscape((p.firstName || '') + ' ' + (p.lastName || '')) + '</Data></Cell>' +
-            '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.role || '') + '</Data></Cell>' +
-            '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.family || '') + '</Data></Cell>' +
-            '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.nationality || '') + '</Data></Cell>' +
-            '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.dateOfBirth || '') + '</Data></Cell>' +
-            '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.dietary || '') + '</Data></Cell>' +
-            '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.medical || '') + '</Data></Cell>' +
-            '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.passportNumber || '') + '</Data></Cell>' +
-            '</Row>';
+          lines.push([
+            room.name || 'Room',
+            (p.firstName || '') + ' ' + (p.lastName || ''),
+            p.role || '', p.family || '', p.nationality || '',
+            p.dateOfBirth || '', p.dietary || '', p.medical || '',
+            p.passportNumber || ''
+          ].map(esc).join(','));
         });
       } else {
-        rows += '<Row><Cell><Data ss:Type="String">' + Portal._xmlEscape(room.name || 'Room') + '</Data></Cell><Cell><Data ss:Type="String">(empty)</Data></Cell></Row>';
+        lines.push([room.name || 'Room', '(empty)', '', '', '', '', '', '', ''].map(esc).join(','));
       }
     });
 
-    // Unassigned section
+    // Unassigned
     if (unassigned.length) {
-      rows += '<Row></Row><Row><Cell ss:StyleID="bold"><Data ss:Type="String">UNASSIGNED</Data></Cell></Row>';
+      lines.push('');
+      lines.push('UNASSIGNED');
       unassigned.forEach(p => {
-        rows += '<Row>' +
-          '<Cell><Data ss:Type="String">—</Data></Cell>' +
-          '<Cell><Data ss:Type="String">' + Portal._xmlEscape((p.firstName || '') + ' ' + (p.lastName || '')) + '</Data></Cell>' +
-          '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.role || '') + '</Data></Cell>' +
-          '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.family || '') + '</Data></Cell>' +
-          '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.nationality || '') + '</Data></Cell>' +
-          '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.dateOfBirth || '') + '</Data></Cell>' +
-          '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.dietary || '') + '</Data></Cell>' +
-          '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.medical || '') + '</Data></Cell>' +
-          '<Cell><Data ss:Type="String">' + Portal._xmlEscape(p.passportNumber || '') + '</Data></Cell>' +
-          '</Row>';
+        lines.push([
+          '', (p.firstName || '') + ' ' + (p.lastName || ''),
+          p.role || '', p.family || '', p.nationality || '',
+          p.dateOfBirth || '', p.dietary || '', p.medical || '',
+          p.passportNumber || ''
+        ].map(esc).join(','));
       });
     }
 
     // Summary
-    rows += '<Row></Row>';
-    rows += '<Row><Cell ss:StyleID="bold"><Data ss:Type="String">SUMMARY</Data></Cell></Row>';
-    rows += '<Row><Cell><Data ss:Type="String">Total Passengers</Data></Cell><Cell><Data ss:Type="Number">' + passengers.length + '</Data></Cell></Row>';
-    rows += '<Row><Cell><Data ss:Type="String">Total Rooms</Data></Cell><Cell><Data ss:Type="Number">' + rooms.length + '</Data></Cell></Row>';
-    rows += '<Row><Cell><Data ss:Type="String">Assigned</Data></Cell><Cell><Data ss:Type="Number">' + assigned.size + '</Data></Cell></Row>';
-    rows += '<Row><Cell><Data ss:Type="String">Unassigned</Data></Cell><Cell><Data ss:Type="Number">' + unassigned.length + '</Data></Cell></Row>';
+    lines.push('');
+    lines.push('SUMMARY');
+    lines.push('Total Passengers,' + passengers.length);
+    lines.push('Total Rooms,' + rooms.length);
+    lines.push('Assigned,' + assigned.size);
+    lines.push('Unassigned,' + unassigned.length);
 
-    const xml = '<?xml version="1.0"?>\n' +
-      '<?mso-application progid="Excel.Sheet"?>\n' +
-      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n' +
-      ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">\n' +
-      '<Styles><Style ss:ID="bold"><Font ss:Bold="1"/></Style>\n' +
-      '<Style ss:ID="header"><Font ss:Bold="1" ss:Size="11"/><Interior ss:Color="#0B1D3A" ss:Pattern="Solid"/><Font ss:Color="#FFFFFF" ss:Bold="1"/></Style></Styles>\n' +
-      '<Worksheet ss:Name="Room Plan">\n' +
-      '<Table>\n' +
-      '<Column ss:Width="120"/><Column ss:Width="160"/><Column ss:Width="80"/><Column ss:Width="120"/><Column ss:Width="100"/><Column ss:Width="100"/><Column ss:Width="120"/><Column ss:Width="120"/><Column ss:Width="120"/>\n' +
-      rows + '\n</Table>\n</Worksheet>\n</Workbook>';
-
-    const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+    // BOM + CSV content — BOM ensures Excel reads UTF-8 correctly
+    const csv = '\uFEFF' + lines.join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'Room_Plan_' + (t.tourName || 'Tour').replace(/[^a-zA-Z0-9]/g, '_') + '.xls';
+    a.download = 'Room_Plan_' + (t.tourName || 'Tour').replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
     a.click();
     URL.revokeObjectURL(url);
-  },
-
-  _xmlEscape(str) {
-    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   },
 
   async renderMessages() {
