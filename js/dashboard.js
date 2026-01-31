@@ -41,6 +41,16 @@ const Dashboard = {
       finalProfit += (rev - costs);
     });
 
+    // Pipeline profit: quotes in Follow-up status
+    const followUpQuotes = quotes.filter(q => q.status === 'Follow-up');
+    let pipelineProfit = 0, pipelineRevenue = 0;
+    followUpQuotes.forEach(q => {
+      const rev = ((q.priceStudent||0)*(q.numStudents||0)) + ((q.priceSibling||0)*(q.numSiblings||0)) + ((q.priceAdult||0)*(q.numAdults||0));
+      const cost = q.costs ? (q.costs.grand || 0) : 0;
+      pipelineRevenue += rev;
+      pipelineProfit += (rev - cost);
+    });
+
     // Traveler counts
     let totalTravelers = 0, totalStudents = 0, totalSiblings = 0, totalAdults = 0, totalFOC = 0;
     tours.forEach(t => {
@@ -81,7 +91,8 @@ const Dashboard = {
       <div class="stat-card amber"><div class="stat-label">Conversion Rate</div><div class="stat-value">${conversionRate}%</div><div class="stat-sub">${quoteConfirmed} confirmed / ${quotes.length} quotes${quoteLost ? ', ' + quoteLost + ' lost' : ''}</div></div>
       <div class="stat-card green"><div class="stat-label">Total Revenue</div><div class="stat-value">${fmt(totalRevenue)}</div><div class="stat-sub">From ${tours.length} confirmed tour${tours.length!==1?'s':''}</div></div>
       <div class="stat-card red"><div class="stat-label">Total Costs</div><div class="stat-value">${fmt(totalCosts)}</div><div class="stat-sub">Providers owed: ${fmt(providerOwed)} (${fmt(providerPaid)} paid)</div></div>
-      <div class="stat-card" style="border-left-color:${expectedProfit >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="stat-label">Expected Profit</div><div class="stat-value" style="color:${expectedProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(expectedProfit)}</div><div class="stat-sub">All ${tours.length} tours — margin: ${totalRevenue > 0 ? (expectedProfit / totalRevenue * 100).toFixed(1) + '%' : '—'}</div></div>
+      <div class="stat-card" style="border-left-color:var(--amber)"><div class="stat-label">Pipeline Profit</div><div class="stat-value" style="color:var(--amber)">${fmt(pipelineProfit)}</div><div class="stat-sub">${followUpQuotes.length} follow-up quote${followUpQuotes.length!==1?'s':''} — rev: ${fmt(pipelineRevenue)}</div></div>
+      <div class="stat-card" style="border-left-color:${expectedProfit >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="stat-label">Expected Profit</div><div class="stat-value" style="color:${expectedProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(expectedProfit)}</div><div class="stat-sub">All ${tours.length} confirmed tours — margin: ${totalRevenue > 0 ? (expectedProfit / totalRevenue * 100).toFixed(1) + '%' : '—'}</div></div>
       <div class="stat-card" style="border-left-color:${finalProfit >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="stat-label">Final Profit</div><div class="stat-value" style="color:${finalProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(finalProfit)}</div><div class="stat-sub">${completedTours.length} completed tour${completedTours.length!==1?'s':''} — margin: ${finalRevenue > 0 ? (finalProfit / finalRevenue * 100).toFixed(1) + '%' : '—'}</div></div>
       <div class="stat-card blue"><div class="stat-label">Cash Flow</div><div class="stat-value" style="color:${outstanding > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(outstanding)}</div><div class="stat-sub">outstanding of ${fmt(totalInvoiced)} invoiced (${fmt(totalCollected)} collected)</div></div>
       <div class="stat-card amber"><div class="stat-label">Clients</div><div class="stat-value">${clients.length}</div><div class="stat-sub">${pendingPayments.length} pending payment${pendingPayments.length!==1?'s':''}</div></div>
