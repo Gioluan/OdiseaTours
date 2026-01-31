@@ -1883,6 +1883,8 @@ const Tours = {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 18
     }).addTo(map);
+    // Fix tiles not loading when map is inside a modal
+    setTimeout(() => map.invalidateSize(), 200);
 
     const markers = [];
     const icons = {
@@ -1904,7 +1906,7 @@ const Tours = {
       }
 
       const loc = locations[idx];
-      fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(loc.name) + '&limit=1')
+      fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(loc.name) + '&limit=1&email=info@odisea-tours.com')
         .then(r => r.json())
         .then(data => {
           if (data && data[0]) {
