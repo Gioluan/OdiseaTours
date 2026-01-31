@@ -17,14 +17,28 @@ const Dashboard = {
     const totalCollected = invoices.reduce((s, i) => s + (i.payments || []).reduce((ps, p) => ps + Number(p.amount), 0), 0);
     const outstanding = totalInvoiced - totalCollected;
 
-    // Profit metrics across all confirmed tours
-    let totalRevenue = 0, totalCosts = 0, totalProfit = 0;
+    // Expected profit: all confirmed tours
+    let totalRevenue = 0, totalCosts = 0, expectedProfit = 0;
     tours.forEach(t => {
       if (t.costs) {
         totalRevenue += (t.costs.totalRevenue || 0);
         totalCosts += (t.costs.grand || 0);
-        totalProfit += (t.costs.profit || 0);
+        expectedProfit += (t.costs.profit || 0);
       }
+    });
+
+    // Final profit: only completed tours (actual provider costs if available)
+    const completedTours = tours.filter(t => t.status === 'Completed');
+    let finalRevenue = 0, finalCosts = 0, finalProfit = 0;
+    completedTours.forEach(t => {
+      const rev = t.costs ? (t.costs.totalRevenue || 0) : 0;
+      const actualProvCosts = (t.providerExpenses || []).reduce((s, e) => s + (e.amount || 0), 0);
+      const estimatedCosts = t.costs ? (t.costs.grand || 0) : 0;
+      // Use actual provider costs if tracked, otherwise estimated
+      const costs = actualProvCosts > 0 ? actualProvCosts : estimatedCosts;
+      finalRevenue += rev;
+      finalCosts += costs;
+      finalProfit += (rev - costs);
     });
 
     // Traveler counts
@@ -67,7 +81,8 @@ const Dashboard = {
       <div class="stat-card amber"><div class="stat-label">Conversion Rate</div><div class="stat-value">${conversionRate}%</div><div class="stat-sub">${quoteConfirmed} confirmed / ${quotes.length} quotes${quoteLost ? ', ' + quoteLost + ' lost' : ''}</div></div>
       <div class="stat-card green"><div class="stat-label">Total Revenue</div><div class="stat-value">${fmt(totalRevenue)}</div><div class="stat-sub">From ${tours.length} confirmed tour${tours.length!==1?'s':''}</div></div>
       <div class="stat-card red"><div class="stat-label">Total Costs</div><div class="stat-value">${fmt(totalCosts)}</div><div class="stat-sub">Providers owed: ${fmt(providerOwed)} (${fmt(providerPaid)} paid)</div></div>
-      <div class="stat-card" style="border-left-color:${totalProfit >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="stat-label">Total Profit</div><div class="stat-value" style="color:${totalProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(totalProfit)}</div><div class="stat-sub">Margin: ${totalRevenue > 0 ? (totalProfit / totalRevenue * 100).toFixed(1) + '%' : '—'}</div></div>
+      <div class="stat-card" style="border-left-color:${expectedProfit >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="stat-label">Expected Profit</div><div class="stat-value" style="color:${expectedProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(expectedProfit)}</div><div class="stat-sub">All ${tours.length} tours — margin: ${totalRevenue > 0 ? (expectedProfit / totalRevenue * 100).toFixed(1) + '%' : '—'}</div></div>
+      <div class="stat-card" style="border-left-color:${finalProfit >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="stat-label">Final Profit</div><div class="stat-value" style="color:${finalProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(finalProfit)}</div><div class="stat-sub">${completedTours.length} completed tour${completedTours.length!==1?'s':''} — margin: ${finalRevenue > 0 ? (finalProfit / finalRevenue * 100).toFixed(1) + '%' : '—'}</div></div>
       <div class="stat-card blue"><div class="stat-label">Cash Flow</div><div class="stat-value" style="color:${outstanding > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(outstanding)}</div><div class="stat-sub">outstanding of ${fmt(totalInvoiced)} invoiced (${fmt(totalCollected)} collected)</div></div>
       <div class="stat-card amber"><div class="stat-label">Clients</div><div class="stat-value">${clients.length}</div><div class="stat-sub">${pendingPayments.length} pending payment${pendingPayments.length!==1?'s':''}</div></div>
     `;
