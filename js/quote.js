@@ -371,12 +371,25 @@ const Quote = {
   },
 
   /* --- Activities per destination --- */
+  _actHeaderRendered: false,
+
+  activityHeaderHTML() {
+    return `<div class="activity-row act-header" style="margin-bottom:0.2rem;font-size:0.75rem;font-weight:600;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.04em">
+      <span>Activity Name</span>
+      <span>Cost / Person</span>
+      <span>Tour Day</span>
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>`;
+  },
+
   activityRowHTML(a, i) {
     return `<div class="activity-row act-row">
-      <input class="act-name" value="${a.name}" placeholder="Activity name">
-      <input class="act-cost" type="number" step="0.01" value="${a.costPerPerson}" placeholder="Cost/person" ${a.isFree?'disabled':''}>
-      <input class="act-day" type="number" min="1" value="${a.day}" placeholder="Day">
-      <label class="checkbox-label"><input type="checkbox" class="act-free" ${a.isFree?'checked':''} onchange="this.closest('.act-row').querySelector('.act-cost').disabled=this.checked;if(this.checked)this.closest('.act-row').querySelector('.act-cost').value=0">Free</label>
+      <input class="act-name" value="${a.name}" placeholder="e.g. Stadium Tour">
+      <input class="act-cost" type="number" step="0.01" value="${a.costPerPerson}" placeholder="0.00" ${a.isFree?'disabled':''}>
+      <input class="act-day" type="number" min="1" value="${a.day}" placeholder="1">
+      <label class="checkbox-label"><input type="checkbox" class="act-free" ${a.isFree?'checked':''} onchange="this.closest('.act-row').querySelector('.act-cost').disabled=this.checked;if(this.checked)this.closest('.act-row').querySelector('.act-cost').value=0"> Free</label>
       <label class="checkbox-label" style="white-space:nowrap"><input type="checkbox" class="act-players" ${a.playersOnly?'checked':''}> Players Only</label>
       <button class="btn btn-sm btn-danger" onclick="this.closest('.act-row').remove()">X</button>
     </div>`;
@@ -581,6 +594,7 @@ const Quote = {
             html += `<div class="card" style="margin-bottom:1rem;border-left:4px solid var(--amber)">
               <h4 style="margin-bottom:0.8rem;color:var(--amber);font-family:var(--font-heading)">📍 ${label} — Activities</h4>
               <div class="preset-chips">${presets.map(p => `<button class="preset-chip" onclick="Quote.addPresetActivity('${p.name}',${p.cost},${!!p.free},'${label}')">${p.name} ${p.free?'(Free)':'('+d.currency+p.cost+')'}</button>`).join('')}</div>
+              ${destActivities.length ? this.activityHeaderHTML() : ''}
               <div id="act-list-${slug}">${destActivities.map((a, i) => this.activityRowHTML(a, i)).join('')}</div>
               <button class="btn btn-outline btn-sm" onclick="Quote.addActivity('${label}')" style="margin-top:0.5rem">+ Add Activity</button>
             </div>`;
@@ -590,6 +604,7 @@ const Quote = {
           w.innerHTML = `
             <h3>Activities</h3>
             <div class="preset-chips">${presets.map(p => `<button class="preset-chip" onclick="Quote.addPresetActivity('${p.name}',${p.cost},${!!p.free},'')">${p.name} ${p.free?'(Free)':'('+d.currency+p.cost+')'}</button>`).join('')}</div>
+            ${d.activities.length ? this.activityHeaderHTML() : ''}
             <div id="activities-list">${d.activities.map((a, i) => this.activityRowHTML(a, i)).join('')}</div>
             <button class="btn btn-outline btn-sm" onclick="Quote.addActivity('')" style="margin-top:0.5rem">+ Add Activity</button>`;
         }

@@ -467,7 +467,7 @@ body {
 /* === ACTIVITY ROW === */
 .activity-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr auto auto;
+  grid-template-columns: 2fr 100px 60px auto auto 36px;
   gap: 0.5rem;
   align-items: center;
   margin-bottom: 0.5rem;
