@@ -4,8 +4,8 @@
   "description": "Access your tour information, register passengers, and communicate with Odisea Tours",
   "start_url": "./portal.html",
   "display": "standalone",
-  "background_color": "#0B1D3A",
-  "theme_color": "#0B1D3A",
+  "background_color": "#111111",
+  "theme_color": "#111111",
   "orientation": "portrait",
   "icons": [
     {

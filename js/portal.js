@@ -799,10 +799,10 @@ const Portal = {
       <title>Room Plan - ${Portal._escapeHtml(t.tourName || 'Tour')}</title>
       <style>
         body{font-family:'Segoe UI',Arial,sans-serif;margin:2rem;color:#333;font-size:14px}
-        h1{color:#0B1D3A;border-bottom:3px solid #E8913A;padding-bottom:0.5rem;margin-bottom:0.3rem;font-size:1.5rem}
+        h1{color:#111111;border-bottom:3px solid #ffb400;padding-bottom:0.5rem;margin-bottom:0.3rem;font-size:1.5rem}
         .subtitle{color:#888;margin-bottom:1.5rem;font-size:0.9rem}
         .room{border:1px solid #ddd;border-radius:8px;margin-bottom:1rem;overflow:hidden;page-break-inside:avoid}
-        .room-header{background:#0B1D3A;color:white;padding:0.6rem 1rem;font-weight:600;display:flex;justify-content:space-between}
+        .room-header{background:#111111;color:white;padding:0.6rem 1rem;font-weight:600;display:flex;justify-content:space-between}
         .room-body{padding:0.8rem 1rem}
         .guest{display:flex;align-items:center;gap:0.8rem;padding:0.4rem 0;border-bottom:1px solid #f0f0f0}
         .guest:last-child{border-bottom:none}

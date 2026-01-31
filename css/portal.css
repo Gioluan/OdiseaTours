@@ -2,12 +2,12 @@
 
 /* ── Variables (shared with main app) ── */
 :root {
-  --navy: #0B1D3A;
-  --navy-light: #132D54;
-  --navy-mid: #1A3A6B;
-  --amber: #E8913A;
-  --amber-light: #F4B96B;
-  --amber-dark: #C87520;
+  --navy: #111111;
+  --navy-light: #1a1a1a;
+  --navy-mid: #222222;
+  --amber: #ffb400;
+  --amber-light: #ffcc4d;
+  --amber-dark: #e6a200;
   --green: #2ECC71;
   --red: #E74C3C;
   --blue: #3498DB;

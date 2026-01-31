@@ -6,7 +6,7 @@
 <title>Odisea Tours — Client Portal</title>
 <!-- PWA -->
 <link rel="manifest" href="portal-manifest.json">
-<meta name="theme-color" content="#0B1D3A">
+<meta name="theme-color" content="#111111">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Odisea Portal">
@@ -22,7 +22,7 @@
 <!-- ═══════════════════ LOGIN SCREEN ═══════════════════ -->
 <div id="portal-login" class="login-screen">
   <div class="login-card">
-    <div class="login-logo">O</div>
+    <img src="img/logo-black.png" alt="Odisea Tours" style="height:50px;width:auto;margin:0 auto 1rem;display:block">
     <h1>Odisea Tours</h1>
     <p class="subtitle">Enter your access code to view your tour</p>
     <form onsubmit="Portal.handleLogin(event)">
@@ -39,8 +39,7 @@
   <!-- Header -->
   <header class="portal-header">
     <div class="portal-header-logo">
-      <div class="logo-icon">O</div>
-      <span>Odisea Tours</span>
+      <img src="img/logo-dark.png" alt="Odisea Tours" style="height:32px;width:auto">
     </div>
     <button class="hamburger-btn" onclick="Portal.toggleDrawer()" aria-label="Menu">
       <span></span><span></span><span></span>

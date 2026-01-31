@@ -52,11 +52,10 @@ const Auth = {
       overlay = document.createElement('div');
       overlay.id = 'auth-overlay';
       overlay.innerHTML = `
-        <div style="position:fixed;inset:0;background:rgba(11,29,58,0.95);z-index:10000;display:flex;align-items:center;justify-content:center">
+        <div style="position:fixed;inset:0;background:rgba(17,17,17,0.95);z-index:10000;display:flex;align-items:center;justify-content:center">
           <div style="background:white;border-radius:12px;padding:2.5rem;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
             <div style="text-align:center;margin-bottom:1.5rem">
-              <div style="width:56px;height:56px;background:linear-gradient(135deg,var(--amber),var(--amber-dark));border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-family:'Playfair Display',serif;font-size:1.5rem;font-weight:700;color:white">O</div>
-              <h2 style="font-family:'Playfair Display',serif;color:var(--navy);margin:0 0 0.3rem">Odisea Tours</h2>
+              <img src="img/logo-black.png" alt="Odisea Tours" style="height:48px;width:auto;margin:0 auto 1rem;display:block">
               <p style="color:var(--gray-400);font-size:0.88rem;margin:0">Sign in to sync with Firebase</p>
             </div>
             <form id="auth-login-form" onsubmit="Auth.handleLogin(event)">
