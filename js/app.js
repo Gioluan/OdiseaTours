@@ -3,6 +3,9 @@ const App = {
   currentTab: 'dashboard',
 
   init() {
+    // Initialize Firebase (before modules)
+    DB.initFirebase();
+
     // Tab navigation
     document.querySelectorAll('.nav-item').forEach(item => {
       item.addEventListener('click', () => {
@@ -23,6 +26,9 @@ const App = {
     Passengers.init();
     Clients.init();
     Providers.init();
+
+    // Initialize Auth (after modules, so UI is ready)
+    Auth.init();
   },
 
   switchTab(tab) {

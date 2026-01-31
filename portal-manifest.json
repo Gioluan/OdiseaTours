@@ -1,0 +1,22 @@
+{
+  "name": "Odisea Tours — Client Portal",
+  "short_name": "Odisea Portal",
+  "description": "Access your tour information, register passengers, and communicate with Odisea Tours",
+  "start_url": "./portal.html",
+  "display": "standalone",
+  "background_color": "#0B1D3A",
+  "theme_color": "#0B1D3A",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "img/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "img/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

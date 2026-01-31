@@ -129,6 +129,52 @@ const Dashboard = {
 
     // Provider payment alerts
     this._renderProviderAlerts(tours);
+
+    // Portal notification badges (async, non-blocking)
+    this._renderPortalBadges(tours);
+  },
+
+  async _renderPortalBadges(tours) {
+    if (!DB._firebaseReady || !tours.length) return;
+    try {
+      let totalMessages = 0, totalPassengers = 0;
+      for (const t of tours) {
+        const doc = await DB.firestore.collection('tours').doc(String(t.id)).get();
+        if (doc.exists) {
+          const data = doc.data();
+          totalMessages += (data.unreadMessagesCount || 0);
+          totalPassengers += (data.unreadPassengersCount || 0);
+          // Update badges in tour view if visible
+          const msgBadge = document.getElementById('msg-badge-' + t.id);
+          if (msgBadge && data.unreadMessagesCount > 0) {
+            msgBadge.textContent = data.unreadMessagesCount;
+            msgBadge.style.display = 'inline-block';
+          }
+          const paxBadge = document.getElementById('pax-badge-' + t.id);
+          if (paxBadge && data.unreadPassengersCount > 0) {
+            paxBadge.textContent = data.unreadPassengersCount;
+            paxBadge.style.display = 'inline-block';
+          }
+        }
+      }
+      // Add summary to dashboard if there are notifications
+      if (totalMessages > 0 || totalPassengers > 0) {
+        let alertHTML = '';
+        if (totalMessages > 0) alertHTML += `<span style="background:var(--red);color:white;padding:0.2rem 0.6rem;border-radius:10px;font-size:0.8rem;font-weight:600;margin-right:0.5rem">${totalMessages} unread message${totalMessages!==1?'s':''}</span>`;
+        if (totalPassengers > 0) alertHTML += `<span style="background:var(--blue);color:white;padding:0.2rem 0.6rem;border-radius:10px;font-size:0.8rem;font-weight:600">${totalPassengers} new registration${totalPassengers!==1?'s':''}</span>`;
+        // Insert portal alerts before stats
+        const statsEl = document.getElementById('dashboard-stats');
+        if (statsEl && !document.getElementById('portal-alerts-bar')) {
+          const bar = document.createElement('div');
+          bar.id = 'portal-alerts-bar';
+          bar.style.cssText = 'background:white;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;display:flex;align-items:center;gap:0.5rem;box-shadow:0 2px 8px rgba(0,0,0,0.05)';
+          bar.innerHTML = `<strong style="font-size:0.82rem;color:var(--gray-500);margin-right:0.3rem">Portal:</strong> ${alertHTML}`;
+          statsEl.parentNode.insertBefore(bar, statsEl);
+        }
+      }
+    } catch (e) {
+      // Non-critical, silently fail
+    }
   },
 
   _renderConfirmedGroups(tours) {

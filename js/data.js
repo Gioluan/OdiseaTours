@@ -258,6 +258,236 @@ const DB = {
     seed.forEach(p => this.saveProvider(p));
   },
 
+  // === FIREBASE PROPERTIES ===
+  firestore: null,
+  auth: null,
+  storage: null,
+  _firebaseReady: false,
+
+  // Initialize Firebase app and services
+  initFirebase() {
+    try {
+      if (typeof firebase === 'undefined' || !FIREBASE_CONFIG || FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {
+        console.log('Firebase not configured — running in localStorage-only mode.');
+        return;
+      }
+      if (!firebase.apps.length) {
+        firebase.initializeApp(FIREBASE_CONFIG);
+      }
+      this.firestore = firebase.firestore();
+      this.auth = firebase.auth();
+      this.storage = firebase.storage();
+      // Enable offline persistence
+      this.firestore.enablePersistence({ synchronizeTabs: true }).catch(err => {
+        if (err.code === 'failed-precondition') console.warn('Firestore persistence: multiple tabs open.');
+        else if (err.code === 'unimplemented') console.warn('Firestore persistence: browser not supported.');
+      });
+      this._firebaseReady = true;
+      console.log('Firebase initialized successfully.');
+    } catch (e) {
+      console.warn('Firebase init failed:', e.message);
+    }
+  },
+
+  // Sync localStorage collection → Firestore (batch)
+  async syncToFirestore(collection, data) {
+    if (!this._firebaseReady || !data || !data.length) return;
+    try {
+      const batch = this.firestore.batch();
+      data.forEach(item => {
+        const docRef = this.firestore.collection(collection).doc(String(item.id));
+        // Strip large base64 invoice files to avoid Firestore 1MB doc limit
+        const clean = JSON.parse(JSON.stringify(item));
+        if (clean.providerExpenses) {
+          clean.providerExpenses.forEach(e => { if (e.invoiceFile) e.invoiceFile = { name: e.invoiceFile.name, uploadedAt: e.invoiceFile.uploadedAt }; });
+        }
+        batch.set(docRef, clean, { merge: true });
+      });
+      await batch.commit();
+      console.log(`Synced ${data.length} items to ${collection}.`);
+    } catch (e) {
+      console.warn(`Sync to Firestore (${collection}) failed:`, e.message);
+    }
+  },
+
+  // Pull Firestore collection → merge into localStorage
+  async pullFromFirestore(collection) {
+    if (!this._firebaseReady) return [];
+    try {
+      const snapshot = await this.firestore.collection(collection).get();
+      const items = [];
+      snapshot.forEach(doc => items.push({ ...doc.data(), _firestoreId: doc.id }));
+      return items;
+    } catch (e) {
+      console.warn(`Pull from Firestore (${collection}) failed:`, e.message);
+      return [];
+    }
+  },
+
+  // Generate a unique access code for a tour
+  generateAccessCode(tourName) {
+    const base = (tourName || 'TOUR').replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase();
+    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return base + '-' + rand;
+  },
+
+  // Query Firestore for a tour by access code
+  async getTourByAccessCode(code) {
+    if (!this._firebaseReady) return null;
+    try {
+      const snapshot = await this.firestore.collection('tours')
+        .where('accessCode', '==', code).limit(1).get();
+      if (snapshot.empty) return null;
+      const doc = snapshot.docs[0];
+      return { id: doc.id, ...doc.data() };
+    } catch (e) {
+      console.warn('getTourByAccessCode failed:', e.message);
+      return null;
+    }
+  },
+
+  // Save a passenger to tour's subcollection (portal use)
+  async saveTourPassenger(tourId, passenger) {
+    if (!this._firebaseReady) return null;
+    try {
+      passenger.createdAt = new Date().toISOString();
+      const ref = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('passengers').add(passenger);
+      // Increment unread count on tour doc
+      await this.firestore.collection('tours').doc(String(tourId)).update({
+        unreadPassengersCount: firebase.firestore.FieldValue.increment(1)
+      });
+      return { id: ref.id, ...passenger };
+    } catch (e) {
+      console.warn('saveTourPassenger failed:', e.message);
+      return null;
+    }
+  },
+
+  // Get all passengers from tour subcollection
+  async getTourPassengers(tourId) {
+    if (!this._firebaseReady) return [];
+    try {
+      const snapshot = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('passengers').orderBy('createdAt', 'desc').get();
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      return items;
+    } catch (e) {
+      console.warn('getTourPassengers failed:', e.message);
+      return [];
+    }
+  },
+
+  // Send a message to tour's messages subcollection
+  async sendTourMessage(tourId, message) {
+    if (!this._firebaseReady) return null;
+    try {
+      message.timestamp = new Date().toISOString();
+      const ref = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('messages').add(message);
+      // Increment unread count if from client
+      if (message.sender !== 'admin') {
+        await this.firestore.collection('tours').doc(String(tourId)).update({
+          unreadMessagesCount: firebase.firestore.FieldValue.increment(1)
+        });
+      }
+      return { id: ref.id, ...message };
+    } catch (e) {
+      console.warn('sendTourMessage failed:', e.message);
+      return null;
+    }
+  },
+
+  // Get all messages from tour subcollection
+  async getTourMessages(tourId) {
+    if (!this._firebaseReady) return [];
+    try {
+      const snapshot = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('messages').orderBy('timestamp', 'asc').get();
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      return items;
+    } catch (e) {
+      console.warn('getTourMessages failed:', e.message);
+      return [];
+    }
+  },
+
+  // Real-time listener for messages
+  listenToTourMessages(tourId, callback) {
+    if (!this._firebaseReady) return () => {};
+    return this.firestore.collection('tours').doc(String(tourId))
+      .collection('messages').orderBy('timestamp', 'asc')
+      .onSnapshot(snapshot => {
+        const messages = [];
+        snapshot.forEach(doc => messages.push({ id: doc.id, ...doc.data() }));
+        callback(messages);
+      }, err => console.warn('Message listener error:', err.message));
+  },
+
+  // Upload a document to Firebase Storage + save metadata to Firestore
+  async uploadTourDocument(tourId, file) {
+    if (!this._firebaseReady) return null;
+    try {
+      const path = `tours/${tourId}/${Date.now()}_${file.name}`;
+      const ref = this.storage.ref(path);
+      await ref.put(file);
+      const url = await ref.getDownloadURL();
+      const meta = {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        url: url,
+        storagePath: path,
+        uploadedAt: new Date().toISOString()
+      };
+      const docRef = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('documents').add(meta);
+      return { id: docRef.id, ...meta };
+    } catch (e) {
+      console.warn('uploadTourDocument failed:', e.message);
+      return null;
+    }
+  },
+
+  // Get all documents for a tour
+  async getTourDocuments(tourId) {
+    if (!this._firebaseReady) return [];
+    try {
+      const snapshot = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('documents').orderBy('uploadedAt', 'desc').get();
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      return items;
+    } catch (e) {
+      console.warn('getTourDocuments failed:', e.message);
+      return [];
+    }
+  },
+
+  // Delete a document from Storage and Firestore
+  async deleteTourDocument(tourId, docId, storagePath) {
+    if (!this._firebaseReady) return;
+    try {
+      if (storagePath) await this.storage.ref(storagePath).delete();
+      await this.firestore.collection('tours').doc(String(tourId))
+        .collection('documents').doc(docId).delete();
+    } catch (e) {
+      console.warn('deleteTourDocument failed:', e.message);
+    }
+  },
+
+  // Reset unread counters on a tour
+  async resetUnreadCount(tourId, field) {
+    if (!this._firebaseReady) return;
+    try {
+      await this.firestore.collection('tours').doc(String(tourId)).update({ [field]: 0 });
+    } catch (e) {
+      console.warn('resetUnreadCount failed:', e.message);
+    }
+  },
+
   // EXPORT / IMPORT ALL
   exportAll() {
     return JSON.stringify({

@@ -197,6 +197,8 @@ const Tours = {
           return `<tr><td>${i.number}</td><td>${fmt(i.amount,i.currency)}</td><td>${fmt(paid,i.currency)}</td><td><span class="badge ${badgeClass(st)}">${st}</span></td></tr>`;
         }).join('')}</tbody>
       </table>` : '<p style="color:var(--gray-400);margin-bottom:1rem">No invoices yet. Create one from the Invoicing tab.</p>'}
+      ${Tours._renderPortalSection(t)}
+
       <div class="modal-actions">
         <button class="btn btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="PDFItinerary.generate(${t.id})">Generate Itinerary PDF</button>
         <button class="btn btn-danger" onclick="if(confirm('Delete this tour?')){Tours.deleteTour(${t.id})}">Delete</button>
@@ -971,5 +973,228 @@ const Tours = {
     ];
     DB.saveTour(t);
     this.viewTour(tourId);
+  },
+
+  /* ============================================================
+     CLIENT PORTAL — Access codes, messages, documents
+     ============================================================ */
+  _renderPortalSection(t) {
+    const hasCode = !!t.accessCode;
+    const portalUrl = hasCode ? `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=${t.accessCode}` : '';
+
+    return `
+      <h3 style="margin-top:1.5rem">Client Portal <span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">— share with group leaders / families</span></h3>
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem">
+        ${hasCode ? `
+          <div style="margin-bottom:0.8rem">
+            <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Access Code</label>
+            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+              <code style="font-family:'Courier New',monospace;font-size:1.4rem;font-weight:700;color:var(--navy);background:white;padding:0.4rem 1rem;border-radius:var(--radius);border:1.5px solid var(--gray-200);letter-spacing:0.1em">${t.accessCode}</code>
+              <button class="btn btn-sm btn-outline" onclick="Tours.copyPortalLink(${t.id},'${t.accessCode}')">Copy Link</button>
+              <button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.generateAccessCode(${t.id})">New Code</button>
+            </div>
+          </div>
+          <div style="margin-bottom:0.8rem">
+            <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Portal URL</label>
+            <input type="text" readonly value="${portalUrl}" style="width:100%;padding:0.4rem 0.6rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);background:white;color:var(--gray-500)" onclick="this.select()">
+          </div>
+        ` : `
+          <p style="color:var(--gray-400);margin-bottom:0.8rem;font-size:0.85rem">Generate an access code so clients can view tour info, register passengers, and message you through the portal.</p>
+          <button class="btn btn-primary" onclick="Tours.generateAccessCode(${t.id})">Generate Access Code</button>
+        `}
+      </div>
+
+      <div style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-bottom:1rem">
+        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+            <h4 style="font-size:0.88rem;color:var(--navy)">Client Messages</h4>
+            <span id="msg-badge-${t.id}" style="background:var(--red);color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px;display:none">0</span>
+          </div>
+          <button class="btn btn-sm btn-outline" onclick="Tours.viewMessages(${t.id})">View Messages</button>
+        </div>
+        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+            <h4 style="font-size:0.88rem;color:var(--navy)">Portal Documents</h4>
+            <span id="doc-count-${t.id}" style="font-size:0.82rem;color:var(--gray-400)"></span>
+          </div>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+            <button class="btn btn-sm btn-outline" onclick="Tours.uploadDocument(${t.id})">Upload Document</button>
+            <button class="btn btn-sm btn-outline" onclick="Tours.viewDocuments(${t.id})">View All</button>
+          </div>
+          <input type="file" id="doc-upload-${t.id}" style="display:none" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" onchange="Tours.handleDocUpload(${t.id},event)">
+        </div>
+        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+            <h4 style="font-size:0.88rem;color:var(--navy)">Portal Passengers</h4>
+            <span id="pax-badge-${t.id}" style="background:var(--blue);color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px;display:none">0</span>
+          </div>
+          <button class="btn btn-sm btn-outline" onclick="Tours.viewPortalPassengers(${t.id})">View Registrations</button>
+        </div>
+      </div>
+      <div id="portal-detail-${t.id}"></div>`;
+  },
+
+  generateAccessCode(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    t.accessCode = DB.generateAccessCode(t.tourName);
+    DB.saveTour(t);
+    // Also sync to Firestore
+    if (DB._firebaseReady) {
+      DB.syncToFirestore('tours', [t]);
+    }
+    this.viewTour(tourId);
+  },
+
+  copyPortalLink(tourId, code) {
+    const url = `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=${code}`;
+    navigator.clipboard.writeText(url).then(() => {
+      alert('Portal link copied to clipboard!');
+    }).catch(() => {
+      prompt('Copy this link:', url);
+    });
+  },
+
+  async viewMessages(tourId) {
+    const container = document.getElementById('portal-detail-' + tourId);
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+
+    // Reset unread count
+    await DB.resetUnreadCount(String(tourId), 'unreadMessagesCount');
+
+    const messages = await DB.getTourMessages(String(tourId));
+    container.innerHTML = `
+      <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
+        <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+          <span>Client Messages (${messages.length})</span>
+          <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">&times; Close</button>
+        </div>
+        <div style="max-height:350px;overflow-y:auto;padding:1rem;background:var(--gray-50)" id="admin-chat-${tourId}">
+          ${messages.length ? messages.map(m => `
+            <div style="max-width:85%;padding:0.6rem 0.8rem;border-radius:10px;margin-bottom:0.5rem;font-size:0.85rem;line-height:1.5;${
+              m.sender === 'admin'
+                ? 'background:var(--navy);color:white;margin-left:auto;border-bottom-right-radius:3px'
+                : 'background:white;border:1px solid var(--gray-100);border-bottom-left-radius:3px'
+            }">
+              <div>${(m.text||'').replace(/</g,'&lt;')}</div>
+              <div style="font-size:0.7rem;opacity:0.6;margin-top:0.2rem">${m.sender === 'admin' ? 'You' : (m.senderName || 'Client')} &bull; ${m.timestamp ? new Date(m.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
+            </div>
+          `).join('') : '<div style="text-align:center;color:var(--gray-400);padding:1rem;font-size:0.85rem">No messages yet.</div>'}
+        </div>
+        <form style="display:flex;gap:0.5rem;padding:0.8rem 1rem;border-top:1px solid var(--gray-100)" onsubmit="Tours.sendAdminMessage(${tourId},event)">
+          <input type="text" id="admin-msg-input-${tourId}" placeholder="Reply to client..." style="flex:1;padding:0.5rem 0.8rem;border:1.5px solid var(--gray-200);border-radius:20px;font-size:0.85rem">
+          <button type="submit" class="btn btn-sm btn-primary" style="border-radius:20px;padding:0.5rem 1rem">Send</button>
+        </form>
+      </div>`;
+
+    // Scroll to bottom
+    const chatEl = document.getElementById('admin-chat-' + tourId);
+    if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+  },
+
+  async sendAdminMessage(tourId, event) {
+    event.preventDefault();
+    const input = document.getElementById('admin-msg-input-' + tourId);
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    await DB.sendTourMessage(String(tourId), {
+      text: text,
+      sender: 'admin',
+      senderName: 'Odisea Tours'
+    });
+    this.viewMessages(tourId);
+  },
+
+  uploadDocument(tourId) {
+    const input = document.getElementById('doc-upload-' + tourId);
+    if (input) input.click();
+  },
+
+  async handleDocUpload(tourId, event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File too large (max 10 MB).');
+      return;
+    }
+    if (!DB._firebaseReady) {
+      alert('Firebase not configured. Cannot upload documents.');
+      return;
+    }
+    const result = await DB.uploadTourDocument(String(tourId), file);
+    if (result) {
+      alert('Document uploaded: ' + file.name);
+      this.viewTour(tourId);
+    } else {
+      alert('Upload failed. Please try again.');
+    }
+    event.target.value = '';
+  },
+
+  async viewDocuments(tourId) {
+    const container = document.getElementById('portal-detail-' + tourId);
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div>';
+
+    const docs = await DB.getTourDocuments(String(tourId));
+    container.innerHTML = `
+      <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
+        <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+          <span>Portal Documents (${docs.length})</span>
+          <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">&times; Close</button>
+        </div>
+        <div style="padding:1rem">
+          ${docs.length ? docs.map(d => {
+            const size = d.size ? (d.size < 1024*1024 ? Math.round(d.size/1024)+' KB' : (d.size/(1024*1024)).toFixed(1)+' MB') : '';
+            return `<div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--gray-50)">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.name}</div>
+                <div style="font-size:0.75rem;color:var(--gray-400)">${size} &bull; ${d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : ''}</div>
+              </div>
+              <a href="${d.url}" target="_blank" rel="noopener" class="btn btn-sm btn-outline" style="white-space:nowrap">Download</a>
+              <button class="btn btn-sm btn-danger" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.deleteDocument(${tourId},'${d.id}','${(d.storagePath||'').replace(/'/g,"\\'")}')">X</button>
+            </div>`;
+          }).join('') : '<p style="color:var(--gray-400);font-size:0.85rem">No documents uploaded yet.</p>'}
+        </div>
+      </div>`;
+  },
+
+  async deleteDocument(tourId, docId, storagePath) {
+    if (!confirm('Delete this document?')) return;
+    await DB.deleteTourDocument(String(tourId), docId, storagePath);
+    this.viewDocuments(tourId);
+  },
+
+  async viewPortalPassengers(tourId) {
+    const container = document.getElementById('portal-detail-' + tourId);
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div>';
+
+    await DB.resetUnreadCount(String(tourId), 'unreadPassengersCount');
+    const passengers = await DB.getTourPassengers(String(tourId));
+
+    container.innerHTML = `
+      <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
+        <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+          <span>Portal Registrations (${passengers.length})</span>
+          <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">&times; Close</button>
+        </div>
+        <div style="padding:1rem">
+          ${passengers.length ? `<table class="data-table" style="font-size:0.82rem">
+            <thead><tr><th>Name</th><th>DOB</th><th>Nationality</th><th>Passport</th><th>Dietary</th><th>Emergency</th><th>Registered</th></tr></thead>
+            <tbody>${passengers.map(p => `<tr>
+              <td><strong>${p.firstName||''} ${p.lastName||''}</strong></td>
+              <td>${p.dateOfBirth ? new Date(p.dateOfBirth).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
+              <td>${p.nationality||'—'}</td>
+              <td>${p.passportNumber||'—'}</td>
+              <td>${p.dietary||'—'}</td>
+              <td>${p.emergencyContact||'—'}</td>
+              <td>${p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '—'}</td>
+            </tr>`).join('')}</tbody>
+          </table>` : '<p style="color:var(--gray-400);font-size:0.85rem">No passengers registered through the portal yet.</p>'}
+        </div>
+      </div>`;
   }
 };
