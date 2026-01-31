@@ -862,10 +862,11 @@ const PDFQuote = {
       <h3>How to Pay</h3>
       <div class="bank-grid">
         <div class="bank-col">
-          <div class="bank-row"><span class="bl">Bank</span><span class="bv">CaixaBank</span></div>
-          <div class="bank-row"><span class="bl">Account Name</span><span class="bv">Odisea Tours S.L.</span></div>
-          <div class="bank-row"><span class="bl">IBAN</span><span class="bv">ES12 2100 0000 0000 0000 0000</span></div>
-          <div class="bank-row"><span class="bl">BIC / SWIFT</span><span class="bv">CAIXESBBXXX</span></div>
+          <div class="bank-row"><span class="bl">Account Name</span><span class="bv">Ground Agents Solutions SL</span></div>
+          <div class="bank-row"><span class="bl">Bank</span><span class="bv">Banc Sabadell</span></div>
+          <div class="bank-row"><span class="bl">IBAN</span><span class="bv">ES37 0081 0241 6700 0177 3985</span></div>
+          <div class="bank-row"><span class="bl">BIC / SWIFT</span><span class="bv">BSABESBBXXX</span></div>
+          <div class="bank-row"><span class="bl">Bank Address</span><span class="bv">Avenida Oscar Espla 37, 03007, Alicante, Espa\u00f1a</span></div>
         </div>
         <div class="bank-col">
           <div class="bank-row"><span class="bl">Reference</span><span class="bv">${invNum}</span></div>
