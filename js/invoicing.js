@@ -412,11 +412,49 @@ const Invoicing = {
   },
 
   renderFinancialReports() {
-    const container = document.getElementById('financial-reports-container');
-    if (!container) return;
+    let container = document.getElementById('financial-reports-container');
+    if (!container) {
+      // Dynamically create the reports section if HTML doesn't have it yet (cache)
+      const tableContainer = document.getElementById('invoicing-table-container');
+      if (!tableContainer) return;
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.marginTop = '1.5rem';
+      card.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem"><h3>Financial Reports</h3><button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="Invoicing.exportFinancialReports()">Export All Reports CSV</button></div><div id="financial-reports-container"></div>`;
+      tableContainer.parentNode.insertBefore(card, tableContainer.nextSibling);
+      container = document.getElementById('financial-reports-container');
+    }
 
     const invoices = DB.getInvoices();
     const tours = DB.getTours();
+
+    // Auto-calculate costs for tours that don't have them yet
+    tours.forEach(t => {
+      if (!t.costs) {
+        const tp = (t.numStudents||0) + (t.numSiblings||0) + (t.numAdults||0) + (t.numFOC||0);
+        const paying = (t.numStudents||0) + (t.numSiblings||0) + (t.numAdults||0);
+        const days = (t.nights||0) + 1;
+        let accommodation = 0, meals = 0;
+        if (t.hotels && t.hotels.length > 0) {
+          t.hotels.forEach(h => {
+            const hN = h.nights || t.nights || 0;
+            if (h.rooms && h.rooms.length > 0) accommodation += h.rooms.reduce((s, r) => s + (r.qty||0) * (r.costPerNight||0) * hN, 0);
+            else accommodation += (h.costPerNightPerRoom||0) * (h.numRooms||0) * hN;
+            meals += (h.mealCostPerPersonPerDay||0) * tp * (hN + 1);
+          });
+        } else {
+          accommodation = (t.costPerNightPerRoom||0) * (t.numRooms||0) * (t.nights||0);
+          meals = (t.mealCostPerPersonPerDay||0) * tp * days;
+        }
+        const flights = (t.flightCostPerPerson||0) * tp;
+        const transport = flights + (t.airportTransfers||0) + (t.coachHire||0) + (t.internalTransport||0);
+        const activities = (t.activities||[]).reduce((s,a) => { if (a.isFree) return s; return s + (a.costPerPerson||0) * (a.playersOnly ? (t.numStudents||0) : tp); }, 0);
+        const guide = ((t.numGuides||0) * (t.guideDailyRate||0) * days) + (t.guideFlights||0) + (t.guideAccommodation||0) + (t.guideMeals||0);
+        const grand = accommodation + meals + transport + activities + guide;
+        const totalRevenue = ((t.priceStudent||0) * (t.numStudents||0)) + ((t.priceSibling||0) * (t.numSiblings||0)) + ((t.priceAdult||0) * (t.numAdults||0));
+        t.costs = { accommodation, meals, flights, transport, activities, guide, grand, totalParticipants: tp, payingParticipants: paying, costPerPerson: paying > 0 ? grand / paying : 0, days, totalRevenue, profit: totalRevenue - grand, margin: totalRevenue > 0 ? ((totalRevenue - grand) / totalRevenue * 100) : 0 };
+      }
+    });
 
     invoices.forEach(i => {
       i._paid = (i.payments || []).reduce((s, p) => s + Number(p.amount), 0);
