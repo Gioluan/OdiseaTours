@@ -833,6 +833,32 @@ const Quote = {
     this.collectStepData();
     const q = this.buildQuoteObject();
 
+    // Auto-add client to Clients DB if new (not selected from dropdown)
+    if (q.clientName && !q.clientId) {
+      const existing = DB.getClients();
+      const match = existing.find(c => (c.name || '').toLowerCase().trim() === q.clientName.toLowerCase().trim());
+      if (match) {
+        q.clientId = match.id;
+        // Update email/phone on existing client if provided and currently empty
+        let updated = false;
+        if (q.clientEmail && !match.email) { match.email = q.clientEmail; updated = true; }
+        if (q.clientPhone && !match.phone) { match.phone = q.clientPhone; updated = true; }
+        if (updated) DB.saveClient(match);
+      } else {
+        const newClient = DB.saveClient({
+          name: q.clientName,
+          contactPerson: '',
+          email: q.clientEmail || '',
+          phone: q.clientPhone || '',
+          type: 'School',
+          city: '',
+          country: '',
+          notes: 'Added from quote'
+        });
+        q.clientId = newClient.id;
+      }
+    }
+
     if (this.editingQuoteId) {
       // Editing an existing quote — ask what to do
       const choice = prompt(

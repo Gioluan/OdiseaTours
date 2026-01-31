@@ -139,12 +139,34 @@ const CRM = {
     if (!newStatus) return;
     const q = DB.getQuotes().find(x => x.id === id);
     if (!q) return;
+    const wasConfirmed = q.status === 'Confirmed';
     q.status = newStatus;
     DB.saveQuote(q);
     // Auto-convert to confirmed tour when status set to Confirmed
     if (newStatus === 'Confirmed') {
-      this.convertToTour(id);
+      // Only create tour if one doesn't already exist for this quote
+      const existingTour = DB.getTours().find(t => t.quoteId === id);
+      if (!existingTour) {
+        this.convertToTour(id);
+      } else {
+        this.render();
+        Dashboard.render();
+      }
       return;
+    }
+    // Remove linked tour when status changes away from Confirmed
+    if (wasConfirmed && newStatus !== 'Confirmed') {
+      const linkedTour = DB.getTours().find(t => t.quoteId === id);
+      if (linkedTour) {
+        if (!confirm('This will remove the linked confirmed tour "' + (linkedTour.tourName || '') + '" and any data added to it (passengers, provider expenses, etc.). Continue?')) {
+          // Revert status
+          q.status = 'Confirmed';
+          DB.saveQuote(q);
+          this.render();
+          return;
+        }
+        DB.deleteTour(linkedTour.id);
+      }
     }
     this.render();
     Dashboard.render();
