@@ -81,6 +81,24 @@
         <button class="btn btn-sm btn-outline" onclick="document.getElementById('import-file').click()">Import</button>
       </div>
     </div>
+    <div style="display:flex;gap:0.8rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+      <label style="font-size:0.85rem;font-weight:600;color:var(--gray-500)">Period:</label>
+      <select id="dash-period" onchange="Dashboard.render()" style="padding:0.4rem 0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-size:0.85rem">
+        <option value="all">All Time</option>
+        <option value="year">This Year</option>
+        <option value="quarter">This Quarter</option>
+        <option value="month">This Month</option>
+        <option value="custom">Custom Range</option>
+      </select>
+      <input type="date" id="dash-date-from" style="padding:0.35rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);display:none" onchange="Dashboard.render()">
+      <input type="date" id="dash-date-to" style="padding:0.35rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);display:none" onchange="Dashboard.render()">
+      <select id="dash-currency" onchange="Dashboard.render()" style="padding:0.4rem 0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-size:0.85rem">
+        <option value="">Original Currency</option>
+        <option value="EUR">Show all in EUR</option>
+        <option value="USD">Show all in USD</option>
+        <option value="GBP">Show all in GBP</option>
+      </select>
+    </div>
     <div class="stats-grid" id="dashboard-stats"></div>
     <div class="grid-2">
       <div class="card">
@@ -103,6 +121,10 @@
     <div class="card" style="margin-top:1rem">
       <h3>Confirmed Groups — Profit Summary</h3>
       <div id="dashboard-confirmed-groups"></div>
+    </div>
+    <div class="card" style="margin-top:1rem;display:none" id="dashboard-profit-alerts-card">
+      <h3>Profit Alerts</h3>
+      <div id="dashboard-profit-alerts"></div>
     </div>
     <div class="card" style="margin-top:1rem">
       <h3>Provider Payments Due</h3>
@@ -175,6 +197,7 @@
         <option value="In Progress">In Progress</option>
         <option value="Completed">Completed</option>
       </select>
+      <button id="tours-view-toggle" class="btn btn-sm btn-outline" onclick="Tours.toggleView()">Board View</button>
     </div>
     <div id="tours-list-container"></div>
     <div id="tours-modal" class="modal-overlay" style="display:none">
@@ -198,6 +221,7 @@
         <option value="Partial">Partial</option>
         <option value="Paid">Paid</option>
       </select>
+      <button class="btn btn-outline" onclick="Invoicing.exportCSV()" style="border-color:var(--green);color:var(--green)">Export CSV</button>
     </div>
     <div id="invoicing-table-container"></div>
     <div id="inv-modal" class="modal-overlay" style="display:none">
@@ -241,6 +265,8 @@
       <button class="btn btn-outline" onclick="Passengers.printForm()">Print Registration Form</button>
       <button class="btn btn-outline" onclick="Passengers.exportList()">Export Passenger List</button>
       <button class="btn btn-outline" onclick="Passengers.generateRoomingList()">Rooming List</button>
+      <button class="btn btn-outline" onclick="Passengers.showImportCSV()">Import CSV</button>
+      <input type="file" id="pax-csv-import" accept=".csv" style="display:none" onchange="Passengers.handleCSVImport(event)">
     </div>
     <div id="passengers-table-container"></div>
     <div id="pax-modal" class="modal-overlay" style="display:none">

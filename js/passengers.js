@@ -157,5 +157,96 @@ const Passengers = {
     const w = window.open('','_blank');
     w.document.write(`<!DOCTYPE html><html><head><title>Rooming List</title><style>body{font-family:Arial,sans-serif;padding:2rem;color:#2E3440}h1{font-size:1.4rem}table{width:100%;border-collapse:collapse;font-size:.85rem}th,td{border:1px solid #ccc;padding:.4rem;text-align:left}th{background:#f0f0f0;font-size:.75rem;text-transform:uppercase}@media print{body{padding:.5rem}}</style></head><body><h1>Odisea Tours — Rooming List</h1><p style="margin-bottom:1rem"><strong>Tour:</strong> ${tour.tourName} | <strong>Hotel:</strong> ${tour.hotelName||'—'} | <strong>Dates:</strong> ${tour.startDate||''} to ${tour.endDate||''}</p><table><thead><tr><th>Room</th><th>Passenger</th><th>Category</th><th>Dietary</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
     w.document.close(); w.print();
+  },
+
+  showImportCSV() {
+    const tourId = Number(document.getElementById('pax-tour-select').value);
+    if (!tourId) { alert('Select a tour first.'); return; }
+    document.getElementById('pax-csv-import').click();
+  },
+
+  handleCSVImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const tourId = Number(document.getElementById('pax-tour-select').value);
+    if (!tourId) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+      if (lines.length < 2) { alert('CSV must have a header row and at least one data row.'); return; }
+
+      // Parse header
+      const header = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+
+      // Map common column names
+      const colMap = {
+        'first name': 'firstName', 'firstname': 'firstName', 'first': 'firstName',
+        'last name': 'lastName', 'lastname': 'lastName', 'last': 'lastName', 'surname': 'lastName',
+        'date of birth': 'dateOfBirth', 'dob': 'dateOfBirth', 'dateofbirth': 'dateOfBirth', 'birth date': 'dateOfBirth',
+        'nationality': 'nationality', 'nation': 'nationality',
+        'passport': 'passportNumber', 'passport number': 'passportNumber', 'passportnumber': 'passportNumber',
+        'category': 'category', 'type': 'category', 'role': 'category',
+        'dietary': 'dietaryRequirements', 'dietary requirements': 'dietaryRequirements', 'diet': 'dietaryRequirements',
+        'medical': 'medicalConditions', 'medical conditions': 'medicalConditions',
+        'emergency name': 'emergencyContactName', 'emergency contact': 'emergencyContactName', 'emergency contact name': 'emergencyContactName',
+        'emergency phone': 'emergencyContactPhone', 'emergency contact phone': 'emergencyContactPhone',
+        'room': 'roomPreference', 'room preference': 'roomPreference'
+      };
+
+      const indices = {};
+      header.forEach((h, i) => {
+        const mapped = colMap[h];
+        if (mapped) indices[mapped] = i;
+      });
+
+      if (!indices.firstName && !indices.lastName) {
+        alert('CSV must have at least "First Name" and "Last Name" columns.');
+        event.target.value = '';
+        return;
+      }
+
+      let imported = 0;
+      for (let i = 1; i < lines.length; i++) {
+        // Parse CSV line (handle quoted values)
+        const vals = [];
+        let current = '';
+        let inQuotes = false;
+        for (const ch of lines[i]) {
+          if (ch === '"') { inQuotes = !inQuotes; }
+          else if (ch === ',' && !inQuotes) { vals.push(current.trim()); current = ''; }
+          else { current += ch; }
+        }
+        vals.push(current.trim());
+
+        const get = (field) => indices[field] !== undefined ? (vals[indices[field]] || '').replace(/^"|"$/g, '') : '';
+
+        const p = {
+          tourId,
+          firstName: get('firstName'),
+          lastName: get('lastName'),
+          dateOfBirth: get('dateOfBirth'),
+          nationality: get('nationality'),
+          passportNumber: get('passportNumber'),
+          category: get('category') || 'Student',
+          roomPreference: get('roomPreference'),
+          dietaryRequirements: get('dietaryRequirements'),
+          medicalConditions: get('medicalConditions'),
+          emergencyContactName: get('emergencyContactName'),
+          emergencyContactPhone: get('emergencyContactPhone')
+        };
+
+        if (p.firstName || p.lastName) {
+          DB.savePassenger(p);
+          imported++;
+        }
+      }
+
+      alert('Imported ' + imported + ' passengers from CSV.');
+      event.target.value = '';
+      this.render();
+    };
+    reader.readAsText(file);
   }
 };

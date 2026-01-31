@@ -219,6 +219,31 @@ const Invoicing = {
         </div>
         <button class="btn btn-sm btn-outline" onclick="Invoicing.savePaymentLinks(${i.id})" style="margin-top:0.3rem">Save Links</button>
       </div>
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin:1rem 0">
+        <h3 style="margin-bottom:0.6rem;font-size:0.95rem">Payment Schedule</h3>
+        ${(i.paymentSchedule && i.paymentSchedule.length) ? `
+          <table class="data-table" style="margin-bottom:0.8rem;font-size:0.82rem">
+            <thead><tr><th>Milestone</th><th>%</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>${i.paymentSchedule.map((ms, mi) => {
+              const msPaid = (i.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+              const msAmount = ms.amount || (ms.percentage ? (Number(i.amount) * ms.percentage / 100) : 0);
+              const cumulativeTarget = i.paymentSchedule.slice(0, mi + 1).reduce((s, m) => s + (m.amount || (m.percentage ? Number(i.amount) * m.percentage / 100 : 0)), 0);
+              const msStatus = msPaid >= cumulativeTarget ? 'Paid' : 'Pending';
+              return `<tr>
+                <td><input value="${(ms.label||'').replace(/"/g,'&quot;')}" style="width:120px;padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Invoicing.saveMilestone(${i.id},${mi},'label',this.value)"></td>
+                <td><input type="number" step="1" value="${ms.percentage||''}" style="width:50px;padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Invoicing.saveMilestone(${i.id},${mi},'percentage',this.value)"></td>
+                <td><input type="number" step="0.01" value="${ms.amount||''}" style="width:80px;padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Invoicing.saveMilestone(${i.id},${mi},'amount',this.value)"></td>
+                <td><input type="date" value="${ms.dueDate||''}" style="padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Invoicing.saveMilestone(${i.id},${mi},'dueDate',this.value)"></td>
+                <td><span class="badge ${msStatus === 'Paid' ? 'badge-confirmed' : 'badge-unpaid'}">${msStatus}</span></td>
+                <td><button class="btn btn-sm btn-danger" style="font-size:0.72rem;padding:0.15rem 0.4rem" onclick="Invoicing.removeMilestone(${i.id},${mi})">X</button></td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>` : '<p style="color:var(--gray-400);margin-bottom:0.5rem;font-size:0.85rem">No payment milestones set.</p>'}
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="btn btn-sm btn-outline" onclick="Invoicing.addMilestone(${i.id})">+ Add Milestone</button>
+          ${!(i.paymentSchedule && i.paymentSchedule.length) ? `<button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Invoicing.addDefaultSchedule(${i.id})">Add Default (30/70)</button>` : ''}
+        </div>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-outline" onclick="Invoicing.savePaymentLinks(${i.id});PDFQuote.generateInvoice(${i.id})" style="border-color:#111;color:#111">PDF Invoice</button>
         <button class="btn btn-danger" onclick="if(confirm('Delete this invoice?')){Invoicing.deleteInvoice(${i.id})}">Delete</button>
@@ -281,5 +306,82 @@ const Invoicing = {
     closeModal('inv-modal');
     this.render();
     Dashboard.render();
+  },
+
+  addMilestone(id) {
+    const i = DB.getInvoices().find(x => x.id === id);
+    if (!i) return;
+    if (!i.paymentSchedule) i.paymentSchedule = [];
+    i.paymentSchedule.push({ label: '', percentage: 0, amount: 0, dueDate: '' });
+    DB.saveInvoice(i);
+    this.viewInvoice(id);
+  },
+
+  saveMilestone(id, idx, field, value) {
+    const i = DB.getInvoices().find(x => x.id === id);
+    if (!i || !i.paymentSchedule || !i.paymentSchedule[idx]) return;
+    if (field === 'percentage') {
+      i.paymentSchedule[idx].percentage = Number(value) || 0;
+      i.paymentSchedule[idx].amount = Number(i.amount) * (Number(value) || 0) / 100;
+    } else if (field === 'amount') {
+      i.paymentSchedule[idx].amount = Number(value) || 0;
+      if (Number(i.amount) > 0) i.paymentSchedule[idx].percentage = ((Number(value) || 0) / Number(i.amount) * 100);
+    } else if (field === 'label' || field === 'dueDate') {
+      i.paymentSchedule[idx][field] = value;
+    }
+    DB.saveInvoice(i);
+    this.viewInvoice(id);
+  },
+
+  removeMilestone(id, idx) {
+    const i = DB.getInvoices().find(x => x.id === id);
+    if (!i || !i.paymentSchedule) return;
+    i.paymentSchedule.splice(idx, 1);
+    DB.saveInvoice(i);
+    this.viewInvoice(id);
+  },
+
+  addDefaultSchedule(id) {
+    const i = DB.getInvoices().find(x => x.id === id);
+    if (!i) return;
+    const amt = Number(i.amount) || 0;
+    i.paymentSchedule = [
+      { label: 'Deposit 30%', percentage: 30, amount: Math.round(amt * 0.3 * 100) / 100, dueDate: '' },
+      { label: 'Balance 70%', percentage: 70, amount: Math.round(amt * 0.7 * 100) / 100, dueDate: '' }
+    ];
+    DB.saveInvoice(i);
+    this.viewInvoice(id);
+  },
+
+  exportCSV() {
+    const filter = document.getElementById('inv-filter-status').value;
+    let invoices = DB.getInvoices();
+    invoices.forEach(i => {
+      const paid = (i.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+      i._paid = paid;
+      i._balance = Number(i.amount) - paid;
+      i._status = paid >= Number(i.amount) ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
+    });
+    if (filter) invoices = invoices.filter(i => i._status === filter);
+    const search = (document.getElementById('inv-filter-search')?.value || '').toLowerCase().trim();
+    if (search) invoices = invoices.filter(i =>
+      (i.clientName || '').toLowerCase().includes(search) ||
+      (i.tourName || '').toLowerCase().includes(search) ||
+      (i.number || '').toLowerCase().includes(search)
+    );
+    invoices.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const esc = (v) => { const s = String(v == null ? '' : v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const rows = [['Invoice #','Client','Tour','Amount','Currency','Paid','Balance','Due Date','Status','Created']];
+    invoices.forEach(i => {
+      rows.push([esc(i.number), esc(i.clientName), esc(i.tourName), i.amount || 0, i.currency || 'EUR', i._paid || 0, i._balance || 0, i.dueDate || '', i._status, i.createdAt ? i.createdAt.slice(0, 10) : '']);
+    });
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'invoices_export.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 };

@@ -71,20 +71,24 @@ const Clients = {
     }
 
     const quotes = DB.getQuotes();
+    const tours = DB.getTours();
 
     document.getElementById('clients-table-container').innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Type</th><th>City</th><th>Quotes</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Type</th><th>City</th><th>Quotes</th><th>Tours</th><th>Actions</th></tr></thead>
         <tbody>${clients.map(c => {
           const clientQuotes = quotes.filter(q => q.clientId === c.id || (q.clientName && q.clientName === c.name && !q.clientId));
-          return `<tr class="row-clickable" ondblclick="Clients.viewClient(${c.id})">
-            <td><strong>${c.name || '—'}</strong></td>
+          const clientTours = tours.filter(t => t.clientId === c.id || (t.clientName && t.clientName === c.name && !t.clientId));
+          const isRepeat = clientTours.length >= 2;
+          return `<tr class="row-clickable" ondblclick="Clients.viewClient(${c.id})" ${isRepeat ? 'style="background:rgba(76,175,80,0.06)"' : ''}>
+            <td><strong>${c.name || '—'}</strong>${isRepeat ? ' <span class="badge badge-confirmed" style="font-size:0.68rem;padding:0.1rem 0.4rem">Repeat Client</span>' : ''}</td>
             <td>${c.contactPerson || '—'}</td>
             <td>${c.email || '—'}</td>
             <td>${c.phone || '—'}</td>
             <td><span class="badge badge-sent">${c.type || '—'}</span></td>
             <td>${c.city || '—'}${c.country ? ', ' + c.country : ''}</td>
             <td>${clientQuotes.length || '—'}</td>
+            <td>${clientTours.length || '—'}</td>
             <td>
               <button class="btn btn-sm btn-outline" onclick="Clients.viewClient(${c.id})">View</button>
               <button class="btn btn-sm btn-outline" onclick="Clients.editClient(${c.id})">Edit</button>
@@ -132,6 +136,7 @@ const Clients = {
         <div class="form-group"><label>Country</label><input id="cli-country" value="${c.country || ''}" placeholder="e.g. UK, Spain"></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea id="cli-notes" rows="3" placeholder="Internal notes about this client...">${c.notes || ''}</textarea></div>
+      <div class="form-group"><label>Special Discount / Notes</label><input id="cli-discount" value="${c.specialDiscount || ''}" placeholder="e.g. 10% repeat client discount"></div>
       <div class="modal-actions">
         <button class="btn btn-primary" onclick="Clients.saveClient()">Save</button>
         <button class="btn btn-outline" onclick="closeModal('cli-modal')">Cancel</button>
@@ -148,7 +153,8 @@ const Clients = {
       phone: document.getElementById('cli-phone').value,
       city: document.getElementById('cli-city').value,
       country: document.getElementById('cli-country').value,
-      notes: document.getElementById('cli-notes').value
+      notes: document.getElementById('cli-notes').value,
+      specialDiscount: document.getElementById('cli-discount') ? document.getElementById('cli-discount').value : ''
     };
     if (!c.name) { alert('Please enter a client name.'); return; }
     if (id) c.id = Number(id);
@@ -168,9 +174,11 @@ const Clients = {
     const quotes = DB.getQuotes().filter(q => q.clientId === c.id || (q.clientName && q.clientName === c.name && !q.clientId));
     const tours = DB.getTours().filter(t => t.clientId === c.id || (t.clientName && t.clientName === c.name && !t.clientId));
 
+    const isRepeat = tours.length >= 2;
+
     document.getElementById('cli-modal').style.display = 'flex';
     document.getElementById('cli-modal-content').innerHTML = `
-      <h2>${c.name}</h2>
+      <h2>${c.name} ${isRepeat ? '<span class="badge badge-confirmed" style="font-size:0.75rem;vertical-align:middle;margin-left:0.5rem">Repeat Client</span>' : ''}</h2>
       <div class="grid-2" style="margin-bottom:1rem">
         <div>
           <p><strong>Type:</strong> <span class="badge badge-sent">${c.type || '—'}</span></p>
@@ -182,7 +190,9 @@ const Clients = {
           <p><strong>City:</strong> ${c.city || '—'}</p>
           <p><strong>Country:</strong> ${c.country || '—'}</p>
           <p><strong>Added:</strong> ${fmtDate(c.createdAt)}</p>
+          <p><strong>Tours:</strong> ${tours.length} ${isRepeat ? '<span style="color:var(--green);font-weight:600">(Repeat)</span>' : ''}</p>
           <p><strong>Notes:</strong> ${c.notes || '—'}</p>
+          ${c.specialDiscount ? `<p><strong>Discount:</strong> <span style="color:var(--amber);font-weight:600">${c.specialDiscount}</span></p>` : ''}
         </div>
       </div>
 

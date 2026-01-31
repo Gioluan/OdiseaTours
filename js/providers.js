@@ -23,9 +23,10 @@ const Providers = {
 
     document.getElementById('providers-table-container').innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Name</th><th>Category</th><th>City</th><th>Contact</th><th>Email</th><th>Phone</th><th>Website</th><th>Rating</th><th>Actions</th></tr></thead>
-        <tbody>${providers.map(p => `
-          <tr>
+        <thead><tr><th>Name</th><th>Category</th><th>City</th><th>Contact</th><th>Email</th><th>Phone</th><th>Website</th><th>Stars</th><th>Our Rating</th><th>Actions</th></tr></thead>
+        <tbody>${providers.map(p => {
+          const ourRatingStars = p.ourRating ? '<span style="color:var(--amber)">' + '★'.repeat(p.ourRating) + '</span>' + '<span style="color:var(--gray-200)">' + '★'.repeat(5 - p.ourRating) + '</span>' : '—';
+          return `<tr>
             <td><strong>${p.companyName}</strong></td>
             <td><span class="badge badge-sent">${p.category}</span></td>
             <td>${p.city || '—'}</td>
@@ -34,12 +35,13 @@ const Providers = {
             <td>${p.phone || '—'}</td>
             <td>${p.website ? `<a href="${p.website}" target="_blank" style="color:var(--amber);text-decoration:none;font-size:0.82rem" title="${p.website}">Visit</a>` : '—'}</td>
             <td>${p.category === 'Hotel' ? '★'.repeat(p.starRating || 0) : '—'}</td>
+            <td style="font-size:0.82rem">${ourRatingStars}</td>
             <td>
               <button class="btn btn-sm btn-outline" onclick="Providers.editProvider(${p.id})">Edit</button>
               <button class="btn btn-sm btn-outline" onclick="Providers.sendRFQ(${p.id})">RFQ</button>
               <button class="btn btn-sm btn-danger" onclick="if(confirm('Delete?')){Providers.deleteProvider(${p.id})}">Del</button>
             </td>
-          </tr>`).join('')}</tbody>
+          </tr>`}).join('')}</tbody>
       </table>`;
   },
 
@@ -93,6 +95,15 @@ const Providers = {
           <select id="prov-stars">${[0,1,2,3,4,5].map(s => `<option value="${s}" ${(p.starRating||0)==s?'selected':''}>${s === 0 ? 'N/A' : '★'.repeat(s)}</option>`).join('')}</select>
         </div>
       </div>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label>Our Rating (1-5)</label>
+          <select id="prov-our-rating">
+            <option value="0">Not rated</option>
+            ${[1,2,3,4,5].map(s => `<option value="${s}" ${(p.ourRating||0)==s?'selected':''}>${'★'.repeat(s)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Our Review</label><input id="prov-our-review" value="${p.ourReview || ''}" placeholder="Internal notes on quality, reliability..."></div>
+      </div>
       <div class="form-group"><label>Notes</label><textarea id="prov-notes" rows="3">${p.notes || ''}</textarea></div>
       <div class="modal-actions">
         <button class="btn btn-primary" onclick="Providers.saveProvider()">Save</button>
@@ -112,6 +123,8 @@ const Providers = {
       website: document.getElementById('prov-website').value,
       city: citySel === 'Other' ? document.getElementById('prov-city-custom').value : citySel,
       starRating: Number(document.getElementById('prov-stars').value) || 0,
+      ourRating: Number(document.getElementById('prov-our-rating').value) || 0,
+      ourReview: document.getElementById('prov-our-review').value,
       notes: document.getElementById('prov-notes').value
     };
     if (id) p.id = Number(id);

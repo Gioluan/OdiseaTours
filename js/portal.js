@@ -199,6 +199,22 @@ const Portal = {
         </button>
       </div>
 
+      ${(t.portalPaymentCard || t.portalPaymentWise) ? `
+      <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-top:1rem;box-shadow:var(--shadow)">
+        <h4 style="font-family:var(--font-display);color:var(--navy);margin-bottom:0.8rem;font-size:1.05rem">Payment</h4>
+        <p style="font-size:0.88rem;color:var(--gray-400);margin-bottom:0.8rem">Use the links below to make a payment for this tour.</p>
+        <div style="display:flex;gap:0.8rem;flex-wrap:wrap">
+          ${t.portalPaymentCard ? `<a href="${Portal._escapeAttr(t.portalPaymentCard)}" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem 1.2rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.92rem">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            Pay by Card
+          </a>` : ''}
+          ${t.portalPaymentWise ? `<a href="${Portal._escapeAttr(t.portalPaymentWise)}" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem 1.2rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.92rem">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            Pay via Wise
+          </a>` : ''}
+        </div>
+      </div>` : ''}
+
       <div class="contact-card">
         <h4>Tour Operator</h4>
         <p><strong>Odisea Tours</strong></p>

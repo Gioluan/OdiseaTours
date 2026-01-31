@@ -1,6 +1,14 @@
 /* === CONFIRMED TOURS MODULE === */
 const Tours = {
+  _viewMode: 'table',
+
   init() { this.render(); },
+
+  toggleView() {
+    this._viewMode = this._viewMode === 'table' ? 'board' : 'table';
+    document.getElementById('tours-view-toggle').textContent = this._viewMode === 'table' ? 'Board View' : 'Table View';
+    this.render();
+  },
 
   render() {
     const statusFilter = document.getElementById('tours-filter-status').value;
@@ -14,6 +22,11 @@ const Tours = {
     }
 
     const invoices = DB.getInvoices();
+
+    if (this._viewMode === 'board') {
+      this._renderKanban(tours, invoices);
+      return;
+    }
 
     document.getElementById('tours-list-container').innerHTML = `
       <table class="data-table">
@@ -38,6 +51,39 @@ const Tours = {
           </tr>`;
         }).join('')}</tbody>
       </table>`;
+  },
+
+  _renderKanban(tours, invoices) {
+    const columns = ['Preparing', 'In Progress', 'Completed'];
+    document.getElementById('tours-list-container').innerHTML = `
+      <div style="display:flex;gap:1rem;overflow-x:auto;padding-bottom:1rem">
+        ${columns.map(status => {
+          const colTours = tours.filter(t => t.status === status);
+          const color = status === 'Preparing' ? 'var(--amber)' : status === 'In Progress' ? 'var(--blue)' : 'var(--green)';
+          return `<div style="flex:1;min-width:280px;background:var(--gray-50);border-radius:var(--radius-lg);padding:0.8rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem">
+              <h4 style="font-size:0.88rem;color:${color}">${status}</h4>
+              <span style="background:${color};color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px">${colTours.length}</span>
+            </div>
+            ${colTours.length ? colTours.map(t => {
+              const groupSize = (t.numStudents||0) + (t.numSiblings||0) + (t.numAdults||0);
+              const profit = t.costs ? (t.costs.profit || 0) : 0;
+              const tourInvs = invoices.filter(i => i.tourId === t.id);
+              const invoiceTotal = tourInvs.reduce((s, i) => s + Number(i.amount), 0);
+              const paidTotal = tourInvs.reduce((s, i) => s + (i.payments || []).reduce((ps, p) => ps + Number(p.amount), 0), 0);
+              return `<div style="background:white;border-radius:var(--radius);padding:0.8rem;margin-bottom:0.5rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);cursor:pointer;border-left:3px solid ${color}" onclick="Tours.viewTour(${t.id})">
+                <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.3rem">${t.tourName}</div>
+                <div style="font-size:0.78rem;color:var(--gray-400);margin-bottom:0.3rem">${t.destination} — ${fmtDate(t.startDate)}</div>
+                <div style="font-size:0.78rem;color:var(--gray-400);margin-bottom:0.4rem">${t.clientName || '—'} | ${groupSize} pax</div>
+                <div style="display:flex;justify-content:space-between;font-size:0.78rem">
+                  <span style="color:${profit >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:600">${fmt(profit, t.currency)}</span>
+                  ${tourInvs.length ? `<span style="color:var(--gray-400)">${fmt(paidTotal, t.currency)} / ${fmt(invoiceTotal, t.currency)}</span>` : ''}
+                </div>
+              </div>`;
+            }).join('') : '<div style="color:var(--gray-300);font-size:0.85rem;text-align:center;padding:1rem">No tours</div>'}
+          </div>`;
+        }).join('')}
+      </div>`;
   },
 
   viewTour(id) {
@@ -197,6 +243,10 @@ const Tours = {
 
       ${Tours._renderItineraryEditor(t)}
 
+      ${Tours._renderChecklist(t)}
+
+      ${Tours._renderActivityLog(t)}
+
       ${Tours._renderProviderExpenses(t)}
 
       ${Tours._renderPaymentFlowSection(t)}
@@ -240,6 +290,8 @@ const Tours = {
     if (!t) return;
     t[field] = isNaN(Number(value)) ? value : Number(value);
     DB.saveTour(t);
+    const costFields = ['numStudents','numSiblings','numAdults','numFOC','flightCostPerPerson','coachHire','priceStudent','priceSibling','priceAdult','guideDailyRate','mealCostPerPersonPerDay','costPerNightPerRoom','numRooms'];
+    if (costFields.includes(field)) this.recalcCosts(id, true);
   },
 
   saveOrgHotel(id, hotelIdx, field, value) {
@@ -247,6 +299,7 @@ const Tours = {
     if (!t || !t.hotels || !t.hotels[hotelIdx]) return;
     t.hotels[hotelIdx][field] = isNaN(Number(value)) ? value : Number(value);
     DB.saveTour(t);
+    this.recalcCosts(id, true);
   },
 
   saveOrgRoom(id, hotelIdx, roomIdx, field, value) {
@@ -256,6 +309,7 @@ const Tours = {
     if (!rooms || !rooms[roomIdx]) return;
     rooms[roomIdx][field] = Number(value) || 0;
     DB.saveTour(t);
+    this.recalcCosts(id, true);
   },
 
   saveOrgActivity(id, idx, field, value) {
@@ -338,7 +392,7 @@ const Tours = {
       </div>`;
   },
 
-  recalcCosts(id) {
+  recalcCosts(id, silent) {
     const t = DB.getTours().find(x => x.id === id);
     if (!t) return;
     const paying = (t.numStudents||0) + (t.numSiblings||0) + (t.numAdults||0);
@@ -380,8 +434,10 @@ const Tours = {
     const actualProviderCosts = (t.providerExpenses || []).reduce((s, e) => s + (e.amount || 0), 0);
     t.costs = { accommodation, meals, flights, transport, activities, guide, grand, totalParticipants: tp, payingParticipants: paying, costPerPerson, days, totalRevenue, profit, margin, actualProviderCosts };
     DB.saveTour(t);
-    this.viewTour(id);
-    alert('Costs recalculated! Total: ' + fmt(grand, t.currency) + ' | Profit: ' + fmt(profit, t.currency));
+    if (!silent) {
+      this.viewTour(id);
+      alert('Costs recalculated! Total: ' + fmt(grand, t.currency) + ' | Profit: ' + fmt(profit, t.currency));
+    }
   },
 
   // === Provider Expenses ===
@@ -1188,6 +1244,136 @@ const Tours = {
   },
 
   /* ============================================================
+     TOUR CHECKLIST
+     ============================================================ */
+  _renderChecklist(t) {
+    const items = t.checklist || [];
+    const doneCount = items.filter(c => c.done).length;
+    const totalCount = items.length;
+
+    return `
+      <h3 style="margin-top:1.5rem">Tour Checklist ${totalCount ? `<span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">— ${doneCount}/${totalCount} complete</span>` : ''}</h3>
+      ${totalCount ? `
+        <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:0.8rem">
+          <div style="background:var(--gray-200);border-radius:4px;height:6px;margin-bottom:0.8rem;overflow:hidden">
+            <div style="background:var(--green);height:100%;width:${totalCount ? (doneCount/totalCount*100) : 0}%;transition:width 0.3s"></div>
+          </div>
+          ${items.map((item, i) => `
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;padding:0.3rem 0;border-bottom:1px solid var(--gray-100)">
+              <input type="checkbox" ${item.done ? 'checked' : ''} onchange="Tours.toggleChecklistItem(${t.id},${i})" style="cursor:pointer;width:18px;height:18px">
+              <input value="${(item.label||'').replace(/"/g,'&quot;')}" style="flex:1;padding:0.25rem 0.5rem;font-size:0.85rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);${item.done ? 'text-decoration:line-through;color:var(--gray-400)' : ''}" onchange="Tours.saveChecklistItem(${t.id},${i},'label',this.value)">
+              <input type="date" value="${item.dueDate||''}" style="padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Tours.saveChecklistItem(${t.id},${i},'dueDate',this.value)">
+              <button class="btn btn-sm btn-danger" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.removeChecklistItem(${t.id},${i})">X</button>
+            </div>
+          `).join('')}
+        </div>` : '<p style="color:var(--gray-400);margin-bottom:0.5rem;font-size:0.85rem">No checklist items yet.</p>'}
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
+        <button class="btn btn-sm btn-outline" onclick="Tours.addChecklistItem(${t.id})">+ Add Item</button>
+        ${!totalCount ? `<button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.addDefaultChecklist(${t.id})">Add Default Checklist</button>` : ''}
+      </div>`;
+  },
+
+  toggleChecklistItem(tourId, idx) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.checklist || !t.checklist[idx]) return;
+    t.checklist[idx].done = !t.checklist[idx].done;
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  addChecklistItem(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    if (!t.checklist) t.checklist = [];
+    t.checklist.push({ label: '', done: false, dueDate: '' });
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  removeChecklistItem(tourId, idx) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.checklist) return;
+    t.checklist.splice(idx, 1);
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  saveChecklistItem(tourId, idx, field, value) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.checklist || !t.checklist[idx]) return;
+    t.checklist[idx][field] = value;
+    DB.saveTour(t);
+  },
+
+  addDefaultChecklist(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    t.checklist = [
+      { label: 'Hotel confirmed', done: false, dueDate: '' },
+      { label: 'Flights booked', done: false, dueDate: '' },
+      { label: 'Coach booked', done: false, dueDate: '' },
+      { label: 'Insurance arranged', done: false, dueDate: '' },
+      { label: 'Documents uploaded', done: false, dueDate: '' },
+      { label: 'Rooming list finalized', done: false, dueDate: '' },
+      { label: 'Final payment received', done: false, dueDate: '' },
+      { label: 'Passenger list complete', done: false, dueDate: '' }
+    ];
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  /* ============================================================
+     ACTIVITY LOG / NOTES
+     ============================================================ */
+  _renderActivityLog(t) {
+    const entries = t.activityLog || [];
+
+    return `
+      <h3 style="margin-top:1.5rem">Activity Log / Notes</h3>
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.8rem">
+        <input id="tour-log-input-${t.id}" placeholder="Add a note..." style="flex:1;padding:0.4rem 0.6rem;font-size:0.85rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)">
+        <button class="btn btn-sm btn-primary" onclick="Tours.addLogEntry(${t.id})">Add Note</button>
+      </div>
+      ${entries.length ? `
+        <div style="border-left:3px solid var(--amber);padding-left:1rem;margin-bottom:0.8rem">
+          ${[...entries].reverse().map((entry, ri) => {
+            const idx = entries.length - 1 - ri;
+            return `<div style="position:relative;margin-bottom:0.8rem;padding-bottom:0.8rem;border-bottom:1px solid var(--gray-100)">
+              <div style="position:absolute;left:-1.35rem;top:0.2rem;width:10px;height:10px;background:var(--amber);border-radius:50%"></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.2rem">
+                <span style="font-size:0.78rem;color:var(--gray-400)">${entry.author || 'Admin'} &mdash; ${entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '—'}</span>
+                <button class="btn btn-sm btn-danger" style="padding:0.1rem 0.3rem;font-size:0.68rem" onclick="Tours.removeLogEntry(${t.id},${idx})">X</button>
+              </div>
+              <p style="font-size:0.88rem;margin:0">${(entry.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+            </div>`;
+          }).join('')}
+        </div>` : '<p style="color:var(--gray-400);margin-bottom:0.5rem;font-size:0.85rem">No log entries yet.</p>'}`;
+  },
+
+  addLogEntry(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const input = document.getElementById('tour-log-input-' + tourId);
+    if (!input || !input.value.trim()) return;
+    if (!t.activityLog) t.activityLog = [];
+    t.activityLog.push({
+      text: input.value.trim(),
+      author: 'Admin',
+      timestamp: new Date().toISOString()
+    });
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  removeLogEntry(tourId, idx) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.activityLog) return;
+    t.activityLog.splice(idx, 1);
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  /* ============================================================
      CLIENT PORTAL — Access codes, messages, documents
      ============================================================ */
   _renderPortalSection(t) {
@@ -1244,7 +1430,14 @@ const Tours = {
           <script>(async()=>{if(!DB._firebaseReady)return;try{const s=await DB.firestore.collection('tours').doc('${t.id}').collection('passengers').get();const b=document.getElementById('pax-badge-${t.id}');if(b&&s.size>0){b.textContent=s.size;b.style.display='inline-block';}}catch(e){}})()</script>
         </div>
       </div>
-      ${hasCode ? `<div style="margin-top:0.5rem"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${portalUrl}','_blank')">Open Client Portal</button></div>` : ''}
+      ${hasCode ? `<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${portalUrl}','_blank')">Open Client Portal</button><button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="window.open('https://wa.me/?text='+encodeURIComponent('Hi! Here is the portal for the tour ${(t.tourName||'').replace(/'/g,"\\'")}:\\n${portalUrl}'),'_blank')">WhatsApp Share</button></div>` : ''}
+      <div style="margin-top:0.8rem">
+        <h4 style="font-size:0.85rem;margin-bottom:0.4rem">Portal Payment Links <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— shown to clients on portal</span></h4>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label>Card Payment URL</label><input value="${t.portalPaymentCard || ''}" onchange="Tours.saveOrgField(${t.id},'portalPaymentCard',this.value)" placeholder="https://pay.stripe.com/..."></div>
+          <div class="form-group"><label>Wise Payment URL</label><input value="${t.portalPaymentWise || ''}" onchange="Tours.saveOrgField(${t.id},'portalPaymentWise',this.value)" placeholder="https://wise.com/pay/..."></div>
+        </div>
+      </div>
       <div id="portal-detail-${t.id}"></div>`;
   },
 

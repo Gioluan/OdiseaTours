@@ -121,6 +121,7 @@ const CRM = {
         <button class="btn btn-outline" onclick="PDFQuote.generate(${q.id})" style="border-color:#111;color:#111">PDF Quote</button>
         <button class="btn btn-outline" onclick="CRM.emailClient(${q.id})" style="border-color:var(--amber);color:var(--amber)">Email Client</button>
         <button class="btn btn-outline" onclick="CRM.requestProviderQuotes(${q.id})" style="border-color:var(--navy);color:var(--navy)">Request Provider Quotes</button>
+        <button class="btn btn-outline" onclick="CRM.cloneQuote(${q.id})" style="border-color:var(--green);color:var(--green)">Clone</button>
         ${q.status === 'Confirmed' ? `<button class="btn btn-success" onclick="CRM.convertToTour(${q.id})">Convert to Tour</button>` : ''}
         <button class="btn btn-danger" onclick="if(confirm('Delete this quote?')){DB.deleteQuote(${q.id});closeModal('crm-modal');CRM.render();Dashboard.render();}">Delete</button>
         <button class="btn btn-outline" onclick="closeModal('crm-modal')">Close</button>
@@ -403,6 +404,7 @@ const CRM = {
             </td>
           </tr>`).join('')}</tbody>
         </table>
+        ${received > 0 ? `<button class="btn btn-sm btn-outline" style="margin-top:0.5rem;border-color:var(--green);color:var(--green)" onclick="CRM.compareRFQs(${q.id})">Compare ${received} Received Quotes</button>` : ''}
       </div>`;
   },
 
@@ -439,6 +441,49 @@ const CRM = {
     q.rfqs.splice(rfqIdx, 1);
     DB.saveQuote(q);
     this.viewQuote(quoteId);
+  },
+
+  compareRFQs(quoteId) {
+    const q = DB.getQuotes().find(x => x.id === quoteId);
+    if (!q || !q.rfqs) return;
+    const received = q.rfqs.filter(r => r.status === 'Received' && r.responseAmount > 0);
+    if (!received.length) { alert('No received quotes with amounts to compare.'); return; }
+
+    received.sort((a, b) => a.responseAmount - b.responseAmount);
+    const cheapest = received[0].responseAmount;
+
+    // Group by category for best-per-category summary
+    const byCategory = {};
+    received.forEach(r => {
+      const cat = r.category || 'Other';
+      if (!byCategory[cat] || r.responseAmount < byCategory[cat].responseAmount) byCategory[cat] = r;
+    });
+
+    document.getElementById('crm-modal-content').innerHTML = `
+      <h2>Provider Quote Comparison — ${q.tourName}</h2>
+      <p style="font-size:0.85rem;color:var(--gray-400);margin-bottom:1rem">${received.length} provider responses received</p>
+      <table class="data-table" style="font-size:0.85rem;margin-bottom:1rem">
+        <thead><tr><th>Provider</th><th>Category</th><th>City</th><th>Amount</th><th>Notes</th><th>Response Date</th></tr></thead>
+        <tbody>${received.map(r => `<tr style="${r.responseAmount === cheapest ? 'background:rgba(46,204,113,0.1)' : ''}">
+          <td><strong>${r.providerName}</strong></td>
+          <td>${r.category || '—'}</td>
+          <td>${r.city || '—'}</td>
+          <td style="font-weight:600;${r.responseAmount === cheapest ? 'color:var(--green)' : ''}">${fmt(r.responseAmount, q.currency)}${r.responseAmount === cheapest ? ' ✓' : ''}</td>
+          <td style="max-width:200px">${r.responseNotes || '—'}</td>
+          <td>${fmtDate(r.responseDate)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem">
+        <h4 style="font-size:0.88rem;margin-bottom:0.5rem">Best by Category</h4>
+        ${Object.entries(byCategory).map(([cat, r]) => `<div style="display:flex;justify-content:space-between;padding:0.3rem 0;font-size:0.85rem">
+          <span><strong>${cat}:</strong> ${r.providerName}</span>
+          <span style="font-weight:600;color:var(--green)">${fmt(r.responseAmount, q.currency)}</span>
+        </div>`).join('')}
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="CRM.viewQuote(${q.id})">Back to Quote</button>
+        <button class="btn btn-outline" onclick="closeModal('crm-modal')">Close</button>
+      </div>`;
   },
 
   convertToTour(id) {
@@ -501,5 +546,22 @@ const CRM = {
     this.render();
     Dashboard.render();
     alert('Tour created successfully! View it in the Confirmed Tours tab.');
+  },
+
+  cloneQuote(id) {
+    const q = DB.getQuotes().find(x => x.id === id);
+    if (!q) return;
+    const copy = JSON.parse(JSON.stringify(q));
+    delete copy.id;
+    delete copy.createdAt;
+    delete copy.status;
+    delete copy.rfqs;
+    copy.tourName = (q.tourName || 'Untitled') + ' (Copy)';
+    copy.status = 'Draft';
+    DB.saveQuote(copy);
+    closeModal('crm-modal');
+    this.render();
+    Dashboard.render();
+    alert('Quote cloned as "' + copy.tourName + '"!');
   }
 };
