@@ -141,6 +141,9 @@ const Tours = {
         <div class="price-card"><div class="pc-label">Sibling Price</div><div class="pc-price">${fmt(t.priceSibling, t.currency)}</div></div>
         <div class="price-card"><div class="pc-label">Adult Price</div><div class="pc-price">${fmt(t.priceAdult, t.currency)}</div></div>
       </div>
+
+      ${Tours._renderPortalSection(t)}
+
       <h3 style="margin-top:1rem">Organization</h3>
       <p style="font-size:0.82rem;color:var(--gray-400);margin-bottom:0.8rem">Modify tour items below if the client adds/changes features. Changes are saved to this tour.</p>
       <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem">
@@ -197,7 +200,6 @@ const Tours = {
           return `<tr><td>${i.number}</td><td>${fmt(i.amount,i.currency)}</td><td>${fmt(paid,i.currency)}</td><td><span class="badge ${badgeClass(st)}">${st}</span></td></tr>`;
         }).join('')}</tbody>
       </table>` : '<p style="color:var(--gray-400);margin-bottom:1rem">No invoices yet. Create one from the Invoicing tab.</p>'}
-      ${Tours._renderPortalSection(t)}
 
       <div class="modal-actions">
         <button class="btn btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="PDFItinerary.generate(${t.id})">Generate Itinerary PDF</button>
@@ -1032,6 +1034,7 @@ const Tours = {
           <script>(async()=>{if(!DB._firebaseReady)return;try{const s=await DB.firestore.collection('tours').doc('${t.id}').collection('passengers').get();const b=document.getElementById('pax-badge-${t.id}');if(b&&s.size>0){b.textContent=s.size;b.style.display='inline-block';}}catch(e){}})()</script>
         </div>
       </div>
+      ${hasCode ? `<div style="margin-top:0.5rem"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${portalUrl}','_blank')">Open Client Portal</button></div>` : ''}
       <div id="portal-detail-${t.id}"></div>`;
   },
 

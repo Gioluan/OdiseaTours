@@ -135,25 +135,32 @@ const Dashboard = {
   },
 
   async _renderPortalBadges(tours) {
-    if (!DB._firebaseReady || !tours.length) return;
+    const container = document.getElementById('dashboard-portal-activity');
+    if (!DB._firebaseReady || !tours.length) {
+      if (container) container.innerHTML = '<div class="empty-state">Firebase not connected or no tours yet.</div>';
+      return;
+    }
+    if (container) container.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--gray-400);font-size:0.85rem">Loading portal data...</div>';
     try {
       let totalMessages = 0, totalPassengers = 0;
+      const tourData = [];
       for (const t of tours) {
         const tid = String(t.id);
-        // Count actual subcollection documents instead of relying on counter fields
         const [paxSnap, msgSnap] = await Promise.all([
           DB.firestore.collection('tours').doc(tid).collection('passengers').get(),
-          DB.firestore.collection('tours').doc(tid).collection('messages')
-            .where('sender', '!=', 'admin').get()
+          DB.firestore.collection('tours').doc(tid).collection('messages').get()
         ]);
         const paxCount = paxSnap.size;
-        const msgCount = msgSnap.size;
+        const clientMsgCount = msgSnap.docs.filter(d => d.data().sender !== 'admin').length;
+        const totalMsgCount = msgSnap.size;
         totalPassengers += paxCount;
-        totalMessages += msgCount;
+        totalMessages += clientMsgCount;
+        const expected = (t.numStudents||0) + (t.numSiblings||0) + (t.numAdults||0) + (t.numFOC||0);
+        tourData.push({ tour: t, paxCount, clientMsgCount, totalMsgCount, expected });
         // Update badges in tour view if visible
         const msgBadge = document.getElementById('msg-badge-' + t.id);
-        if (msgBadge && msgCount > 0) {
-          msgBadge.textContent = msgCount;
+        if (msgBadge && clientMsgCount > 0) {
+          msgBadge.textContent = clientMsgCount;
           msgBadge.style.display = 'inline-block';
         }
         const paxBadge = document.getElementById('pax-badge-' + t.id);
@@ -162,23 +169,49 @@ const Dashboard = {
           paxBadge.style.display = 'inline-block';
         }
       }
-      // Add summary to dashboard if there are notifications
-      if (totalMessages > 0 || totalPassengers > 0) {
-        let alertHTML = '';
-        if (totalMessages > 0) alertHTML += `<span style="background:var(--red);color:white;padding:0.2rem 0.6rem;border-radius:10px;font-size:0.8rem;font-weight:600;margin-right:0.5rem">${totalMessages} message${totalMessages!==1?'s':''}</span>`;
-        if (totalPassengers > 0) alertHTML += `<span style="background:var(--blue);color:white;padding:0.2rem 0.6rem;border-radius:10px;font-size:0.8rem;font-weight:600">${totalPassengers} registration${totalPassengers!==1?'s':''}</span>`;
-        // Insert portal alerts before stats
-        const statsEl = document.getElementById('dashboard-stats');
-        if (statsEl && !document.getElementById('portal-alerts-bar')) {
-          const bar = document.createElement('div');
-          bar.id = 'portal-alerts-bar';
-          bar.style.cssText = 'background:white;border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;display:flex;align-items:center;gap:0.5rem;box-shadow:0 2px 8px rgba(0,0,0,0.05)';
-          bar.innerHTML = `<strong style="font-size:0.82rem;color:var(--gray-500);margin-right:0.3rem">Portal:</strong> ${alertHTML}`;
-          statsEl.parentNode.insertBefore(bar, statsEl);
+
+      // Render portal activity table
+      if (container) {
+        const hasActivity = tourData.some(d => d.paxCount > 0 || d.totalMsgCount > 0 || d.tour.accessCode);
+        if (!hasActivity) {
+          container.innerHTML = '<div class="empty-state">No portal activity yet. Generate access codes from tour details to enable the client portal.</div>';
+        } else {
+          container.innerHTML = `
+            <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+              <div style="background:linear-gradient(135deg,var(--blue),#2471a3);color:white;padding:0.8rem 1.2rem;border-radius:var(--radius-lg);flex:1;min-width:140px">
+                <div style="font-size:0.75rem;opacity:0.8;text-transform:uppercase;letter-spacing:0.05em">Total Registrations</div>
+                <div style="font-size:1.5rem;font-weight:700;margin-top:0.2rem">${totalPassengers}</div>
+              </div>
+              <div style="background:linear-gradient(135deg,var(--amber),var(--amber-dark));color:white;padding:0.8rem 1.2rem;border-radius:var(--radius-lg);flex:1;min-width:140px">
+                <div style="font-size:0.75rem;opacity:0.8;text-transform:uppercase;letter-spacing:0.05em">Client Messages</div>
+                <div style="font-size:1.5rem;font-weight:700;margin-top:0.2rem">${totalMessages}</div>
+              </div>
+              <div style="background:linear-gradient(135deg,var(--green),#1e8449);color:white;padding:0.8rem 1.2rem;border-radius:var(--radius-lg);flex:1;min-width:140px">
+                <div style="font-size:0.75rem;opacity:0.8;text-transform:uppercase;letter-spacing:0.05em">Active Portals</div>
+                <div style="font-size:1.5rem;font-weight:700;margin-top:0.2rem">${tourData.filter(d => d.tour.accessCode).length}</div>
+              </div>
+            </div>
+            <table class="data-table" style="font-size:0.85rem">
+              <thead><tr>
+                <th>Tour</th><th>Access Code</th><th>Registrations</th><th>Progress</th><th>Messages</th><th></th>
+              </tr></thead>
+              <tbody>${tourData.filter(d => d.tour.accessCode || d.paxCount > 0).map(d => {
+                const pct = d.expected > 0 ? Math.min(100, Math.round(d.paxCount / d.expected * 100)) : 0;
+                const barColor = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
+                return `<tr class="row-clickable" ondblclick="App.switchTab('tours');setTimeout(()=>Tours.viewTour(${d.tour.id}),100)">
+                  <td><strong>${d.tour.tourName || '—'}</strong></td>
+                  <td>${d.tour.accessCode ? '<code style="font-family:monospace;font-size:0.82rem;font-weight:600;background:var(--gray-50);padding:0.15rem 0.4rem;border-radius:4px">' + d.tour.accessCode + '</code>' : '<span style="color:var(--gray-300)">—</span>'}</td>
+                  <td><strong>${d.paxCount}</strong>${d.expected ? ' / ' + d.expected : ''}</td>
+                  <td style="min-width:100px">${d.expected ? '<div style="background:var(--gray-100);border-radius:10px;height:8px;overflow:hidden"><div style="background:' + barColor + ';height:100%;width:' + pct + '%;border-radius:10px;transition:width 0.5s"></div></div><span style="font-size:0.72rem;color:var(--gray-400)">' + pct + '%</span>' : '<span style="color:var(--gray-300)">—</span>'}</td>
+                  <td>${d.totalMsgCount > 0 ? '<span style="font-weight:600">' + d.totalMsgCount + '</span>' + (d.clientMsgCount > 0 ? ' <span style="background:var(--red);color:white;font-size:0.68rem;font-weight:700;padding:0.1rem 0.35rem;border-radius:8px">' + d.clientMsgCount + ' from client</span>' : '') : '<span style="color:var(--gray-300)">0</span>'}</td>
+                  <td><button class="btn btn-sm btn-outline" onclick="App.switchTab('tours');setTimeout(()=>Tours.viewTour(${d.tour.id}),100)">View</button></td>
+                </tr>`;
+              }).join('')}</tbody>
+            </table>`;
         }
       }
     } catch (e) {
-      // Non-critical, silently fail
+      if (container) container.innerHTML = '<div class="empty-state">Could not load portal data.</div>';
     }
   },
 
