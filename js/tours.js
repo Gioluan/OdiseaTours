@@ -182,6 +182,8 @@ const Tours = {
         <div id="tour-profit-result"></div>
       </div>
 
+      ${Tours._renderItineraryEditor(t)}
+
       ${Tours._renderProviderExpenses(t)}
 
       ${Tours._renderIndividualClients(t)}
@@ -196,6 +198,7 @@ const Tours = {
         }).join('')}</tbody>
       </table>` : '<p style="color:var(--gray-400);margin-bottom:1rem">No invoices yet. Create one from the Invoicing tab.</p>'}
       <div class="modal-actions">
+        <button class="btn btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="PDFItinerary.generate(${t.id})">Generate Itinerary PDF</button>
         <button class="btn btn-danger" onclick="if(confirm('Delete this tour?')){Tours.deleteTour(${t.id})}">Delete</button>
         <button class="btn btn-outline" onclick="closeModal('tours-modal')">Close</button>
       </div>`;
@@ -773,6 +776,200 @@ const Tours = {
     });
 
     alert(`Created ${created} invoice(s). ${skipped ? skipped + ' skipped (already invoiced or missing data).' : ''}`);
+    this.viewTour(tourId);
+  },
+
+  /* ============================================================
+     ITINERARY EDITOR — Day-by-day schedule
+     ============================================================ */
+  _renderItineraryEditor(t) {
+    const days = t.itinerary || [];
+    const inclusions = t.inclusions || [];
+
+    return `
+      <h3 style="margin-top:1.5rem">Itinerary <span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">— day-by-day schedule for PDF</span></h3>
+      ${days.length ? days.map((day, di) => `
+        <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:0.8rem;border-left:3px solid var(--amber)">
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+            <span style="background:var(--amber);color:#111;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.82rem;flex-shrink:0">${day.day}</span>
+            <input value="${(day.title||'').replace(/"/g,'&quot;')}" placeholder="Day title (e.g. Arrival in Madrid)" style="flex:1;padding:0.35rem 0.5rem;font-weight:600;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Tours.saveItineraryDay(${t.id},${di},'title',this.value)">
+            <input type="date" value="${day.date||''}" style="padding:0.35rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Tours.saveItineraryDay(${t.id},${di},'date',this.value)">
+            <button class="btn btn-sm btn-danger" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.removeItineraryDay(${t.id},${di})">X</button>
+          </div>
+          <div style="padding-left:1.8rem">
+            ${(day.items||[]).map((item, ii) => `
+              <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.25rem">
+                <input value="${(item.time||'').replace(/"/g,'&quot;')}" placeholder="0900" style="width:55px;padding:0.25rem;font-size:0.82rem;text-align:center;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Tours.saveItineraryItem(${t.id},${di},${ii},'time',this.value)">
+                <input value="${(item.description||'').replace(/"/g,'&quot;')}" placeholder="Activity description" style="flex:1;padding:0.25rem 0.5rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);${item.highlight?'font-weight:600;background:rgba(255,180,0,0.08)':''}" onchange="Tours.saveItineraryItem(${t.id},${di},${ii},'description',this.value)">
+                <label style="font-size:0.75rem;white-space:nowrap;cursor:pointer;color:${item.highlight?'var(--amber)':'var(--gray-400)'}"><input type="checkbox" ${item.highlight?'checked':''} onchange="Tours.saveItineraryItem(${t.id},${di},${ii},'highlight',this.checked)"> Bold</label>
+                <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.85rem;padding:0.1rem 0.3rem" onclick="Tours.removeItineraryItem(${t.id},${di},${ii})">&#10005;</button>
+              </div>
+            `).join('')}
+            <button class="btn btn-sm btn-outline" style="margin-top:0.3rem;font-size:0.75rem;padding:0.2rem 0.5rem" onclick="Tours.addItineraryItem(${t.id},${di})">+ Add Time Slot</button>
+          </div>
+        </div>
+      `).join('') : '<p style="color:var(--gray-400);margin-bottom:0.5rem;font-size:0.85rem">No itinerary days added yet. Build the day-by-day schedule to generate a PDF itinerary.</p>'}
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
+        <button class="btn btn-sm btn-outline" onclick="Tours.addItineraryDay(${t.id})">+ Add Day</button>
+        <button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.autoGenerateItinerary(${t.id})">Auto-Generate from Tour Dates</button>
+        ${days.length ? `<button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="PDFItinerary.generate(${t.id})">Preview Itinerary PDF</button>` : ''}
+      </div>
+
+      <div style="margin-top:1rem;margin-bottom:1rem">
+        <h4 style="font-size:0.88rem;margin-bottom:0.4rem">What's Included <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— shown on final page of itinerary</span></h4>
+        <div id="itinerary-inclusions">
+          ${inclusions.map((item, i) => `
+            <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.2rem">
+              <span style="color:var(--amber);font-weight:700">&#10003;</span>
+              <input value="${item.replace(/"/g,'&quot;')}" style="flex:1;padding:0.25rem 0.5rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Tours.saveInclusion(${t.id},${i},this.value)">
+              <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.85rem;padding:0.1rem 0.3rem" onclick="Tours.removeInclusion(${t.id},${i})">&#10005;</button>
+            </div>
+          `).join('')}
+        </div>
+        <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-top:0.3rem" onclick="Tours.addInclusion(${t.id})">+ Add Item</button>
+        ${!inclusions.length ? `<button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-top:0.3rem;margin-left:0.3rem;border-color:var(--amber);color:var(--amber)" onclick="Tours.addDefaultInclusions(${t.id})">Add Default Items</button>` : ''}
+      </div>`;
+  },
+
+  addItineraryDay(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    if (!t.itinerary) t.itinerary = [];
+    const nextDay = t.itinerary.length + 1;
+    // Calculate date from startDate
+    let date = '';
+    if (t.startDate) {
+      const d = new Date(t.startDate);
+      d.setDate(d.getDate() + nextDay - 1);
+      date = d.toISOString().split('T')[0];
+    }
+    t.itinerary.push({ day: nextDay, date, title: '', items: [{ time: '0900', description: '', highlight: false }] });
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  removeItineraryDay(tourId, dayIdx) {
+    if (!confirm('Remove this day from the itinerary?')) return;
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.itinerary) return;
+    t.itinerary.splice(dayIdx, 1);
+    // Renumber days
+    t.itinerary.forEach((d, i) => d.day = i + 1);
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  saveItineraryDay(tourId, dayIdx, field, value) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.itinerary || !t.itinerary[dayIdx]) return;
+    t.itinerary[dayIdx][field] = value;
+    DB.saveTour(t);
+  },
+
+  addItineraryItem(tourId, dayIdx) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.itinerary || !t.itinerary[dayIdx]) return;
+    if (!t.itinerary[dayIdx].items) t.itinerary[dayIdx].items = [];
+    t.itinerary[dayIdx].items.push({ time: '', description: '', highlight: false });
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  removeItineraryItem(tourId, dayIdx, itemIdx) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.itinerary || !t.itinerary[dayIdx]) return;
+    t.itinerary[dayIdx].items.splice(itemIdx, 1);
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  saveItineraryItem(tourId, dayIdx, itemIdx, field, value) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.itinerary || !t.itinerary[dayIdx] || !t.itinerary[dayIdx].items[itemIdx]) return;
+    t.itinerary[dayIdx].items[itemIdx][field] = value;
+    DB.saveTour(t);
+  },
+
+  autoGenerateItinerary(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.startDate) { alert('Tour must have a start date.'); return; }
+    if (t.itinerary && t.itinerary.length) {
+      if (!confirm('This will replace the existing itinerary. Continue?')) return;
+    }
+    const nights = t.nights || 0;
+    const days = nights + 1;
+    t.itinerary = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(t.startDate);
+      d.setDate(d.getDate() + i);
+      const date = d.toISOString().split('T')[0];
+      let title = '';
+      let items = [];
+      if (i === 0) {
+        title = 'Arrival';
+        items = [
+          { time: '', description: 'Arrival at airport', highlight: true },
+          { time: '', description: 'Transfer to hotel', highlight: false },
+          { time: '', description: 'Check-in and welcome', highlight: false }
+        ];
+      } else if (i === days - 1) {
+        title = 'Departure';
+        items = [
+          { time: '', description: 'Check-out', highlight: false },
+          { time: '', description: 'Transfer to airport', highlight: false },
+          { time: '', description: 'Departure flight', highlight: true }
+        ];
+      } else {
+        title = 'Day ' + (i + 1);
+        items = [
+          { time: '0800', description: 'Breakfast at hotel', highlight: false },
+          { time: '', description: '', highlight: false }
+        ];
+      }
+      t.itinerary.push({ day: i + 1, date, title, items });
+    }
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  addInclusion(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    if (!t.inclusions) t.inclusions = [];
+    t.inclusions.push('');
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  saveInclusion(tourId, idx, value) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.inclusions) return;
+    t.inclusions[idx] = value;
+    DB.saveTour(t);
+  },
+
+  removeInclusion(tourId, idx) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.inclusions) return;
+    t.inclusions.splice(idx, 1);
+    DB.saveTour(t);
+    this.viewTour(tourId);
+  },
+
+  addDefaultInclusions(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    t.inclusions = [
+      'Return flights',
+      'Airport transfers',
+      'Coach transport throughout',
+      'Accommodation as detailed',
+      'Meals as per hotel plan',
+      'All activities and entrance fees',
+      'Professional tour guide',
+      'Full travel insurance'
+    ];
+    DB.saveTour(t);
     this.viewTour(tourId);
   }
 };
