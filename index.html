@@ -191,6 +191,7 @@
     <div class="stats-grid" id="invoicing-stats"></div>
     <div class="toolbar">
       <button class="btn btn-primary" onclick="Invoicing.showCreateModal()">+ New Invoice</button>
+      <input id="inv-filter-search" type="text" placeholder="Search client or tour..." oninput="Invoicing.render()" style="padding:0.45rem 0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-size:0.85rem;min-width:200px">
       <select id="inv-filter-status" onchange="Invoicing.render()">
         <option value="">All</option>
         <option value="Unpaid">Unpaid</option>

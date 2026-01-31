@@ -15,6 +15,12 @@ const Invoicing = {
     });
 
     if (filter) invoices = invoices.filter(i => i._status === filter);
+    const search = (document.getElementById('inv-filter-search')?.value || '').toLowerCase().trim();
+    if (search) invoices = invoices.filter(i =>
+      (i.clientName || '').toLowerCase().includes(search) ||
+      (i.tourName || '').toLowerCase().includes(search) ||
+      (i.number || '').toLowerCase().includes(search)
+    );
     invoices.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     // Stats
@@ -177,9 +183,24 @@ const Invoicing = {
       </div>
       <h3>Payment History</h3>
       ${(i.payments && i.payments.length) ? `
-        <table class="data-table" style="margin-bottom:1rem">
-          <thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Notes</th></tr></thead>
-          <tbody>${i.payments.map(p => `<tr><td>${fmtDate(p.date)}</td><td>${fmt(p.amount, i.currency)}</td><td>${p.method}</td><td>${p.notes || ''}</td></tr>`).join('')}</tbody>
+        <table class="data-table" style="margin-bottom:1rem;font-size:0.82rem">
+          <thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Notes</th><th>Actions</th></tr></thead>
+          <tbody>${i.payments.map((p, pi) => `<tr id="pay-row-${pi}">
+            <td><input type="date" value="${p.date||''}" id="pay-edit-date-${pi}" style="padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)"></td>
+            <td><input type="number" step="0.01" value="${p.amount||0}" id="pay-edit-amount-${pi}" style="width:80px;padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)"></td>
+            <td><select id="pay-edit-method-${pi}" style="padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)">
+              <option ${p.method==='Bank Transfer'?'selected':''}>Bank Transfer</option>
+              <option ${p.method==='Cash'?'selected':''}>Cash</option>
+              <option ${p.method==='Card'?'selected':''}>Card</option>
+              <option ${p.method==='Wise'?'selected':''}>Wise</option>
+              <option ${p.method==='Other'?'selected':''}>Other</option>
+            </select></td>
+            <td><input value="${(p.notes||'').replace(/"/g,'&quot;')}" id="pay-edit-notes-${pi}" style="width:100%;padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)"></td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-sm btn-outline" style="font-size:0.72rem;padding:0.15rem 0.4rem" onclick="Invoicing.savePaymentEdit(${i.id},${pi})">Save</button>
+              <button class="btn btn-sm btn-danger" style="font-size:0.72rem;padding:0.15rem 0.4rem" onclick="Invoicing.deletePayment(${i.id},${pi})">X</button>
+            </td>
+          </tr>`).join('')}</tbody>
         </table>` : '<p style="color:var(--gray-400);margin-bottom:1rem">No payments recorded yet.</p>'}
       ${status !== 'Paid' ? `
         <h3>Record Payment</h3>
@@ -229,6 +250,30 @@ const Invoicing = {
     if (cardEl) i.paymentLinkCard = cardEl.value.trim();
     if (wiseEl) i.paymentLinkWise = wiseEl.value.trim();
     DB.saveInvoice(i);
+  },
+
+  savePaymentEdit(invoiceId, payIdx) {
+    const i = DB.getInvoices().find(x => x.id === invoiceId);
+    if (!i || !i.payments || !i.payments[payIdx]) return;
+    i.payments[payIdx].date = document.getElementById('pay-edit-date-' + payIdx).value;
+    i.payments[payIdx].amount = Number(document.getElementById('pay-edit-amount-' + payIdx).value) || 0;
+    i.payments[payIdx].method = document.getElementById('pay-edit-method-' + payIdx).value;
+    i.payments[payIdx].notes = document.getElementById('pay-edit-notes-' + payIdx).value;
+    DB.saveInvoice(i);
+    this.viewInvoice(invoiceId);
+    this.render();
+    Dashboard.render();
+  },
+
+  deletePayment(invoiceId, payIdx) {
+    if (!confirm('Delete this payment record?')) return;
+    const i = DB.getInvoices().find(x => x.id === invoiceId);
+    if (!i || !i.payments) return;
+    i.payments.splice(payIdx, 1);
+    DB.saveInvoice(i);
+    this.viewInvoice(invoiceId);
+    this.render();
+    Dashboard.render();
   },
 
   deleteInvoice(id) {
