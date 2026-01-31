@@ -26,8 +26,8 @@ const Quote = {
   loadQuote(q) {
     this.editingQuoteId = q.id;
     this.data = {
-      tourName: q.tourName || '',
-      groupName: q.groupName || '',
+      tourName: q.tourName || q.groupName || '',
+      groupName: q.groupName || q.tourName || '',
       destinations: q.destinations && q.destinations.length ? JSON.parse(JSON.stringify(q.destinations)) : [{city: 'Madrid', custom: ''}],
       nights: q.nights || 5,
       startDate: q.startDate || '',
@@ -454,8 +454,12 @@ const Quote = {
     const d = this.data;
     switch (this.currentStep) {
       case 0:
-        d.tourName = this.val('q-tourName');
         d.groupName = this.val('q-groupName');
+        d.tourName = d.groupName; // Group Name is the primary identifier
+        d.clientId = Number(this.val('q-clientId')) || null;
+        d.clientName = this.val('q-clientName');
+        d.clientEmail = this.val('q-clientEmail');
+        d.clientPhone = this.val('q-clientPhone');
         d.destinations = this.collectDestinations();
         d.nights = Number(this.val('q-nights')) || 5;
         d.startDate = this.val('q-startDate');
@@ -491,10 +495,6 @@ const Quote = {
         d.priceStudent = Number(this.val('q-priceStudent')) || 0;
         d.priceSibling = Number(this.val('q-priceSibling')) || 0;
         d.priceAdult = Number(this.val('q-priceAdult')) || 0;
-        d.clientId = Number(this.val('q-clientId')) || null;
-        d.clientName = this.val('q-clientName');
-        d.clientEmail = this.val('q-clientEmail');
-        d.clientPhone = this.val('q-clientPhone');
         d.followUpDate = this.val('q-followUp');
         break;
     }
@@ -506,13 +506,39 @@ const Quote = {
     const w = document.getElementById('quote-wizard');
     switch (this.currentStep) {
       case 0:
+        const clientOpts = DB.getClients();
         w.innerHTML = `
           <h3>Tour Setup</h3>
           <div class="form-row form-row-3">
-            <div class="form-group"><label>Tour Name</label><input id="q-tourName" value="${d.tourName}" placeholder="e.g. Madrid Football Tour 2025"></div>
-            <div class="form-group"><label>Group Name</label><input id="q-groupName" value="${d.groupName}" placeholder="e.g. St. Patrick's FC U16"></div>
+            <div class="form-group"><label>Group Name</label><input id="q-groupName" value="${d.groupName}" placeholder="e.g. Madrid Football Tour 2025"></div>
+            <div class="form-group">
+              <label>Client</label>
+              <select id="q-clientSelect" onchange="Quote.onClientSelect()">
+                <option value="">— Select client —</option>
+                ${clientOpts.map(c => `<option value="${c.id}" data-name="${(c.name||'').replace(/"/g,'&quot;')}" data-email="${c.email||''}" data-phone="${c.phone||''}" ${d.clientId && d.clientId === c.id ? 'selected' : ''}>${c.name}${c.contactPerson ? ' — ' + c.contactPerson : ''}</option>`).join('')}
+                <option value="__new__">+ Add New Client...</option>
+              </select>
+              <input type="hidden" id="q-clientId" value="${d.clientId || ''}">
+              <input type="hidden" id="q-clientName" value="${d.clientName || ''}">
+              <input type="hidden" id="q-clientEmail" value="${d.clientEmail || ''}">
+              <input type="hidden" id="q-clientPhone" value="${d.clientPhone || ''}">
+            </div>
             <div class="form-group"><label>Currency</label><select id="q-currency"><option value="EUR" ${d.currency==='EUR'?'selected':''}>EUR (€)</option><option value="USD" ${d.currency==='USD'?'selected':''}>USD ($)</option></select></div>
           </div>
+          <div id="q-new-client-panel" style="display:none;background:var(--gray-50);border:1.5px dashed var(--amber);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:0.8rem">
+            <strong style="font-size:0.88rem;color:var(--amber)">Add New Client</strong>
+            <div class="form-row form-row-4" style="margin-top:0.5rem">
+              <div class="form-group"><label>Client Name</label><input id="q-new-cli-name" placeholder="e.g. St Patrick's School"></div>
+              <div class="form-group"><label>Email</label><input id="q-new-cli-email" placeholder="client@email.com"></div>
+              <div class="form-group"><label>Phone</label><input id="q-new-cli-phone" placeholder="+34..."></div>
+              <div class="form-group"><label>Type</label><select id="q-new-cli-type"><option>School</option><option>Sports Club</option><option>Corporate</option><option>Private</option><option>Other</option></select></div>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.3rem">
+              <button class="btn btn-sm btn-primary" onclick="Quote.saveNewClient()">Save & Select</button>
+              <button class="btn btn-sm btn-outline" onclick="document.getElementById('q-new-client-panel').style.display='none';document.getElementById('q-clientSelect').value=''">Cancel</button>
+            </div>
+          </div>
+          ${d.clientName && !d.clientId ? `<div style="font-size:0.85rem;color:var(--gray-500);margin-bottom:0.5rem">Client: <strong>${d.clientName}</strong> ${d.clientEmail ? '(' + d.clientEmail + ')' : ''}</div>` : ''}
           <div class="form-group">
             <label>Destinations (up to 6 cities)</label>
             <div id="dest-list">${(d.destinations || [{city:'Madrid',custom:''}]).map((dest, i) => this.destRowHTML(dest, i)).join('')}</div>
@@ -732,8 +758,8 @@ const Quote = {
       <h3>Summary & Pricing</h3>
       <div class="grid-2" style="margin-bottom:1rem">
         <div>
-          <p><strong>Tour:</strong> ${d.tourName || 'Untitled'}</p>
-          <p><strong>Group:</strong> ${d.groupName || '—'}</p>
+          <p><strong>Group:</strong> ${d.groupName || 'Untitled'}</p>
+          <p><strong>Client:</strong> ${d.clientName || '—'}${d.clientEmail ? ' (' + d.clientEmail + ')' : ''}</p>
           <p><strong>Destination:</strong> ${dest}</p>
           <p><strong>Dates:</strong> ${fmtDate(d.startDate)} — ${fmtDate(d.endDate)} (${d.nights} nights)</p>
           ${isMulti ? '<p><strong>Hotels:</strong></p>' : ''}
@@ -785,21 +811,7 @@ const Quote = {
         <button class="btn btn-primary" style="font-size:1rem;padding:0.7rem 2rem" onclick="Quote.calculateProfit()">Calculate Profit</button>
       </div>
       <div id="profit-result"></div>
-      <h3 style="margin-top:1.5rem">Client Information</h3>
-      <div class="form-group" style="margin-bottom:0.8rem">
-        <label>Select Existing Client</label>
-        <select id="q-clientSelect" onchange="Quote.fillClientFromDB()">
-          <option value="">— Type manually or select —</option>
-          ${DB.getClients().map(c => `<option value="${c.id}" ${d.clientId && d.clientId === c.id ? 'selected' : ''}>${c.name}${c.contactPerson ? ' — ' + c.contactPerson : ''}</option>`).join('')}
-        </select>
-      </div>
-      <input type="hidden" id="q-clientId" value="${d.clientId || ''}">
-      <div class="form-row form-row-2">
-        <div class="form-group"><label>Client Name</label><input id="q-clientName" value="${d.clientName}" placeholder="School or club name"></div>
-        <div class="form-group"><label>Email</label><input id="q-clientEmail" type="email" value="${d.clientEmail}" placeholder="client@email.com"></div>
-      </div>
-      <div class="form-row form-row-2">
-        <div class="form-group"><label>Phone</label><input id="q-clientPhone" value="${d.clientPhone}" placeholder="+34..."></div>
+      <div class="form-row form-row-2" style="margin-top:1.5rem">
         <div class="form-group"><label>Follow-up Date</label><input id="q-followUp" type="date" value="${d.followUpDate}"></div>
       </div>`;
   },
@@ -871,11 +883,20 @@ const Quote = {
       </div>`;
   },
 
-  fillClientFromDB() {
+  onClientSelect() {
     const sel = document.getElementById('q-clientSelect');
-    const id = Number(sel.value);
+    const val = sel.value;
+    if (val === '__new__') {
+      document.getElementById('q-new-client-panel').style.display = 'block';
+      sel.value = '';
+      return;
+    }
+    const id = Number(val);
     if (!id) {
       document.getElementById('q-clientId').value = '';
+      document.getElementById('q-clientName').value = '';
+      document.getElementById('q-clientEmail').value = '';
+      document.getElementById('q-clientPhone').value = '';
       return;
     }
     const c = DB.getClients().find(x => x.id === id);
@@ -884,6 +905,36 @@ const Quote = {
     document.getElementById('q-clientName').value = c.name || '';
     document.getElementById('q-clientEmail').value = c.email || '';
     document.getElementById('q-clientPhone').value = c.phone || '';
+  },
+
+  saveNewClient() {
+    const name = document.getElementById('q-new-cli-name').value.trim();
+    const email = document.getElementById('q-new-cli-email').value.trim();
+    const phone = document.getElementById('q-new-cli-phone').value.trim();
+    const type = document.getElementById('q-new-cli-type').value;
+    if (!name) { alert('Please enter a client name.'); return; }
+    const newClient = DB.saveClient({
+      name, contactPerson: '', email, phone, type,
+      city: '', country: '', notes: 'Added from quote wizard'
+    });
+    // Set on hidden fields
+    document.getElementById('q-clientId').value = newClient.id;
+    document.getElementById('q-clientName').value = name;
+    document.getElementById('q-clientEmail').value = email;
+    document.getElementById('q-clientPhone').value = phone;
+    // Refresh the dropdown and select the new client
+    const sel = document.getElementById('q-clientSelect');
+    const opt = document.createElement('option');
+    opt.value = newClient.id;
+    opt.textContent = name;
+    opt.selected = true;
+    sel.insertBefore(opt, sel.querySelector('option[value="__new__"]'));
+    // Hide panel
+    document.getElementById('q-new-client-panel').style.display = 'none';
+  },
+
+  fillClientFromDB() {
+    this.onClientSelect();
   },
 
   resetQuote() {
