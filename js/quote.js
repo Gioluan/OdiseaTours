@@ -548,7 +548,9 @@ const Quote = {
             <div class="form-group"><label>Number of Nights</label><input id="q-nights" type="number" min="1" max="30" value="${d.nights}"></div>
             <div class="form-group"><label>Start Date</label><input id="q-startDate" type="date" value="${d.startDate}"></div>
             <div class="form-group"><label>End Date</label><input id="q-endDate" type="date" value="${d.endDate}"></div>
-          </div>`;
+          </div>
+          <div id="quote-suggestions" style="margin-top:1rem"></div>`;
+        setTimeout(() => this.renderSmartSuggestions(), 50);
         break;
 
       case 1:
@@ -593,6 +595,14 @@ const Quote = {
           <div class="form-row form-row-2">
             <div class="form-group"><label>Coach / Bus Hire — Total (${d.currency})</label><input id="q-coach" type="number" step="0.01" value="${d.coachHire}"></div>
             <div class="form-group"><label>Internal Transport — Total (${d.currency})</label><input id="q-internal" type="number" step="0.01" value="${d.internalTransport}"></div>
+          </div>
+          <div style="margin-top:1rem;padding:1rem;background:var(--gray-50);border-radius:var(--radius-lg)">
+            <h4 style="font-size:0.88rem;margin-bottom:0.5rem">Check Flight Prices</h4>
+            <p style="font-size:0.82rem;color:var(--gray-400);margin-bottom:0.5rem">Open flight comparison sites with pre-filled search parameters.</p>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+              <button class="btn btn-sm btn-outline" onclick="Quote.checkFlightPrices('skyscanner')">Skyscanner</button>
+              <button class="btn btn-sm btn-outline" onclick="Quote.checkFlightPrices('google')">Google Flights</button>
+            </div>
           </div>`;
         break;
 
@@ -973,6 +983,24 @@ const Quote = {
     };
   },
 
+  checkFlightPrices(engine) {
+    const d = this.data;
+    const dest = d.destinations && d.destinations[0] ? this.getDestLabel(d.destinations[0]) : '';
+    const tp = d.numStudents + d.numSiblings + d.numAdults + (d.numFOC || 0);
+    const startDate = d.startDate || '';
+    const endDate = d.endDate || '';
+
+    if (engine === 'skyscanner') {
+      // Skyscanner URL format
+      const url = 'https://www.skyscanner.es/transport/flights/?adults=' + tp + (startDate ? '&outboundDate=' + startDate : '') + (endDate ? '&inboundDate=' + endDate : '');
+      window.open(url, '_blank');
+    } else {
+      // Google Flights
+      const url = 'https://www.google.com/travel/flights?q=flights+to+' + encodeURIComponent(dest) + (startDate ? '+' + startDate : '') + '&passengers=' + tp;
+      window.open(url, '_blank');
+    }
+  },
+
   saveQuote() {
     this.collectStepData();
     const q = this.buildQuoteObject();
@@ -1040,5 +1068,65 @@ const Quote = {
 
     this.init();
     App.switchTab('crm');
+  },
+
+  renderSmartSuggestions() {
+    const container = document.getElementById('quote-suggestions');
+    if (!container) return;
+
+    const d = this.data;
+    const dests = d.destinations || [];
+    const destLabel = dests.length ? this.getDestLabel(dests[0]) : '';
+    if (!destLabel) { container.innerHTML = ''; return; }
+
+    const quotes = DB.getQuotes();
+    const tours = DB.getTours();
+    const allPast = [...quotes, ...tours].filter(q => {
+      const dest = q.destination || '';
+      return dest.toLowerCase().includes(destLabel.toLowerCase());
+    });
+
+    if (!allPast.length) { container.innerHTML = ''; return; }
+
+    // Calculate averages
+    const prices = allPast.filter(q => q.priceStudent > 0).map(q => q.priceStudent);
+    const avgPrice = prices.length ? Math.round(prices.reduce((s,p) => s + p, 0) / prices.length) : 0;
+    const hotels = [...new Set(allPast.filter(q => q.hotels && q.hotels.length).flatMap(q => q.hotels.map(h => h.hotelName)).filter(Boolean))];
+    const activities = [...new Set(allPast.filter(q => q.activities && q.activities.length).flatMap(q => q.activities.map(a => a.name)).filter(Boolean))];
+
+    let html = '<div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;border-left:4px solid var(--amber)">';
+    html += '<h4 style="font-size:0.88rem;color:var(--amber);margin-bottom:0.5rem">Smart Suggestions for ' + destLabel + '</h4>';
+    html += '<div style="font-size:0.85rem;color:var(--gray-500)">';
+    html += '<p>Based on ' + allPast.length + ' previous quote' + (allPast.length !== 1 ? 's' : '') + ' to ' + destLabel + ':</p>';
+    if (avgPrice) html += '<p style="margin-top:0.3rem">Average student price: <strong>' + fmt(avgPrice, d.currency || 'EUR') + '</strong></p>';
+    if (hotels.length) html += '<p style="margin-top:0.3rem">Hotels used: ' + hotels.slice(0,5).join(', ') + '</p>';
+    if (activities.length) html += '<p style="margin-top:0.3rem">Popular activities: ' + activities.slice(0,5).join(', ') + '</p>';
+    html += '</div>';
+
+    // Template dropdown
+    if (allPast.length) {
+      html += '<div style="margin-top:0.5rem"><label style="font-size:0.82rem;font-weight:600">Use Previous Quote as Template:</label>';
+      html += '<select id="tmpl-quote-sel" style="margin-left:0.5rem;padding:0.3rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)">';
+      html += '<option value="">\u2014 Select \u2014</option>';
+      allPast.slice(0,10).forEach(q => {
+        html += '<option value="' + q.id + '">' + (q.tourName || 'Quote') + ' \u2014 ' + (q.clientName || '') + '</option>';
+      });
+      html += '</select>';
+      html += ' <button class="btn btn-sm btn-outline" style="font-size:0.78rem" onclick="Quote.loadFromTemplate()">Apply</button>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+    container.innerHTML = html;
+  },
+
+  loadFromTemplate() {
+    const sel = document.getElementById('tmpl-quote-sel');
+    if (!sel || !sel.value) return;
+    const id = Number(sel.value);
+    const source = DB.getQuotes().find(q => q.id === id) || DB.getTours().find(t => t.id === id);
+    if (!source) return;
+    if (!confirm('Load data from "' + (source.tourName || 'this quote') + '"? This will replace current quote data.')) return;
+    this.loadQuote(source);
   }
 };

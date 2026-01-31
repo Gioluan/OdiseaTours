@@ -166,6 +166,16 @@ const Tours = {
           <p><strong>Group Name:</strong> ${t.groupName || '—'}</p>
           <p><strong>Email:</strong> ${t.clientEmail || '—'}</p>
           <p><strong>Phone:</strong> ${t.clientPhone || '—'}</p>
+          ${t.clientPhone ? `
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem">
+            <div style="display:flex;gap:0.3rem;align-items:center">
+              <select id="wa-tmpl-${t.id}" style="padding:0.3rem;font-size:0.78rem;border:1.5px solid #25D366;border-radius:var(--radius);color:#25D366">
+                ${WhatsApp.templates.map((tmpl, i) => '<option value="' + i + '">' + tmpl.name + '</option>').join('')}
+              </select>
+              <button class="btn btn-sm" style="background:#25D366;color:white;border:none;font-size:0.75rem;padding:0.3rem 0.6rem" onclick="Tours.sendWhatsApp(${t.id})">WhatsApp</button>
+            </div>
+            <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.3rem 0.6rem" onclick="Tours.sendSMS(${t.id})">SMS</button>
+          </div>` : ''}
           <p><strong>Group:</strong> ${groupSize} pax (${t.numStudents} students, ${t.numSiblings} siblings, ${t.numAdults} adults${t.numFOC ? ', ' + t.numFOC + ' FOC' : ''})</p>
         </div>
       </div>
@@ -243,6 +253,8 @@ const Tours = {
 
       ${Tours._renderItineraryEditor(t)}
 
+      ${Tours._renderItineraryMap(t)}
+
       ${Tours._renderChecklist(t)}
 
       ${Tours._renderActivityLog(t)}
@@ -261,7 +273,13 @@ const Tours = {
         }).join('')}</tbody>
       </table>` : '<p style="color:var(--gray-400);margin-bottom:1rem">No invoices yet. Create one from the Invoicing tab.</p>'}
 
+      <div style="margin-bottom:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="Tours.exportPassengerList(${t.id})">Export Passengers</button>
+        <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="Tours.exportRoomingList(${t.id})">Export Rooming</button>
+        <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="Tours.exportFinancialSummary(${t.id})">Export Financial</button>
+      </div>
       <div class="modal-actions">
+        <button class="btn btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.exportCalendar(${t.id})">Add to Calendar</button>
         <button class="btn btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="PDFItinerary.generate(${t.id})">Generate Itinerary PDF</button>
         <button class="btn btn-danger" onclick="if(confirm('Delete this tour?')){Tours.deleteTour(${t.id})}">Delete</button>
         <button class="btn btn-outline" onclick="closeModal('tours-modal')">Close</button>
@@ -1605,5 +1623,308 @@ const Tours = {
           </table>` : '<p style="color:var(--gray-400);font-size:0.85rem">No passengers registered through the portal yet.</p>'}
         </div>
       </div>`;
+  },
+
+  sendWhatsApp(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.clientPhone) { alert('No phone number for this client.'); return; }
+    const sel = document.getElementById('wa-tmpl-' + tourId);
+    const tmplIdx = sel ? Number(sel.value) : 0;
+    const groupSize = (t.numStudents||0) + (t.numSiblings||0) + (t.numAdults||0) + (t.numFOC||0);
+    const portalUrl = t.accessCode ? window.location.origin + window.location.pathname.replace('index.html','') + 'portal.html?code=' + t.accessCode : '';
+    const invoices = DB.getInvoices().filter(i => i.tourId === t.id);
+    const inv = invoices[0];
+    const paid = inv ? (inv.payments||[]).reduce((s,p)=>s+Number(p.amount),0) : 0;
+    const balance = inv ? Number(inv.amount) - paid : 0;
+    WhatsApp.send(t.clientPhone, tmplIdx, {
+      clientName: t.clientName || '',
+      tourName: t.tourName || '',
+      destination: t.destination || '',
+      startDate: fmtDate(t.startDate),
+      endDate: fmtDate(t.endDate),
+      groupSize: groupSize,
+      portalUrl: portalUrl,
+      amount: inv ? fmt(balance, inv.currency) : '',
+      dueDate: inv ? fmtDate(inv.dueDate) : '',
+      paymentUrl: (inv && inv.paymentLinkCard) || portalUrl
+    });
+  },
+
+  sendSMS(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.clientPhone) { alert('No phone number.'); return; }
+    const portalUrl = t.accessCode ? window.location.origin + window.location.pathname.replace('index.html','') + 'portal.html?code=' + t.accessCode : '';
+    const text = 'Hi ' + (t.clientName||'') + ', your tour "' + (t.tourName||'') + '" info: ' + portalUrl + ' - Odisea Tours';
+    SMS.send(t.clientPhone, text);
+  },
+
+  exportCalendar(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+
+    const formatICSDate = (dateStr) => {
+      if (!dateStr) return '';
+      return dateStr.replace(/-/g, '') + 'T000000';
+    };
+
+    const groupSize = (t.numStudents||0) + (t.numSiblings||0) + (t.numAdults||0) + (t.numFOC||0);
+    let ics = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Odisea Tours//CRM//EN\r\n';
+
+    // Main tour event
+    ics += 'BEGIN:VEVENT\r\n';
+    ics += 'DTSTART;VALUE=DATE:' + (t.startDate || '').replace(/-/g, '') + '\r\n';
+    ics += 'DTEND;VALUE=DATE:' + (t.endDate || '').replace(/-/g, '') + '\r\n';
+    ics += 'SUMMARY:' + (t.tourName || 'Tour') + '\r\n';
+    ics += 'DESCRIPTION:Destination: ' + (t.destination || '') + '\\nClient: ' + (t.clientName || '') + '\\nGroup: ' + groupSize + ' pax\\nNights: ' + (t.nights || 0) + '\r\n';
+    ics += 'LOCATION:' + (t.destination || '') + '\r\n';
+    ics += 'UID:tour-' + t.id + '@odiseatours\r\n';
+    ics += 'END:VEVENT\r\n';
+
+    // Payment deadline events from invoices
+    const invoices = DB.getInvoices().filter(i => i.tourId === t.id);
+    invoices.forEach(inv => {
+      if (inv.dueDate) {
+        ics += 'BEGIN:VEVENT\r\n';
+        ics += 'DTSTART;VALUE=DATE:' + inv.dueDate.replace(/-/g, '') + '\r\n';
+        ics += 'DTEND;VALUE=DATE:' + inv.dueDate.replace(/-/g, '') + '\r\n';
+        ics += 'SUMMARY:Payment Due: ' + (inv.number || '') + ' - ' + (t.tourName || '') + '\r\n';
+        ics += 'DESCRIPTION:Invoice ' + (inv.number || '') + ' - ' + fmt(inv.amount, inv.currency) + ' due\\nClient: ' + (inv.clientName || '') + '\r\n';
+        ics += 'UID:payment-' + inv.id + '@odiseatours\r\n';
+        ics += 'END:VEVENT\r\n';
+      }
+      // Milestone events
+      (inv.paymentSchedule || []).forEach((ms, mi) => {
+        if (ms.dueDate) {
+          const msAmount = ms.amount || (ms.percentage ? Number(inv.amount) * ms.percentage / 100 : 0);
+          ics += 'BEGIN:VEVENT\r\n';
+          ics += 'DTSTART;VALUE=DATE:' + ms.dueDate.replace(/-/g, '') + '\r\n';
+          ics += 'DTEND;VALUE=DATE:' + ms.dueDate.replace(/-/g, '') + '\r\n';
+          ics += 'SUMMARY:' + (ms.label || 'Payment') + ': ' + (t.tourName || '') + '\r\n';
+          ics += 'DESCRIPTION:' + (ms.label || 'Payment milestone') + ' - ' + fmt(msAmount, inv.currency) + '\r\n';
+          ics += 'UID:milestone-' + inv.id + '-' + mi + '@odiseatours\r\n';
+          ics += 'END:VEVENT\r\n';
+        }
+      });
+    });
+
+    ics += 'END:VCALENDAR';
+
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (t.tourName || 'tour').replace(/[^a-zA-Z0-9]/g, '_') + '.ics';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
+
+  // === CSV Export Methods ===
+  exportPassengerList(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+
+    if (!DB._firebaseReady) { alert('Firebase not connected.'); return; }
+
+    DB.getTourPassengers(String(tourId)).then(passengers => {
+      if (!passengers.length) { alert('No passengers registered for this tour.'); return; }
+
+      const esc = (v) => { const s = String(v == null ? '' : v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      const rows = [['First Name', 'Last Name', 'Role', 'Family', 'Date of Birth', 'Nationality', 'Passport Number', 'Passport Expiry', 'Dietary', 'Medical', 'Emergency Contact', 'Room'].map(esc).join(',')];
+      passengers.forEach(p => {
+        rows.push([p.firstName, p.lastName, p.role, p.family, p.dateOfBirth, p.nationality, p.passportNumber, p.passportExpiry, p.dietary, p.medical, p.emergencyContact, p.room || ''].map(esc).join(','));
+      });
+
+      const csv = '\uFEFF' + rows.join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'Passengers_' + (t.tourName || 'Tour').replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  },
+
+  exportRoomingList(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    if (!DB._firebaseReady) { alert('Firebase not connected.'); return; }
+
+    DB.getTourPassengers(String(tourId)).then(passengers => {
+      const roomPlan = t.roomPlan || [];
+      const esc = (v) => { const s = String(v == null ? '' : v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+      const rows = [['Room', 'Room Type', 'Guest Name', 'Role', 'Family', 'Check-in', 'Check-out', 'Nights', 'Dietary', 'Special Requests'].map(esc).join(',')];
+
+      roomPlan.forEach(room => {
+        const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean);
+        const roomType = roomPax.length === 1 ? 'SGL' : roomPax.length === 2 ? 'TWN' : roomPax.length === 3 ? 'TRP' : roomPax.length >= 4 ? 'QAD' : 'SGL';
+        roomPax.forEach((p, i) => {
+          rows.push([
+            room.name || '',
+            i === 0 ? roomType : '',
+            (p.firstName || '') + ' ' + (p.lastName || ''),
+            p.role || '', p.family || '',
+            t.startDate || '', t.endDate || '', t.nights || '',
+            p.dietary || '', p.medical || ''
+          ].map(esc).join(','));
+        });
+      });
+
+      // Unassigned
+      const assigned = new Set();
+      roomPlan.forEach(r => (r.passengers || []).forEach(id => assigned.add(id)));
+      const unassigned = passengers.filter(p => !assigned.has(p.id));
+      if (unassigned.length) {
+        rows.push('');
+        rows.push(['UNASSIGNED','','','','','','','','',''].join(','));
+        unassigned.forEach(p => {
+          rows.push(['', '', (p.firstName||'') + ' ' + (p.lastName||''), p.role||'', p.family||'', '', '', '', p.dietary||'', ''].map(esc).join(','));
+        });
+      }
+
+      const csv = '\uFEFF' + rows.join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'Rooming_' + (t.tourName || 'Tour').replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  },
+
+  exportFinancialSummary(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const c = t.costs || {};
+    const invoices = DB.getInvoices().filter(i => i.tourId === t.id);
+    const totalInvoiced = invoices.reduce((s, i) => s + Number(i.amount), 0);
+    const totalCollected = invoices.reduce((s, i) => s + (i.payments||[]).reduce((ps,p)=>ps+Number(p.amount),0), 0);
+    const providerTotal = (t.providerExpenses||[]).reduce((s,e)=>s+(e.amount||0),0);
+    const providerPaid = (t.providerExpenses||[]).reduce((s,e)=>s+(e.paidAmount||0),0);
+
+    const esc = (v) => { const s = String(v == null ? '' : v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const rows = [];
+    rows.push(['Financial Summary \u2014 ' + (t.tourName || 'Tour')].join(','));
+    rows.push([''].join(','));
+    rows.push(['Category', 'Amount (' + (t.currency||'EUR') + ')'].join(','));
+    rows.push(['Revenue \u2014 Students (' + (t.numStudents||0) + ' x ' + (t.priceStudent||0) + ')', ((t.numStudents||0)*(t.priceStudent||0)).toFixed(2)].join(','));
+    rows.push(['Revenue \u2014 Siblings (' + (t.numSiblings||0) + ' x ' + (t.priceSibling||0) + ')', ((t.numSiblings||0)*(t.priceSibling||0)).toFixed(2)].join(','));
+    rows.push(['Revenue \u2014 Adults (' + (t.numAdults||0) + ' x ' + (t.priceAdult||0) + ')', ((t.numAdults||0)*(t.priceAdult||0)).toFixed(2)].join(','));
+    rows.push(['TOTAL REVENUE', (c.totalRevenue||0).toFixed(2)].join(','));
+    rows.push([''].join(','));
+    rows.push(['Cost \u2014 Accommodation', (c.accommodation||0).toFixed(2)].join(','));
+    rows.push(['Cost \u2014 Meals', (c.meals||0).toFixed(2)].join(','));
+    rows.push(['Cost \u2014 Transport', (c.transport||0).toFixed(2)].join(','));
+    rows.push(['Cost \u2014 Activities', (c.activities||0).toFixed(2)].join(','));
+    rows.push(['Cost \u2014 Guide', (c.guide||0).toFixed(2)].join(','));
+    rows.push(['TOTAL COSTS', (c.grand||0).toFixed(2)].join(','));
+    rows.push([''].join(','));
+    rows.push(['PROFIT', (c.profit||0).toFixed(2)].join(','));
+    rows.push(['MARGIN', ((c.margin||0).toFixed(1) + '%')].join(','));
+    rows.push([''].join(','));
+    rows.push(['Invoiced', totalInvoiced.toFixed(2)].join(','));
+    rows.push(['Collected', totalCollected.toFixed(2)].join(','));
+    rows.push(['Outstanding', (totalInvoiced - totalCollected).toFixed(2)].join(','));
+    rows.push([''].join(','));
+    rows.push(['Provider Costs Total', providerTotal.toFixed(2)].join(','));
+    rows.push(['Provider Costs Paid', providerPaid.toFixed(2)].join(','));
+
+    // Provider breakdown
+    if ((t.providerExpenses||[]).length) {
+      rows.push([''].join(','));
+      rows.push(['Provider Expenses Breakdown'].join(','));
+      rows.push(['Provider', 'Category', 'Amount', 'Paid', 'Status'].join(','));
+      (t.providerExpenses||[]).forEach(e => {
+        rows.push([esc(e.providerName), esc(e.category), (e.amount||0).toFixed(2), (e.paidAmount||0).toFixed(2), e.paid ? 'Paid' : 'Unpaid'].join(','));
+      });
+    }
+
+    const csv = '\uFEFF' + rows.join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'Financial_' + (t.tourName || 'Tour').replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
+
+  // === Interactive Itinerary Map ===
+  _renderItineraryMap(t) {
+    const days = t.itinerary || [];
+    const hotels = t.hotels || [];
+    const activities = t.activities || [];
+
+    // Collect all locations to geocode
+    const locations = [];
+    const dest = (t.destination || '').split('\u2192').map(d => d.trim()).filter(Boolean);
+    dest.forEach(d => locations.push({ name: d, type: 'destination' }));
+    hotels.forEach(h => { if (h.hotelName) locations.push({ name: h.hotelName + ', ' + (h.city || ''), type: 'hotel', label: h.hotelName }); });
+    activities.forEach(a => { if (a.name && a.destination) locations.push({ name: a.name + ', ' + a.destination, type: 'activity', label: a.name }); });
+
+    if (!locations.length) return '';
+
+    const locationsJSON = JSON.stringify(locations);
+
+    return `
+      <h3 style="margin-top:1.5rem">Itinerary Map</h3>
+      <div id="tour-map-${t.id}" style="height:400px;border-radius:var(--radius-lg);overflow:hidden;border:1.5px solid var(--gray-200);margin-bottom:1rem"></div>
+      <script>
+      (function() {
+        if (typeof L === 'undefined') return;
+
+        setTimeout(function() {
+          var mapEl = document.getElementById('tour-map-${t.id}');
+          if (!mapEl || mapEl._leaflet_id) return;
+
+          var map = L.map(mapEl).setView([40.4168, -3.7038], 6);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 18
+          }).addTo(map);
+
+          var locations = ${locationsJSON};
+          var markers = [];
+          var geocoded = 0;
+
+          var icons = {
+            destination: L.divIcon({ className: '', html: '<div style="background:var(--amber);color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u{1F4CD}</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
+            hotel: L.divIcon({ className: '', html: '<div style="background:var(--navy);color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u{1F3E8}</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
+            activity: L.divIcon({ className: '', html: '<div style="background:var(--green);color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u26BD</div>', iconSize: [28, 28], iconAnchor: [14, 14] })
+          };
+
+          var coords = [];
+
+          function geocodeNext(idx) {
+            if (idx >= locations.length) {
+              if (coords.length > 1) {
+                L.polyline(coords, { color: '#ffb400', weight: 3, dashArray: '10,10', opacity: 0.7 }).addTo(map);
+              }
+              if (markers.length) {
+                var group = L.featureGroup(markers);
+                map.fitBounds(group.getBounds().pad(0.2));
+              }
+              return;
+            }
+
+            var loc = locations[idx];
+            fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(loc.name) + '&limit=1')
+              .then(function(r) { return r.json(); })
+              .then(function(data) {
+                if (data && data[0]) {
+                  var lat = parseFloat(data[0].lat);
+                  var lon = parseFloat(data[0].lon);
+                  var marker = L.marker([lat, lon], { icon: icons[loc.type] || icons.destination })
+                    .bindPopup('<strong>' + (loc.label || loc.name) + '</strong><br><span style="font-size:0.82rem;color:gray">' + loc.type + '</span>')
+                    .addTo(map);
+                  markers.push(marker);
+                  if (loc.type === 'destination' || loc.type === 'hotel') coords.push([lat, lon]);
+                }
+                setTimeout(function() { geocodeNext(idx + 1); }, 300);
+              })
+              .catch(function() { setTimeout(function() { geocodeNext(idx + 1); }, 300); });
+          }
+
+          geocodeNext(0);
+        }, 200);
+      })();
+      <\/script>`;
   }
 };

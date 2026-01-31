@@ -193,20 +193,26 @@ const Providers = {
     const reqs = document.getElementById('rfq-reqs').value;
 
     const subject = `Quote Request — Group Tour to ${dest}`;
-    const body = `Dear ${prov.contactPerson || 'Sir/Madam'},
+    let body = `Dear ${prov.contactPerson || 'Sir/Madam'},\n\nWe are organising a group tour and would like to request a quote for your services.\n\nDestination: ${dest}\nDates: ${start} to ${end}\nNights: ${nights}\nGroup size: ${group} participants\n`;
 
-We are organising a group tour and would like to request a quote for your services.
+    // Category-specific details
+    if (prov.category === 'Hotel') {
+      // Get tour for room details
+      const tourId = Number(document.getElementById('rfq-tour').value);
+      const tour = tourId ? DB.getTours().find(x => x.id === tourId) : null;
+      if (tour && tour.hotels) {
+        const hotel = tour.hotels.find(h => h.city === prov.city) || tour.hotels[0];
+        if (hotel && hotel.rooms) {
+          body += '\nRoom Requirements:\n';
+          hotel.rooms.forEach(r => { body += `- ${r.qty}x ${r.type} rooms\n`; });
+          body += `Meal Plan: ${hotel.mealPlan || 'Half Board'}\nCheck-in: ${start}\nCheck-out: ${end}\n`;
+        }
+      }
+    } else if (prov.category === 'Transport') {
+      body += `\nTransport Details:\nPickup: Airport/Hotel\nDropoff: Hotel/Airport\nTimes: TBC\n`;
+    }
 
-Destination: ${dest}
-Dates: ${start} to ${end}
-Nights: ${nights}
-Group size: ${group} participants
-
-${reqs ? 'Requirements:\n' + reqs + '\n' : ''}
-Please send us your best rates and availability at your earliest convenience.
-
-Kind regards,
-Odisea Tours`;
+    body += `\n${reqs ? 'Additional Requirements:\n' + reqs + '\n' : ''}Please send us your best rates and availability at your earliest convenience.\n\nKind regards,\nOdisea Tours`;
 
     const mailto = 'mailto:' + encodeURIComponent(prov.email) +
       '?subject=' + encodeURIComponent(subject) +

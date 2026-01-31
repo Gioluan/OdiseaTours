@@ -15,10 +15,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
+<!-- Leaflet.js for interactive maps -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <script>
 // Force update: if cached version is old, clear caches and reload
 (function(){
-  var APP_VERSION = 20;
+  var APP_VERSION = 22;
   var stored = localStorage.getItem('odisea_app_version');
   if (stored && Number(stored) >= APP_VERSION) return;
   localStorage.setItem('odisea_app_version', APP_VERSION);
@@ -116,6 +118,7 @@
         <option value="USD">Show all in USD</option>
         <option value="GBP">Show all in GBP</option>
       </select>
+      <span id="dashboard-live-rates" style="font-size:0.78rem;color:var(--gray-400)"></span>
     </div>
     <div class="stats-grid" id="dashboard-stats"></div>
     <div class="grid-2">
@@ -129,12 +132,20 @@
       </div>
     </div>
     <div class="card" style="margin-top:1rem">
+      <h3>Pending Actions</h3>
+      <div id="dashboard-actions"></div>
+    </div>
+    <div class="card" style="margin-top:1rem">
       <h3>Overdue Payments</h3>
       <div id="dashboard-overdue" class="list-container"></div>
     </div>
     <div class="card" style="margin-top:1rem">
       <h3>Portal Activity</h3>
       <div id="dashboard-portal-activity"></div>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <h3>Client Feedback</h3>
+      <div id="dashboard-feedback"></div>
     </div>
     <div class="card" style="margin-top:1rem">
       <h3>Confirmed Groups — Profit Summary</h3>
@@ -147,6 +158,10 @@
     <div class="card" style="margin-top:1rem">
       <h3>Provider Payments Due</h3>
       <div id="dashboard-provider-alerts"></div>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <h3>Weather Forecast — Upcoming Tours</h3>
+      <div id="dashboard-weather"></div>
     </div>
   </section>
 
@@ -240,6 +255,8 @@
         <option value="Paid">Paid</option>
       </select>
       <button class="btn btn-outline" onclick="Invoicing.exportCSV()" style="border-color:var(--green);color:var(--green)">Export CSV</button>
+      <button class="btn btn-outline" onclick="Invoicing.exportAccounting()" style="border-color:var(--navy);color:var(--navy)">Accounting Export</button>
+      <button class="btn btn-outline" onclick="Invoicing.exportProviderCosts()" style="border-color:var(--red);color:var(--red)">Provider Costs CSV</button>
     </div>
     <div id="invoicing-table-container"></div>
     <div id="inv-modal" class="modal-overlay" style="display:none">
@@ -349,6 +366,8 @@
   </section>
 </main>
 
+<!-- Leaflet.js (async so it doesn't block app load) -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" async></script>
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>

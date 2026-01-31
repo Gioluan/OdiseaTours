@@ -131,6 +131,9 @@ const Portal = {
       case 'passengers': this.renderPassengers(); break;
       case 'roomplan': this.renderRoomPlan(); break;
       case 'messages': this.renderMessages(); break;
+      case 'forms': this.renderForms(); break;
+      case 'feedback': this.renderFeedback(); break;
+      case 'payments': this.renderPaymentStatus(); break;
     }
   },
 
@@ -1016,6 +1019,338 @@ const Portal = {
       sender: 'client',
       senderName: this.tourData.groupName || 'Client'
     });
+  },
+
+  // ── Forms & Consent ──
+  async renderForms() {
+    const container = document.getElementById('section-forms');
+    const t = this.tourData;
+    if (!t) return;
+
+    const requiredForms = t.requiredForms || ['terms', 'medical', 'photo'];
+
+    // Load existing signatures from Firestore
+    let signatures = {};
+    try {
+      const sigDoc = await DB.firestore.collection('tours').doc(this.tourId).collection('consent').doc('signatures').get();
+      if (sigDoc.exists) signatures = sigDoc.data() || {};
+    } catch (e) {}
+
+    const sessionCode = sessionStorage.getItem('portal_code') || 'client';
+    const mySignatures = signatures[sessionCode] || {};
+
+    const formDefs = {
+      terms: { title: 'Terms & Conditions', desc: 'I accept the tour terms and conditions, including cancellation policy and travel insurance requirements.' },
+      medical: { title: 'Medical Declaration', desc: 'I confirm that all medical conditions have been disclosed in the passenger registration forms and that all travelers are fit to travel.' },
+      photo: { title: 'Photo Consent', desc: 'I consent to photographs and videos being taken during the tour for promotional and record-keeping purposes.' }
+    };
+
+    container.innerHTML = `
+      <div class="section-header">
+        <h2>Forms & Consent</h2>
+        <p>Please review and sign the required forms below</p>
+      </div>
+      ${requiredForms.map(formId => {
+        const def = formDefs[formId] || { title: formId, desc: '' };
+        const signed = mySignatures[formId];
+        return `
+          <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-bottom:1rem;box-shadow:var(--shadow);border-left:4px solid ${signed ? 'var(--green)' : 'var(--amber)'}">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+              <h3 style="font-size:1rem;color:var(--navy)">${def.title}</h3>
+              ${signed ? '<span style="background:var(--green);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">Signed</span>' : '<span style="background:var(--amber);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">Pending</span>'}
+            </div>
+            <p style="font-size:0.88rem;color:var(--gray-500);margin-bottom:1rem">${def.desc}</p>
+            ${signed ? `
+              <div style="background:var(--gray-50);padding:0.8rem;border-radius:var(--radius)">
+                <p style="font-size:0.82rem;color:var(--gray-400)">Signed on: ${Portal._fmtDate(signed.date)}</p>
+                <img src="${signed.signature}" style="max-width:200px;max-height:60px;border:1px solid var(--gray-200);border-radius:var(--radius);margin-top:0.3rem" alt="Signature">
+              </div>
+            ` : `
+              <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.8rem;font-size:0.88rem;cursor:pointer">
+                <input type="checkbox" id="consent-check-${formId}"> I agree to the above
+              </label>
+              <div style="margin-bottom:0.5rem">
+                <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Sign below:</label>
+                <canvas id="sig-canvas-${formId}" width="300" height="100" style="border:1.5px solid var(--gray-200);border-radius:var(--radius);cursor:crosshair;touch-action:none;background:white"></canvas>
+                <div style="display:flex;gap:0.5rem;margin-top:0.3rem">
+                  <button class="btn-outline btn-sm" onclick="Portal.clearSignature('${formId}')">Clear</button>
+                  <button class="btn-primary btn-sm" onclick="Portal.submitConsent('${formId}')">Submit</button>
+                </div>
+              </div>
+            `}
+          </div>`;
+      }).join('')}`;
+
+    // Initialize signature canvases
+    setTimeout(() => {
+      requiredForms.forEach(formId => {
+        if (!mySignatures[formId]) Portal._initSignatureCanvas(formId);
+      });
+    }, 100);
+  },
+
+  _signatureCanvases: {},
+
+  _initSignatureCanvas(formId) {
+    const canvas = document.getElementById('sig-canvas-' + formId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
+
+    const getPos = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return { x: clientX - rect.left, y: clientY - rect.top };
+    };
+
+    const start = (e) => { e.preventDefault(); drawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); };
+    const move = (e) => { if (!drawing) return; e.preventDefault(); const pos = getPos(e); ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.strokeStyle = '#111'; ctx.lineTo(pos.x, pos.y); ctx.stroke(); };
+    const end = () => { drawing = false; };
+
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    canvas.addEventListener('mouseup', end);
+    canvas.addEventListener('mouseleave', end);
+    canvas.addEventListener('touchstart', start);
+    canvas.addEventListener('touchmove', move);
+    canvas.addEventListener('touchend', end);
+
+    this._signatureCanvases[formId] = canvas;
+  },
+
+  clearSignature(formId) {
+    const canvas = document.getElementById('sig-canvas-' + formId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  },
+
+  async submitConsent(formId) {
+    const checkbox = document.getElementById('consent-check-' + formId);
+    if (!checkbox || !checkbox.checked) { alert('Please check the agreement box first.'); return; }
+
+    const canvas = document.getElementById('sig-canvas-' + formId);
+    if (!canvas) return;
+
+    // Check if canvas has any content
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const hasContent = imageData.data.some((val, i) => i % 4 === 3 && val > 0);
+    if (!hasContent) { alert('Please sign in the signature area.'); return; }
+
+    const signatureData = canvas.toDataURL('image/png');
+    const sessionCode = sessionStorage.getItem('portal_code') || 'client';
+
+    try {
+      const ref = DB.firestore.collection('tours').doc(this.tourId).collection('consent').doc('signatures');
+      const doc = await ref.get();
+      const existing = doc.exists ? doc.data() : {};
+      if (!existing[sessionCode]) existing[sessionCode] = {};
+      existing[sessionCode][formId] = { signature: signatureData, date: new Date().toISOString(), agreed: true };
+      await ref.set(existing);
+      this.renderForms();
+    } catch (e) {
+      alert('Failed to save consent. Please try again.');
+    }
+  },
+
+  // ── Feedback Survey ──
+  async renderFeedback() {
+    const container = document.getElementById('section-feedback');
+    const t = this.tourData;
+    if (!t) return;
+
+    // Check if tour has ended
+    const tourEnd = new Date(t.endDate);
+    const now = new Date();
+    if (now < tourEnd) {
+      container.innerHTML = `
+        <div class="section-header"><h2>Feedback</h2><p>Share your experience</p></div>
+        <div class="empty-state"><p>Feedback will be available after the tour ends on ${Portal._fmtDate(t.endDate)}.</p></div>`;
+      return;
+    }
+
+    // Check if already submitted
+    const sessionCode = sessionStorage.getItem('portal_code') || 'client';
+    let existingFeedback = null;
+    try {
+      const fbDoc = await DB.firestore.collection('tours').doc(this.tourId).collection('feedback').doc(sessionCode).get();
+      if (fbDoc.exists) existingFeedback = fbDoc.data();
+    } catch (e) {}
+
+    if (existingFeedback) {
+      container.innerHTML = `
+        <div class="section-header"><h2>Feedback</h2><p>Thank you for your feedback!</p></div>
+        <div style="background:white;border-radius:var(--radius-lg);padding:1.5rem;box-shadow:var(--shadow)">
+          <div style="text-align:center;margin-bottom:1rem">
+            <div style="font-size:2rem;color:var(--amber)">${'\u2605'.repeat(existingFeedback.overall)}${'\u2606'.repeat(5 - existingFeedback.overall)}</div>
+            <p style="font-weight:600;margin-top:0.3rem">Overall Rating: ${existingFeedback.overall}/5</p>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;margin-bottom:1rem">
+            <div style="text-align:center"><div style="font-size:0.82rem;color:var(--gray-400)">Accommodation</div><div style="color:var(--amber)">${'\u2605'.repeat(existingFeedback.accommodation||0)}</div></div>
+            <div style="text-align:center"><div style="font-size:0.82rem;color:var(--gray-400)">Activities</div><div style="color:var(--amber)">${'\u2605'.repeat(existingFeedback.activities||0)}</div></div>
+            <div style="text-align:center"><div style="font-size:0.82rem;color:var(--gray-400)">Guide</div><div style="color:var(--amber)">${'\u2605'.repeat(existingFeedback.guide||0)}</div></div>
+          </div>
+          ${existingFeedback.comments ? `<div style="background:var(--gray-50);padding:0.8rem;border-radius:var(--radius);font-size:0.88rem">"${Portal._escapeHtml(existingFeedback.comments)}"</div>` : ''}
+          <p style="font-size:0.78rem;color:var(--gray-400);margin-top:0.8rem;text-align:center">Submitted ${Portal._fmtDate(existingFeedback.submittedAt)}</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="section-header"><h2>Feedback</h2><p>Tell us about your experience</p></div>
+      <div style="background:white;border-radius:var(--radius-lg);padding:1.5rem;box-shadow:var(--shadow)">
+        <form onsubmit="Portal.submitFeedback(event)">
+          ${['overall', 'accommodation', 'activities', 'guide'].map(cat => `
+            <div style="margin-bottom:1.2rem">
+              <label style="font-weight:600;font-size:0.92rem;display:block;margin-bottom:0.3rem">${cat.charAt(0).toUpperCase() + cat.slice(1)} Rating</label>
+              <div style="display:flex;gap:0.3rem" id="fb-${cat}">
+                ${[1,2,3,4,5].map(n => `<button type="button" class="fb-star" data-cat="${cat}" data-val="${n}" onclick="Portal.setRating('${cat}',${n})" style="background:none;border:none;font-size:1.8rem;cursor:pointer;color:var(--gray-200);transition:color 0.2s">\u2605</button>`).join('')}
+              </div>
+            </div>
+          `).join('')}
+          <div style="margin-bottom:1rem">
+            <label style="font-weight:600;font-size:0.92rem;display:block;margin-bottom:0.3rem">Comments</label>
+            <textarea id="fb-comments" rows="4" placeholder="Share your thoughts about the tour..." style="width:100%;padding:0.6rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:inherit;font-size:0.88rem;resize:vertical"></textarea>
+          </div>
+          <button type="submit" class="btn-primary" style="width:100%;padding:0.8rem;font-size:1rem">Submit Feedback</button>
+        </form>
+      </div>`;
+  },
+
+  _feedbackRatings: {},
+
+  setRating(category, value) {
+    this._feedbackRatings[category] = value;
+    const container = document.getElementById('fb-' + category);
+    if (!container) return;
+    container.querySelectorAll('.fb-star').forEach(btn => {
+      const v = Number(btn.dataset.val);
+      btn.style.color = v <= value ? 'var(--amber)' : 'var(--gray-200)';
+    });
+  },
+
+  async submitFeedback(event) {
+    event.preventDefault();
+    const ratings = this._feedbackRatings;
+    if (!ratings.overall) { alert('Please rate your overall experience.'); return; }
+
+    const feedback = {
+      overall: ratings.overall || 0,
+      accommodation: ratings.accommodation || 0,
+      activities: ratings.activities || 0,
+      guide: ratings.guide || 0,
+      comments: document.getElementById('fb-comments').value.trim(),
+      submittedAt: new Date().toISOString()
+    };
+
+    const sessionCode = sessionStorage.getItem('portal_code') || 'client';
+    try {
+      await DB.firestore.collection('tours').doc(this.tourId).collection('feedback').doc(sessionCode).set(feedback);
+      this._feedbackRatings = {};
+      this.renderFeedback();
+    } catch (e) {
+      alert('Failed to submit feedback. Please try again.');
+    }
+  },
+
+  // ── Payment Status ──
+  async renderPaymentStatus() {
+    const container = document.getElementById('section-payments');
+    const t = this.tourData;
+    if (!t) return;
+
+    // Load invoices for this tour
+    let invoices = [];
+    try {
+      invoices = await DB.getTourInvoices(this.tourId);
+    } catch (e) {}
+
+    if (!invoices.length) {
+      container.innerHTML = `
+        <div class="section-header"><h2>Payments</h2><p>Your payment status</p></div>
+        <div class="empty-state"><p>No invoices available yet. Contact your tour operator for payment details.</p></div>`;
+      return;
+    }
+
+    const totalDue = invoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const totalPaid = invoices.reduce((s, i) => s + (i.payments || []).reduce((ps, p) => ps + Number(p.amount), 0), 0);
+    const balance = totalDue - totalPaid;
+    const pctPaid = totalDue > 0 ? Math.min(100, Math.round(totalPaid / totalDue * 100)) : 0;
+    const cur = invoices[0].currency || t.currency || 'EUR';
+
+    container.innerHTML = `
+      <div class="section-header"><h2>Payments</h2><p>Track your payment progress</p></div>
+      <div style="background:white;border-radius:var(--radius-lg);padding:1.5rem;box-shadow:var(--shadow);margin-bottom:1rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.2rem;text-align:center">
+          <div>
+            <div style="font-size:0.78rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Total Due</div>
+            <div style="font-size:1.3rem;font-weight:700;color:var(--navy)">${Portal._fmtCurrency(totalDue, cur)}</div>
+          </div>
+          <div>
+            <div style="font-size:0.78rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Paid</div>
+            <div style="font-size:1.3rem;font-weight:700;color:var(--green)">${Portal._fmtCurrency(totalPaid, cur)}</div>
+          </div>
+          <div>
+            <div style="font-size:0.78rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Balance</div>
+            <div style="font-size:1.3rem;font-weight:700;color:${balance > 0 ? 'var(--red)' : 'var(--green)'}">${Portal._fmtCurrency(balance, cur)}</div>
+          </div>
+        </div>
+        <div style="background:var(--gray-100);border-radius:10px;height:12px;overflow:hidden;margin-bottom:0.5rem">
+          <div style="background:${pctPaid >= 100 ? 'var(--green)' : 'var(--amber)'};height:100%;width:${pctPaid}%;border-radius:10px;transition:width 0.5s"></div>
+        </div>
+        <p style="text-align:center;font-size:0.82rem;color:var(--gray-400)">${pctPaid}% paid</p>
+      </div>
+
+      ${invoices.map(inv => {
+        const paid = (inv.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+        const invBalance = Number(inv.amount) - paid;
+        const schedule = inv.paymentSchedule || [];
+        return `
+          <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-bottom:1rem;box-shadow:var(--shadow)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem">
+              <h3 style="font-size:0.95rem;color:var(--navy)">${inv.number || 'Invoice'}</h3>
+              <span style="font-weight:700;color:${invBalance <= 0 ? 'var(--green)' : 'var(--red)'}">${Portal._fmtCurrency(invBalance, inv.currency || cur)} ${invBalance <= 0 ? 'PAID' : 'due'}</span>
+            </div>
+            ${schedule.length ? `
+              <div style="margin-bottom:0.8rem">
+                <div style="font-size:0.82rem;font-weight:600;color:var(--gray-500);margin-bottom:0.5rem">Payment Schedule</div>
+                ${schedule.map(ms => {
+                  const msAmount = ms.amount || (ms.percentage ? Number(inv.amount) * ms.percentage / 100 : 0);
+                  const msPaid = paid >= msAmount;
+                  return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--gray-50)">
+                    <span style="color:${msPaid ? 'var(--green)' : 'var(--gray-300)'};font-size:1.1rem">${msPaid ? '\u2713' : '\u25CB'}</span>
+                    <span style="flex:1;font-size:0.85rem;${msPaid ? 'text-decoration:line-through;color:var(--gray-400)' : ''}">${ms.label || 'Payment'}</span>
+                    <span style="font-weight:600;font-size:0.85rem">${Portal._fmtCurrency(msAmount, inv.currency || cur)}</span>
+                    ${ms.dueDate ? '<span style="font-size:0.78rem;color:var(--gray-400)">' + Portal._fmtDate(ms.dueDate) + '</span>' : ''}
+                  </div>`;
+                }).join('')}
+              </div>
+            ` : ''}
+            ${(inv.payments || []).length ? `
+              <div style="font-size:0.82rem;font-weight:600;color:var(--gray-500);margin-bottom:0.3rem">Payment History</div>
+              ${(inv.payments || []).map(p => `
+                <div style="display:flex;justify-content:space-between;padding:0.3rem 0;font-size:0.82rem;border-bottom:1px solid var(--gray-50)">
+                  <span>${Portal._fmtDate(p.date)}</span>
+                  <span style="font-weight:600;color:var(--green)">+${Portal._fmtCurrency(Number(p.amount), inv.currency || cur)}</span>
+                </div>
+              `).join('')}
+            ` : ''}
+          </div>`;
+      }).join('')}
+
+      ${(t.portalPaymentCard || t.portalPaymentWise) ? `
+        <div style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-top:1rem">
+          ${t.portalPaymentCard ? '<a href="' + Portal._escapeAttr(t.portalPaymentCard) + '" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600">Pay by Card</a>' : ''}
+          ${t.portalPaymentWise ? '<a href="' + Portal._escapeAttr(t.portalPaymentWise) + '" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600">Pay via Wise</a>' : ''}
+        </div>` : ''}`;
+  },
+
+  _fmtCurrency(amount, currency) {
+    const symbols = { EUR: '\u20AC', USD: '$', GBP: '\u00A3' };
+    const sym = symbols[currency] || currency || '\u20AC';
+    return sym + (Number(amount) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   },
 
   // ── Utility helpers ──

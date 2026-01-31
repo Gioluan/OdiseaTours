@@ -260,3 +260,35 @@ const Email = {
     this.renderLog();
   }
 };
+
+const WhatsApp = {
+  templates: [
+    { name: 'Booking Confirmation', text: 'Hi {clientName}! Your tour "{tourName}" to {destination} is confirmed.\n\nDates: {startDate} - {endDate}\nGroup: {groupSize} travelers\n\nAccess your portal here: {portalUrl}\n\nOdisea Tours' },
+    { name: 'Payment Reminder', text: 'Hi {clientName}, friendly reminder: your payment of {amount} for "{tourName}" is due on {dueDate}.\n\nPay here: {paymentUrl}\n\nOdisea Tours' },
+    { name: 'Itinerary Share', text: 'Hi {clientName}! Your itinerary for "{tourName}" ({destination}) is ready.\n\nDates: {startDate} - {endDate}\nView details: {portalUrl}\n\nOdisea Tours' },
+    { name: 'Departure Info', text: 'Hi {clientName}! Your tour "{tourName}" departs on {startDate}.\n\nPlease ensure all passengers are registered.\nPortal: {portalUrl}\n\nSee you soon!\nOdisea Tours' }
+  ],
+
+  send(phone, templateIdx, data) {
+    let text = this.templates[templateIdx].text;
+    Object.keys(data).forEach(key => {
+      text = text.replace(new RegExp('\\{' + key + '\\}', 'g'), data[key] || '');
+    });
+    const cleanPhone = (phone || '').replace(/[^0-9+]/g, '');
+    const url = 'https://wa.me/' + cleanPhone + '?text=' + encodeURIComponent(text);
+    window.open(url, '_blank');
+  },
+
+  sendCustom(phone, text) {
+    const cleanPhone = (phone || '').replace(/[^0-9+]/g, '');
+    const url = 'https://wa.me/' + cleanPhone + '?text=' + encodeURIComponent(text);
+    window.open(url, '_blank');
+  }
+};
+
+const SMS = {
+  send(phone, text) {
+    const cleanPhone = (phone || '').replace(/[^0-9+]/g, '');
+    window.location.href = 'sms:' + cleanPhone + '?body=' + encodeURIComponent(text);
+  }
+};

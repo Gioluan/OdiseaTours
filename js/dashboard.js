@@ -47,7 +47,7 @@ const Dashboard = {
 
     // Multi-currency normalization
     const dashCurrency = document.getElementById('dash-currency')?.value || '';
-    const rates = { EUR: 1, USD: 1.08, GBP: 0.86 }; // approximate rates vs EUR
+    const rates = this._liveRates || { EUR: 1, USD: 1.08, GBP: 0.86 };
     const normalize = (amount, fromCurrency) => {
       if (!dashCurrency || !fromCurrency || fromCurrency === dashCurrency) return amount;
       const inEUR = amount / (rates[fromCurrency] || 1);
@@ -183,6 +183,9 @@ const Dashboard = {
         }).join('')
       : '<div class="empty-state">No overdue payments</div>';
 
+    // Automated action queue
+    this._renderActionQueue(quotes, tours, invoices);
+
     // Confirmed groups profit summary table
     this._renderConfirmedGroups(tours);
 
@@ -194,6 +197,56 @@ const Dashboard = {
 
     // Portal notification badges (async, non-blocking)
     this._renderPortalBadges(tours);
+
+    // Feedback summary (async, non-blocking)
+    this._renderFeedbackSummary(tours);
+
+    // Weather widget (async, non-blocking)
+    this._renderWeatherWidget(tours);
+
+    // Fetch live rates and re-render currency display
+    if (!this._ratesFetched) {
+      this._ratesFetched = true;
+      this._fetchLiveRates().then(liveRates => {
+        this._liveRates = liveRates;
+        this._ratesFetched = false;
+        // Update the rate display
+        const rateDisplay = document.getElementById('dashboard-live-rates');
+        if (rateDisplay) {
+          const lastUpdated = localStorage.getItem('odisea_exchange_rates_time');
+          const timeStr = lastUpdated ? new Date(Number(lastUpdated)).toLocaleString('en-GB', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : 'N/A';
+          rateDisplay.innerHTML = '<span style="font-size:0.78rem;color:var(--gray-400)">Live rates: 1 EUR = ' + liveRates.USD.toFixed(4) + ' USD | ' + liveRates.GBP.toFixed(4) + ' GBP | Updated: ' + timeStr + '</span>';
+        }
+      });
+    }
+  },
+
+  async _fetchLiveRates() {
+    const cacheKey = 'odisea_exchange_rates';
+    const cacheTimeKey = 'odisea_exchange_rates_time';
+    const cached = localStorage.getItem(cacheKey);
+    const cachedTime = localStorage.getItem(cacheTimeKey);
+    const fourHours = 4 * 60 * 60 * 1000;
+
+    if (cached && cachedTime && (Date.now() - Number(cachedTime)) < fourHours) {
+      return JSON.parse(cached);
+    }
+
+    try {
+      const resp = await fetch('https://open.er-exchangerate-api.com/v6/latest/EUR');
+      const data = await resp.json();
+      if (data && data.rates) {
+        const rates = { EUR: 1, USD: data.rates.USD || 1.08, GBP: data.rates.GBP || 0.86 };
+        localStorage.setItem(cacheKey, JSON.stringify(rates));
+        localStorage.setItem(cacheTimeKey, String(Date.now()));
+        return rates;
+      }
+    } catch (e) {
+      console.warn('Exchange rate fetch failed:', e.message);
+    }
+
+    if (cached) return JSON.parse(cached);
+    return { EUR: 1, USD: 1.08, GBP: 0.86 };
   },
 
   sendReminder(invoiceId) {
@@ -378,6 +431,284 @@ const Dashboard = {
           <td><button class="btn btn-sm btn-outline" onclick="App.switchTab('tours');setTimeout(()=>Tours.viewTour(${a.tour.id}),100)">View</button></td>
         </tr>`).join('')}</tbody>
       </table>`;
+  },
+
+  _renderActionQueue(quotes, tours, invoices) {
+    const container = document.getElementById('dashboard-actions');
+    if (!container) return;
+
+    const actions = [];
+    const now = new Date();
+    const completedActions = JSON.parse(localStorage.getItem('odisea_completed_actions') || '{}');
+
+    // Quotes sent 3+ days ago without follow-up
+    quotes.filter(q => q.status === 'Sent').forEach(q => {
+      const sent = new Date(q.updatedAt || q.createdAt);
+      const daysSince = Math.floor((now - sent) / 86400000);
+      if (daysSince >= 3 && !completedActions['followup-' + q.id]) {
+        actions.push({
+          id: 'followup-' + q.id,
+          type: 'follow-up',
+          icon: '\u{1F4E7}',
+          label: 'Follow up on quote: ' + (q.tourName || 'Q-' + q.id),
+          sub: q.clientName + ' \u2014 sent ' + daysSince + ' days ago',
+          action: 'email',
+          data: { to: q.clientEmail, subject: 'Following up \u2014 ' + q.tourName, body: 'Dear ' + (q.clientName||'') + ',\\n\\nI wanted to follow up on the quote we sent for "' + (q.tourName||'') + '". Please let us know if you have any questions.\\n\\nKind regards,\\nOdisea Tours' },
+          waData: { phone: q.clientPhone, text: 'Hi ' + (q.clientName||'') + ', just following up on the quote for "' + (q.tourName||'') + '". Any questions? - Odisea Tours' }
+        });
+      }
+    });
+
+    // Overdue invoices
+    invoices.forEach(i => {
+      const paid = (i.payments||[]).reduce((s,p)=>s+Number(p.amount),0);
+      if (paid < Number(i.amount) && i.dueDate && new Date(i.dueDate) < now && !completedActions['reminder-' + i.id]) {
+        const balance = Number(i.amount) - paid;
+        actions.push({
+          id: 'reminder-' + i.id,
+          type: 'payment',
+          icon: '\u{1F4B3}',
+          label: 'Payment reminder: ' + (i.number || ''),
+          sub: (i.clientName || '') + ' \u2014 ' + fmt(balance, i.currency) + ' overdue',
+          action: 'email',
+          data: { to: '', subject: 'Payment Reminder \u2014 ' + i.number, body: 'Dear ' + (i.clientName||'') + ',\\n\\nFriendly reminder that invoice ' + i.number + ' has an outstanding balance of ' + fmt(balance, i.currency) + '.\\n\\nKind regards,\\nOdisea Tours' }
+        });
+      }
+    });
+
+    // Tours departing within 14 days
+    tours.filter(t => t.status === 'Preparing').forEach(t => {
+      const start = new Date(t.startDate);
+      const daysUntil = Math.ceil((start - now) / 86400000);
+      if (daysUntil > 0 && daysUntil <= 14 && !completedActions['predep-' + t.id]) {
+        actions.push({
+          id: 'predep-' + t.id,
+          type: 'departure',
+          icon: '\u2708\uFE0F',
+          label: 'Send pre-departure info: ' + t.tourName,
+          sub: t.clientName + ' \u2014 departing in ' + daysUntil + ' days',
+          action: 'email',
+          data: { to: t.clientEmail, subject: 'Pre-Departure Info \u2014 ' + t.tourName, body: 'Dear ' + (t.clientName||'') + ',\\n\\nYour tour "' + t.tourName + '" departs on ' + fmtDate(t.startDate) + '. Please ensure all passengers are registered.\\n\\nKind regards,\\nOdisea Tours' },
+          waData: { phone: t.clientPhone, text: 'Hi ' + (t.clientName||'') + '! Your tour "' + t.tourName + '" departs on ' + fmtDate(t.startDate) + '. Please ensure all passengers are registered. - Odisea Tours' }
+        });
+      }
+    });
+
+    // New bookings (tours created in last 7 days)
+    tours.forEach(t => {
+      const created = new Date(t.createdAt || t.confirmedAt || '');
+      const daysSince = Math.floor((now - created) / 86400000);
+      if (daysSince <= 7 && !completedActions['welcome-' + t.id]) {
+        actions.push({
+          id: 'welcome-' + t.id,
+          type: 'welcome',
+          icon: '\u{1F389}',
+          label: 'Send welcome pack: ' + t.tourName,
+          sub: t.clientName + ' \u2014 booked ' + daysSince + ' days ago',
+          action: 'email',
+          data: { to: t.clientEmail, subject: 'Welcome! ' + t.tourName + ' Confirmed', body: 'Dear ' + (t.clientName||'') + ',\\n\\nWelcome! Your tour "' + t.tourName + '" to ' + (t.destination||'') + ' is confirmed.\\n\\nDates: ' + fmtDate(t.startDate) + ' - ' + fmtDate(t.endDate) + '\\n\\nWe will be sharing more details soon.\\n\\nKind regards,\\nOdisea Tours' },
+          waData: t.clientPhone ? { phone: t.clientPhone, text: 'Hi ' + (t.clientName||'') + '! Welcome aboard! Your tour "' + t.tourName + '" to ' + (t.destination||'') + ' is confirmed for ' + fmtDate(t.startDate) + '. - Odisea Tours' } : null
+        });
+      }
+    });
+
+    if (!actions.length) {
+      container.innerHTML = '<div class="empty-state">No pending actions \u2014 you\'re all caught up!</div>';
+      return;
+    }
+
+    container.innerHTML = actions.map(a => `
+      <div class="list-item" style="flex-wrap:wrap;gap:0.5rem">
+        <div style="display:flex;align-items:center;gap:0.5rem;flex:1;min-width:200px">
+          <span style="font-size:1.3rem">${a.icon}</span>
+          <div>
+            <div class="li-title">${a.label}</div>
+            <div class="li-sub">${a.sub}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.3rem;flex-wrap:wrap">
+          <button class="btn btn-sm btn-outline" style="font-size:0.75rem;border-color:var(--amber);color:var(--amber)" onclick="Dashboard.executeAction('${a.id}','email')">Email</button>
+          ${a.waData ? '<button class="btn btn-sm" style="font-size:0.75rem;background:#25D366;color:white;border:none" onclick="Dashboard.executeAction(\'' + a.id + '\',\'whatsapp\')">WhatsApp</button>' : ''}
+          <button class="btn btn-sm btn-outline" style="font-size:0.72rem;color:var(--gray-400);border-color:var(--gray-200)" onclick="Dashboard.dismissAction('${a.id}')">Done</button>
+        </div>
+      </div>
+    `).join('');
+
+    // Store actions for executeAction
+    this._pendingActions = actions;
+  },
+
+  executeAction(actionId, method) {
+    const action = (this._pendingActions || []).find(a => a.id === actionId);
+    if (!action) return;
+
+    if (method === 'email' && action.data) {
+      Email.sendEmail(action.data.to || '', action.data.subject || '', action.data.body || '');
+    } else if (method === 'whatsapp' && action.waData) {
+      WhatsApp.sendCustom(action.waData.phone, action.waData.text);
+    }
+
+    this.dismissAction(actionId);
+  },
+
+  dismissAction(actionId) {
+    const completed = JSON.parse(localStorage.getItem('odisea_completed_actions') || '{}');
+    completed[actionId] = Date.now();
+    // Clean old entries (older than 30 days)
+    const thirtyDaysAgo = Date.now() - 30 * 86400000;
+    Object.keys(completed).forEach(k => { if (completed[k] < thirtyDaysAgo) delete completed[k]; });
+    localStorage.setItem('odisea_completed_actions', JSON.stringify(completed));
+    this.render();
+  },
+
+  async _renderWeatherWidget(tours) {
+    const container = document.getElementById('dashboard-weather');
+    if (!container) return;
+
+    const upcoming = tours.filter(t => {
+      const start = new Date(t.startDate);
+      const now = new Date();
+      const diff = (start - now) / (1000 * 60 * 60 * 24);
+      return diff > 0 && diff <= 30 && (t.status === 'Preparing' || t.status === 'In Progress');
+    });
+
+    if (!upcoming.length) {
+      container.innerHTML = '<div class="empty-state">No upcoming tours in the next 30 days.</div>';
+      return;
+    }
+
+    container.innerHTML = '<div style="text-align:center;padding:1rem;color:var(--gray-400);font-size:0.85rem">Loading weather data...</div>';
+
+    const cacheKey = 'odisea_weather_cache';
+    const cacheTimeKey = 'odisea_weather_cache_time';
+    const sixHours = 6 * 60 * 60 * 1000;
+    let cache = {};
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      const cachedTime = localStorage.getItem(cacheTimeKey);
+      if (cached && cachedTime && (Date.now() - Number(cachedTime)) < sixHours) {
+        cache = JSON.parse(cached);
+      }
+    } catch (e) {}
+
+    const results = [];
+    for (const t of upcoming) {
+      const dest = (t.destination || '').split('\u2192')[0].trim().split(',')[0].trim();
+      if (!dest) continue;
+
+      let weather = cache[dest];
+      if (!weather) {
+        try {
+          const resp = await fetch('https://wttr.in/' + encodeURIComponent(dest) + '?format=j1');
+          const data = await resp.json();
+          if (data && data.current_condition && data.current_condition[0]) {
+            const cc = data.current_condition[0];
+            weather = {
+              temp: cc.temp_C,
+              feelsLike: cc.FeelsLikeC,
+              desc: (cc.weatherDesc && cc.weatherDesc[0]) ? cc.weatherDesc[0].value : '',
+              humidity: cc.humidity,
+              icon: Dashboard._weatherIcon(cc.weatherCode)
+            };
+            // Also get forecast for tour dates
+            if (data.weather && data.weather.length) {
+              weather.forecast = data.weather.slice(0, 3).map(d => ({
+                date: d.date,
+                maxTemp: d.maxtempC,
+                minTemp: d.mintempC,
+                rain: d.hourly ? Math.max(...d.hourly.map(h => Number(h.chanceofrain || 0))) : 0,
+                desc: (d.hourly && d.hourly[4] && d.hourly[4].weatherDesc && d.hourly[4].weatherDesc[0]) ? d.hourly[4].weatherDesc[0].value : ''
+              }));
+            }
+            cache[dest] = weather;
+          }
+        } catch (e) {
+          weather = null;
+        }
+      }
+
+      if (weather) results.push({ tour: t, dest, weather });
+    }
+
+    // Save cache
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(cache));
+      localStorage.setItem(cacheTimeKey, String(Date.now()));
+    } catch (e) {}
+
+    if (!results.length) {
+      container.innerHTML = '<div class="empty-state">Could not load weather data.</div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem">
+        ${results.map(r => {
+          const w = r.weather;
+          const daysUntil = Math.ceil((new Date(r.tour.startDate) - new Date()) / (1000*60*60*24));
+          return `<div style="background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.5rem">
+              <div>
+                <div style="font-weight:700;font-size:0.92rem">${r.dest}</div>
+                <div style="font-size:0.78rem;color:var(--gray-400)">${r.tour.tourName} - ${daysUntil} days</div>
+              </div>
+              <div style="font-size:2rem">${w.icon}</div>
+            </div>
+            <div style="display:flex;gap:1rem;margin-bottom:0.5rem">
+              <div><div style="font-size:1.5rem;font-weight:700">${w.temp}\u00B0C</div><div style="font-size:0.75rem;color:var(--gray-400)">Feels ${w.feelsLike}\u00B0C</div></div>
+              <div style="font-size:0.82rem;color:var(--gray-500)">${w.desc}<br>Humidity: ${w.humidity}%</div>
+            </div>
+            ${w.forecast ? `<div style="display:flex;gap:0.5rem;font-size:0.75rem;border-top:1px solid var(--gray-100);padding-top:0.5rem">
+              ${w.forecast.map(f => `<div style="flex:1;text-align:center"><div style="color:var(--gray-400)">${f.date ? new Date(f.date).toLocaleDateString('en-GB',{weekday:'short'}) : ''}</div><div style="font-weight:600">${f.maxTemp}\u00B0/${f.minTemp}\u00B0</div><div style="color:${Number(f.rain) > 50 ? 'var(--blue)' : 'var(--gray-400)'}">${f.rain}% rain</div></div>`).join('')}
+            </div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="font-size:0.72rem;color:var(--gray-300);margin-top:0.5rem;text-align:right">Weather data from wttr.in \u2022 ${new Date().toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`;
+  },
+
+  _weatherIcon(code) {
+    const c = Number(code);
+    if (c === 113) return '\u2600\uFE0F';
+    if (c === 116) return '\u26C5';
+    if (c === 119 || c === 122) return '\u2601\uFE0F';
+    if ([176,263,266,293,296,299,302,305,308,353,356,359].includes(c)) return '\u{1F327}\uFE0F';
+    if ([200,386,389,392,395].includes(c)) return '\u26C8\uFE0F';
+    if ([227,230,323,326,329,332,335,338,368,371,374,377].includes(c)) return '\u{1F328}\uFE0F';
+    if ([143,248,260].includes(c)) return '\u{1F32B}\uFE0F';
+    return '\u{1F324}\uFE0F';
+  },
+
+  async _renderFeedbackSummary(tours) {
+    const container = document.getElementById('dashboard-feedback');
+    if (!container || !DB._firebaseReady) return;
+
+    const results = [];
+    for (const t of tours.filter(t => t.status === 'Completed' && t.accessCode)) {
+      try {
+        const snap = await DB.firestore.collection('tours').doc(String(t.id)).collection('feedback').get();
+        if (snap.size > 0) {
+          const ratings = snap.docs.map(d => d.data());
+          const avg = ratings.reduce((s, r) => s + (r.overall || 0), 0) / ratings.length;
+          results.push({ tour: t, count: ratings.length, avgRating: avg.toFixed(1) });
+        }
+      } catch (e) {}
+    }
+
+    if (!results.length) {
+      container.innerHTML = '<div class="empty-state">No feedback collected yet.</div>';
+      return;
+    }
+
+    container.innerHTML = results.map(r => `
+      <div class="list-item">
+        <div>
+          <div class="li-title">${r.tour.tourName}</div>
+          <div class="li-sub">${r.count} review${r.count!==1?'s':''}</div>
+        </div>
+        <div style="color:var(--amber);font-weight:600;font-size:1.1rem">${'\u2605'.repeat(Math.round(r.avgRating))} <span style="font-size:0.82rem;color:var(--gray-400)">${r.avgRating}/5</span></div>
+      </div>
+    `).join('');
   },
 
   _renderProfitAlerts(tours) {

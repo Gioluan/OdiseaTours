@@ -353,6 +353,61 @@ const Invoicing = {
     this.viewInvoice(id);
   },
 
+  exportAccounting() {
+    const invoices = DB.getInvoices();
+    invoices.forEach(i => {
+      const paid = (i.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+      i._paid = paid;
+      i._balance = Number(i.amount) - paid;
+      i._status = paid >= Number(i.amount) ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
+    });
+    invoices.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const esc = (v) => { const s = String(v == null ? '' : v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const rows = [['Date', 'Invoice #', 'Client', 'Description', 'Amount', 'VAT (21%)', 'Total+VAT', 'Currency', 'Status', 'Payments Received']];
+    invoices.forEach(i => {
+      const vat = (Number(i.amount) || 0) * 0.21;
+      const totalVAT = (Number(i.amount) || 0) + vat;
+      const paymentsStr = (i.payments || []).map(p => p.date + ': ' + p.amount + ' (' + (p.method || '') + ')').join('; ');
+      rows.push([
+        i.createdAt ? i.createdAt.slice(0, 10) : '',
+        esc(i.number), esc(i.clientName), esc(i.description || i.tourName || ''),
+        (Number(i.amount) || 0).toFixed(2), vat.toFixed(2), totalVAT.toFixed(2),
+        i.currency || 'EUR', i._status, esc(paymentsStr)
+      ]);
+    });
+    const csv = '\uFEFF' + rows.map(r => r.join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'accounting_export_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
+
+  exportProviderCosts() {
+    const tours = DB.getTours();
+    const esc = (v) => { const s = String(v == null ? '' : v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const rows = [['Tour', 'Provider', 'Category', 'Description', 'Amount', 'Paid Amount', 'Status', 'Invoice Received', 'Invoice Ref', 'Currency']];
+    tours.forEach(t => {
+      (t.providerExpenses || []).forEach(e => {
+        rows.push([
+          esc(t.tourName), esc(e.providerName), esc(e.category), esc(e.description),
+          (e.amount || 0).toFixed(2), (e.paidAmount || 0).toFixed(2),
+          e.paid ? 'Paid' : 'Unpaid', e.invoiceReceived ? 'Yes' : 'No',
+          esc(e.invoiceRef), t.currency || 'EUR'
+        ]);
+      });
+    });
+    const csv = '\uFEFF' + rows.map(r => r.join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'provider_costs_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
+
   exportCSV() {
     const filter = document.getElementById('inv-filter-status').value;
     let invoices = DB.getInvoices();
