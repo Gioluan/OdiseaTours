@@ -4,6 +4,126 @@ const Portal = {
   tourData: null,
   currentSection: 'overview',
   _messageListener: null,
+  _lang: sessionStorage.getItem('portal_lang') || 'en',
+  _translations: {
+    en: {
+      overview: 'Overview', itinerary: 'Itinerary', documents: 'Documents',
+      passengers: 'Passengers', roomPlan: 'Room Plan', messages: 'Messages',
+      formsConsent: 'Forms & Consent', feedback: 'Feedback', payments: 'Payments',
+      signOut: 'Sign Out', daysToGo: 'days to go', departingToday: 'Departing today!',
+      tourInProgress: 'Tour in progress', dates: 'Dates', duration: 'Duration',
+      group: 'Group', groupSize: 'Group Size', nights: 'nights', travelers: 'travelers',
+      tourOperator: 'Tour Operator', payment: 'Payment', payByCard: 'Pay by Card',
+      payViaWise: 'Pay via Wise', paymentLinks: 'Use the links below to make a payment for this tour.',
+      dayPlanned: 'days planned', whatsIncluded: "What's Included",
+      itinBeingPrepared: 'The itinerary is being prepared. Check back soon!',
+      downloadDocs: 'Download tour documents and files', noDocsYet: 'No documents uploaded yet. Check back later!',
+      filesAvailable: 'files available', registerTravelers: 'Register travelers for this tour',
+      registered: 'registered', ofExpected: 'of', expected: 'expected',
+      addPassenger: 'Add Passenger', noPassengers: 'No passengers registered yet. Be the first to register!',
+      registerPassenger: 'Register Passenger', editPassenger: 'Edit Passenger',
+      firstName: 'First Name', lastName: 'Last Name', dateOfBirth: 'Date of Birth',
+      nationality: 'Nationality', passportNumber: 'Passport Number', passportExpiry: 'Passport Expiry',
+      role: 'Role', player: 'Player/Student', sibling: 'Sibling', adult: 'Adult/Parent',
+      familyGroup: 'Family / Group Name', dietary: 'Dietary Requirements',
+      medical: 'Medical Info', emergencyContact: 'Emergency Contact', save: 'Save',
+      cancel: 'Cancel', remove: 'Remove', edit: 'Edit',
+      enterCode: 'Enter your access code to view your tour',
+      accessCode: 'ACCESS CODE', continue: 'Continue', invalidCode: 'Invalid access code. Please check and try again.',
+      enterAccessCode: 'Please enter an access code.',
+      firebaseError: 'Firebase not configured. Contact your tour operator.',
+      yourDayByDay: 'Your day-by-day schedule',
+      sendMessage: 'Send', typeMessage: 'Type a message...', noMessages: 'No messages yet. Send one to get started!',
+      submitFeedback: 'Submit Feedback', feedbackThanks: 'Thank you for your feedback!',
+      overallExperience: 'Overall Experience', comments: 'Comments',
+      roomAssignments: 'Room assignments for your tour', noRoomPlan: 'Room plan is being prepared.',
+      unassigned: 'Unassigned'
+    },
+    es: {
+      overview: 'Resumen', itinerary: 'Itinerario', documents: 'Documentos',
+      passengers: 'Pasajeros', roomPlan: 'Habitaciones', messages: 'Mensajes',
+      formsConsent: 'Formularios', feedback: 'Opiniones', payments: 'Pagos',
+      signOut: 'Cerrar Sesion', daysToGo: 'dias restantes', departingToday: 'Sale hoy!',
+      tourInProgress: 'Tour en curso', dates: 'Fechas', duration: 'Duracion',
+      group: 'Grupo', groupSize: 'Tamano del Grupo', nights: 'noches', travelers: 'viajeros',
+      tourOperator: 'Operador Turistico', payment: 'Pago', payByCard: 'Pagar con Tarjeta',
+      payViaWise: 'Pagar con Wise', paymentLinks: 'Usa los enlaces de abajo para realizar un pago.',
+      dayPlanned: 'dias planificados', whatsIncluded: 'Que Incluye',
+      itinBeingPrepared: 'El itinerario se esta preparando. Vuelve pronto!',
+      downloadDocs: 'Descarga documentos del tour', noDocsYet: 'No hay documentos todavia. Vuelve mas tarde!',
+      filesAvailable: 'archivos disponibles', registerTravelers: 'Registra viajeros para este tour',
+      registered: 'registrados', ofExpected: 'de', expected: 'esperados',
+      addPassenger: 'Agregar Pasajero', noPassengers: 'No hay pasajeros registrados. Se el primero!',
+      registerPassenger: 'Registrar Pasajero', editPassenger: 'Editar Pasajero',
+      firstName: 'Nombre', lastName: 'Apellido', dateOfBirth: 'Fecha de Nacimiento',
+      nationality: 'Nacionalidad', passportNumber: 'Numero de Pasaporte', passportExpiry: 'Vencimiento Pasaporte',
+      role: 'Rol', player: 'Jugador/Estudiante', sibling: 'Hermano/a', adult: 'Adulto/Padre',
+      familyGroup: 'Familia / Grupo', dietary: 'Requisitos Dieteticos',
+      medical: 'Info Medica', emergencyContact: 'Contacto de Emergencia', save: 'Guardar',
+      cancel: 'Cancelar', remove: 'Eliminar', edit: 'Editar',
+      enterCode: 'Ingresa tu codigo de acceso para ver tu tour',
+      accessCode: 'CODIGO DE ACCESO', continue: 'Continuar', invalidCode: 'Codigo invalido. Verifica e intenta de nuevo.',
+      enterAccessCode: 'Por favor ingresa un codigo de acceso.',
+      firebaseError: 'Firebase no configurado. Contacta a tu operador.',
+      yourDayByDay: 'Tu horario dia a dia',
+      sendMessage: 'Enviar', typeMessage: 'Escribe un mensaje...', noMessages: 'No hay mensajes. Envia uno para comenzar!',
+      submitFeedback: 'Enviar Opinion', feedbackThanks: 'Gracias por tu opinion!',
+      overallExperience: 'Experiencia General', comments: 'Comentarios',
+      roomAssignments: 'Asignacion de habitaciones', noRoomPlan: 'El plan de habitaciones se esta preparando.',
+      unassigned: 'Sin asignar'
+    }
+  },
+
+  _t(key) {
+    const lang = this._lang || 'en';
+    return (this._translations[lang] && this._translations[lang][key]) || (this._translations.en[key]) || key;
+  },
+
+  toggleLanguage() {
+    this._lang = this._lang === 'en' ? 'es' : 'en';
+    sessionStorage.setItem('portal_lang', this._lang);
+    const btn = document.getElementById('lang-toggle-btn');
+    if (btn) btn.textContent = this._lang.toUpperCase();
+    // Update nav drawer links
+    this._updateNavLabels();
+    // Re-render current section
+    this.showSection(this.currentSection);
+  },
+
+  _updateNavLabels() {
+    const navMap = {
+      overview: 'overview', itinerary: 'itinerary', documents: 'documents',
+      passengers: 'passengers', roomplan: 'roomPlan', messages: 'messages',
+      forms: 'formsConsent', feedback: 'feedback', payments: 'payments'
+    };
+    document.querySelectorAll('.nav-drawer-links li').forEach(li => {
+      const section = li.dataset.section;
+      const key = navMap[section];
+      if (key) {
+        // Keep the SVG, just update the text node
+        const textNodes = [...li.childNodes].filter(n => n.nodeType === 3);
+        textNodes.forEach(n => n.textContent = '');
+        // Append translated text
+        const existing = li.querySelector('.nav-text');
+        if (existing) existing.textContent = this._t(key);
+        else {
+          // Find text after SVG
+          const lastText = [...li.childNodes].pop();
+          if (lastText && lastText.nodeType === 3) lastText.textContent = '\n        ' + this._t(key) + '\n      ';
+        }
+      }
+    });
+    // Sign out button
+    const signOutBtn = document.querySelector('.nav-drawer-footer button');
+    if (signOutBtn) signOutBtn.textContent = this._t('signOut');
+    // Login screen
+    const loginSubtitle = document.querySelector('.login-card .subtitle');
+    if (loginSubtitle) loginSubtitle.textContent = this._t('enterCode');
+    const loginBtn = document.querySelector('.login-btn');
+    if (loginBtn) loginBtn.textContent = this._t('continue');
+    const codeInput = document.getElementById('portal-code-input');
+    if (codeInput) codeInput.placeholder = this._t('accessCode');
+  },
 
   async init() {
     // Initialize Firebase
@@ -18,6 +138,11 @@ const Portal = {
     } catch (e) {
       console.warn('Portal Firebase init failed:', e.message);
     }
+
+    // Apply saved language
+    const btn = document.getElementById('lang-toggle-btn');
+    if (btn) btn.textContent = this._lang.toUpperCase();
+    this._updateNavLabels();
 
     // Check URL param
     const params = new URLSearchParams(window.location.search);
@@ -42,13 +167,13 @@ const Portal = {
     errorEl.style.display = 'none';
 
     if (!code) {
-      errorEl.textContent = 'Please enter an access code.';
+      errorEl.textContent = Portal._t('enterAccessCode');
       errorEl.style.display = 'block';
       return;
     }
 
     if (!DB._firebaseReady) {
-      errorEl.textContent = 'Firebase not configured. Contact your tour operator.';
+      errorEl.textContent = Portal._t('firebaseError');
       errorEl.style.display = 'block';
       return;
     }
@@ -56,7 +181,7 @@ const Portal = {
     // Query Firestore for tour by access code
     const tour = await DB.getTourByAccessCode(code);
     if (!tour) {
-      errorEl.textContent = 'Invalid access code. Please check and try again.';
+      errorEl.textContent = Portal._t('invalidCode');
       errorEl.style.display = 'block';
       return;
     }
@@ -147,9 +272,9 @@ const Portal = {
     const now = new Date();
     const diff = Math.ceil((start - now) / (1000 * 60 * 60 * 24));
     let countdownText = '';
-    if (diff > 0) countdownText = diff + ' day' + (diff !== 1 ? 's' : '') + ' to go';
-    else if (diff === 0) countdownText = 'Departing today!';
-    else countdownText = 'Tour in progress';
+    if (diff > 0) countdownText = diff + ' ' + Portal._t('daysToGo');
+    else if (diff === 0) countdownText = Portal._t('departingToday');
+    else countdownText = Portal._t('tourInProgress');
 
     const groupSize = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
 
@@ -162,64 +287,64 @@ const Portal = {
 
       <div class="info-grid">
         <div class="info-card">
-          <div class="ic-label">Dates</div>
+          <div class="ic-label">${Portal._t('dates')}</div>
           <div class="ic-value">${Portal._fmtDate(t.startDate)} — ${Portal._fmtDate(t.endDate)}</div>
         </div>
         <div class="info-card">
-          <div class="ic-label">Duration</div>
-          <div class="ic-value">${t.nights || 0} night${(t.nights||0)!==1?'s':''}</div>
+          <div class="ic-label">${Portal._t('duration')}</div>
+          <div class="ic-value">${t.nights || 0} ${Portal._t('nights')}</div>
         </div>
         <div class="info-card">
-          <div class="ic-label">Group</div>
+          <div class="ic-label">${Portal._t('group')}</div>
           <div class="ic-value">${t.groupName || '—'}</div>
         </div>
         <div class="info-card">
-          <div class="ic-label">Group Size</div>
-          <div class="ic-value">${groupSize} travelers</div>
+          <div class="ic-label">${Portal._t('groupSize')}</div>
+          <div class="ic-value">${groupSize} ${Portal._t('travelers')}</div>
         </div>
       </div>
 
       <div class="action-grid">
         <button class="action-btn" onclick="Portal.showSection('itinerary')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          <span>Itinerary</span>
+          <span>${Portal._t('itinerary')}</span>
         </button>
         <button class="action-btn" onclick="Portal.showSection('documents')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <span>Documents</span>
+          <span>${Portal._t('documents')}</span>
         </button>
         <button class="action-btn" onclick="Portal.showSection('passengers')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/></svg>
-          <span>Passengers</span>
+          <span>${Portal._t('passengers')}</span>
         </button>
         <button class="action-btn" onclick="Portal.showSection('roomplan')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
-          <span>Room Plan</span>
+          <span>${Portal._t('roomPlan')}</span>
         </button>
         <button class="action-btn" onclick="Portal.showSection('messages')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-          <span>Messages</span>
+          <span>${Portal._t('messages')}</span>
         </button>
       </div>
 
       ${(t.portalPaymentCard || t.portalPaymentWise) ? `
       <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-top:1rem;box-shadow:var(--shadow)">
-        <h4 style="font-family:var(--font-display);color:var(--navy);margin-bottom:0.8rem;font-size:1.05rem">Payment</h4>
-        <p style="font-size:0.88rem;color:var(--gray-400);margin-bottom:0.8rem">Use the links below to make a payment for this tour.</p>
+        <h4 style="font-family:var(--font-display);color:var(--navy);margin-bottom:0.8rem;font-size:1.05rem">${Portal._t('payment')}</h4>
+        <p style="font-size:0.88rem;color:var(--gray-400);margin-bottom:0.8rem">${Portal._t('paymentLinks')}</p>
         <div style="display:flex;gap:0.8rem;flex-wrap:wrap">
           ${t.portalPaymentCard ? `<a href="${Portal._escapeAttr(t.portalPaymentCard)}" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem 1.2rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.92rem">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-            Pay by Card
+            ${Portal._t('payByCard')}
           </a>` : ''}
           ${t.portalPaymentWise ? `<a href="${Portal._escapeAttr(t.portalPaymentWise)}" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem 1.2rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.92rem">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-            Pay via Wise
+            ${Portal._t('payViaWise')}
           </a>` : ''}
         </div>
       </div>` : ''}
 
       <div class="contact-card">
-        <h4>Tour Operator</h4>
+        <h4>${Portal._t('tourOperator')}</h4>
         <p><strong>Odisea Tours</strong></p>
         <p>For any questions, use the Messages section or contact us directly.</p>
       </div>`;

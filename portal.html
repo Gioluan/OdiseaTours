@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="css/portal.css">
 <script>
 (function(){
-  var APP_VERSION = 22;
+  var APP_VERSION = 23;
   var stored = localStorage.getItem('odisea_app_version');
   if (stored && Number(stored) >= APP_VERSION) return;
   localStorage.setItem('odisea_app_version', APP_VERSION);
@@ -58,6 +58,7 @@
     <div class="portal-header-logo">
       <img src="img/logo-dark.png" alt="Odisea Tours" style="height:32px;width:auto">
     </div>
+    <button class="lang-toggle" onclick="Portal.toggleLanguage()" style="background:none;border:1.5px solid rgba(255,255,255,0.3);color:white;font-size:0.78rem;font-weight:600;padding:0.3rem 0.6rem;border-radius:var(--radius);cursor:pointer;margin-right:0.5rem" id="lang-toggle-btn">EN</button>
     <button class="hamburger-btn" onclick="Portal.toggleDrawer()" aria-label="Menu">
       <span></span><span></span><span></span>
     </button>

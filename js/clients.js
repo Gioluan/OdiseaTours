@@ -157,6 +157,47 @@ const Clients = {
       specialDiscount: document.getElementById('cli-discount') ? document.getElementById('cli-discount').value : ''
     };
     if (!c.name) { alert('Please enter a client name.'); return; }
+    // Duplicate detection for new clients
+    if (!id) {
+      const existing = DB.getClients();
+      const nameMatch = existing.find(ex => ex.name && ex.name.toLowerCase().trim() === c.name.toLowerCase().trim());
+      const emailMatch = c.email ? existing.find(ex => ex.email && ex.email.toLowerCase().trim() === c.email.toLowerCase().trim()) : null;
+      const match = nameMatch || emailMatch;
+      if (match) {
+        const mergeConfirm = confirm(
+          'Similar client found: "' + match.name + '"' + (match.email ? ' (' + match.email + ')' : '') +
+          '.\n\nClick OK to merge (transfer all data to existing client).\nClick Cancel to create a new separate client.'
+        );
+        if (mergeConfirm) {
+          // Merge: update existing client with any new info
+          if (c.email && !match.email) match.email = c.email;
+          if (c.phone && !match.phone) match.phone = c.phone;
+          if (c.contactPerson && !match.contactPerson) match.contactPerson = c.contactPerson;
+          if (c.city && !match.city) match.city = c.city;
+          if (c.country && !match.country) match.country = c.country;
+          if (c.notes) match.notes = (match.notes ? match.notes + '\n' : '') + c.notes;
+          if (c.specialDiscount && !match.specialDiscount) match.specialDiscount = c.specialDiscount;
+          DB.saveClient(match);
+          // Transfer quotes and tours
+          DB.getQuotes().forEach(q => {
+            if (q.clientName && q.clientName.toLowerCase().trim() === c.name.toLowerCase().trim() && !q.clientId) {
+              q.clientId = match.id;
+              DB.saveQuote(q);
+            }
+          });
+          DB.getTours().forEach(t => {
+            if (t.clientName && t.clientName.toLowerCase().trim() === c.name.toLowerCase().trim() && !t.clientId) {
+              t.clientId = match.id;
+              DB.saveTour(t);
+            }
+          });
+          closeModal('cli-modal');
+          this.render();
+          alert('Merged with existing client: ' + match.name);
+          return;
+        }
+      }
+    }
     if (id) c.id = Number(id);
     DB.saveClient(c);
     closeModal('cli-modal');
@@ -218,6 +259,52 @@ const Clients = {
           <td><span class="badge ${badgeClass(t.status)}">${t.status}</span></td>
         </tr>`).join('')}</tbody>
       </table>` : '<p style="color:var(--gray-400);margin-bottom:1rem">No tours linked to this client.</p>'}
+
+      <h3>Activity Timeline</h3>
+      ${(() => {
+        const timeline = [];
+        // Quotes
+        quotes.forEach(q => {
+          timeline.push({ date: q.createdAt, icon: '\uD83D\uDCDD', desc: 'Quote created: ' + (q.tourName || 'Q-' + q.id), type: 'quote' });
+          if (q.status === 'Confirmed' && q.updatedAt) timeline.push({ date: q.updatedAt, icon: '\u2705', desc: 'Quote confirmed: ' + (q.tourName || 'Q-' + q.id), type: 'confirmed' });
+          if (q.status === 'Sent' && q.updatedAt) timeline.push({ date: q.updatedAt, icon: '\uD83D\uDCE7', desc: 'Quote sent: ' + (q.tourName || 'Q-' + q.id), type: 'sent' });
+        });
+        // Tours
+        tours.forEach(t => {
+          if (t.confirmedAt || t.createdAt) timeline.push({ date: t.confirmedAt || t.createdAt, icon: '\u2708\uFE0F', desc: 'Tour booked: ' + (t.tourName || '') + ' (' + (t.destination || '') + ')', type: 'tour' });
+          if (t.status === 'Completed') timeline.push({ date: t.endDate, icon: '\uD83C\uDFC1', desc: 'Tour completed: ' + (t.tourName || ''), type: 'completed' });
+        });
+        // Invoices
+        const clientInvoices = DB.getInvoices().filter(i =>
+          tours.some(t => t.id === i.tourId) ||
+          (i.clientName && i.clientName === c.name)
+        );
+        clientInvoices.forEach(i => {
+          timeline.push({ date: i.createdAt, icon: '\uD83D\uDCCB', desc: 'Invoice issued: ' + (i.number || '') + ' — ' + fmt(i.amount, i.currency), type: 'invoice' });
+          (i.payments || []).forEach(p => {
+            timeline.push({ date: p.date, icon: '\uD83D\uDCB0', desc: 'Payment received: ' + fmt(p.amount, i.currency) + ' (' + (p.method || '') + ') for ' + (i.number || ''), type: 'payment' });
+          });
+        });
+        // Email log
+        const emailLog = JSON.parse(localStorage.getItem('odisea_email_log') || '[]');
+        emailLog.filter(e => e.to && c.email && e.to.toLowerCase() === c.email.toLowerCase()).forEach(e => {
+          timeline.push({ date: e.date || e.timestamp, icon: '\uD83D\uDCE8', desc: 'Email sent: ' + (e.subject || 'No subject'), type: 'email' });
+        });
+        // Sort by date descending
+        timeline.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+        if (!timeline.length) return '<p style="color:var(--gray-400);margin-bottom:1rem">No activity recorded yet.</p>';
+
+        return '<div style="border-left:3px solid var(--amber);padding-left:1rem;margin-bottom:1rem;max-height:300px;overflow-y:auto">' +
+          timeline.map(entry =>
+            '<div style="position:relative;margin-bottom:0.6rem;padding-bottom:0.6rem;border-bottom:1px solid var(--gray-100)">' +
+            '<div style="position:absolute;left:-1.35rem;top:0.15rem;width:10px;height:10px;background:var(--amber);border-radius:50%"></div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem">' +
+            '<div style="font-size:0.85rem"><span style="margin-right:0.3rem">' + entry.icon + '</span>' + entry.desc + '</div>' +
+            '<span style="font-size:0.75rem;color:var(--gray-400);white-space:nowrap">' + (entry.date ? fmtDate(entry.date) : '—') + '</span>' +
+            '</div></div>'
+          ).join('') + '</div>';
+      })()}
 
       <div class="modal-actions">
         <button class="btn btn-primary" onclick="Clients.editClient(${c.id})">Edit</button>

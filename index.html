@@ -20,7 +20,7 @@
 <script>
 // Force update: if cached version is old, clear caches and reload
 (function(){
-  var APP_VERSION = 22;
+  var APP_VERSION = 23;
   var stored = localStorage.getItem('odisea_app_version');
   if (stored && Number(stored) >= APP_VERSION) return;
   localStorage.setItem('odisea_app_version', APP_VERSION);
@@ -151,6 +151,10 @@
       <h3>Confirmed Groups — Profit Summary</h3>
       <div id="dashboard-confirmed-groups"></div>
     </div>
+    <div class="card" style="margin-top:1rem">
+      <h3>Revenue Forecast</h3>
+      <div id="dashboard-revenue-forecast"></div>
+    </div>
     <div class="card" style="margin-top:1rem;display:none" id="dashboard-profit-alerts-card">
       <h3>Profit Alerts</h3>
       <div id="dashboard-profit-alerts"></div>
@@ -259,6 +263,13 @@
       <button class="btn btn-outline" onclick="Invoicing.exportProviderCosts()" style="border-color:var(--red);color:var(--red)">Provider Costs CSV</button>
     </div>
     <div id="invoicing-table-container"></div>
+    <div class="card" style="margin-top:1.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h3>Financial Reports</h3>
+        <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="Invoicing.exportFinancialReports()">Export All Reports CSV</button>
+      </div>
+      <div id="financial-reports-container"></div>
+    </div>
     <div id="inv-modal" class="modal-overlay" style="display:none">
       <div class="modal" id="inv-modal-content"></div>
     </div>

@@ -38,6 +38,7 @@ const Invoicing = {
 
     if (!invoices.length) {
       document.getElementById('invoicing-table-container').innerHTML = '<div class="empty-state">No invoices yet.</div>';
+      this.renderFinancialReports();
       return;
     }
 
@@ -59,6 +60,8 @@ const Invoicing = {
             </td>
           </tr>`).join('')}</tbody>
       </table>`;
+
+    this.renderFinancialReports();
   },
 
   showCreateModal() {
@@ -408,6 +411,154 @@ const Invoicing = {
     URL.revokeObjectURL(a.href);
   },
 
+  renderFinancialReports() {
+    const container = document.getElementById('financial-reports-container');
+    if (!container) return;
+
+    const invoices = DB.getInvoices();
+    const tours = DB.getTours();
+
+    invoices.forEach(i => {
+      i._paid = (i.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+      i._balance = Number(i.amount) - i._paid;
+    });
+
+    // P&L Summary
+    let totalRevenue = 0, totalCosts = 0, totalCommissions = 0;
+    tours.forEach(t => {
+      const c = t.costs || {};
+      totalRevenue += c.totalRevenue || 0;
+      totalCosts += c.grand || 0;
+      if (t.commissionRate && c.totalRevenue) {
+        totalCommissions += c.totalRevenue * (t.commissionRate || 0) / 100;
+      }
+    });
+    const grossProfit = totalRevenue - totalCosts;
+    const netProfit = grossProfit - totalCommissions;
+
+    // Revenue by Destination
+    const destMap = {};
+    tours.forEach(t => {
+      const dest = t.destination || 'Unknown';
+      if (!destMap[dest]) destMap[dest] = { revenue: 0, cost: 0, tours: 0 };
+      destMap[dest].revenue += (t.costs && t.costs.totalRevenue) || 0;
+      destMap[dest].cost += (t.costs && t.costs.grand) || 0;
+      destMap[dest].tours++;
+    });
+    const destArr = Object.entries(destMap).map(([dest, d]) => ({ dest, ...d, profit: d.revenue - d.cost })).sort((a, b) => b.revenue - a.revenue);
+
+    // Client Revenue Ranking
+    const clientMap = {};
+    tours.forEach(t => {
+      const client = t.clientName || 'Unknown';
+      if (!clientMap[client]) clientMap[client] = { revenue: 0, tours: 0 };
+      clientMap[client].revenue += (t.costs && t.costs.totalRevenue) || 0;
+      clientMap[client].tours++;
+    });
+    const clientArr = Object.entries(clientMap).map(([name, d]) => ({ name, ...d })).sort((a, b) => b.revenue - a.revenue);
+
+    container.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr;gap:1.5rem">
+        <div>
+          <h4 style="margin-bottom:0.8rem;font-size:0.95rem;color:var(--navy)">P&L Summary</h4>
+          <table class="data-table" style="font-size:0.85rem">
+            <tbody>
+              <tr><td><strong>Total Revenue</strong></td><td style="text-align:right;color:var(--green);font-weight:600">${fmt(totalRevenue)}</td></tr>
+              <tr><td><strong>Total Costs</strong></td><td style="text-align:right;color:var(--red);font-weight:600">${fmt(totalCosts)}</td></tr>
+              <tr style="border-top:2px solid var(--gray-200)"><td><strong>Gross Profit</strong></td><td style="text-align:right;color:${grossProfit >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700">${fmt(grossProfit)}</td></tr>
+              <tr><td><strong>Commissions</strong></td><td style="text-align:right;color:var(--navy);font-weight:600">${fmt(totalCommissions)}</td></tr>
+              <tr style="border-top:2px solid var(--gray-200)"><td><strong>Net Profit</strong></td><td style="text-align:right;font-size:1.05rem;color:${netProfit >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700">${fmt(netProfit)}</td></tr>
+              <tr><td>Margin</td><td style="text-align:right">${totalRevenue > 0 ? (netProfit / totalRevenue * 100).toFixed(1) + '%' : '—'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h4 style="margin-bottom:0.8rem;font-size:0.95rem;color:var(--navy)">Revenue by Destination</h4>
+          ${destArr.length ? `<table class="data-table" style="font-size:0.85rem">
+            <thead><tr><th>Destination</th><th>Tours</th><th>Revenue</th><th>Cost</th><th>Profit</th></tr></thead>
+            <tbody>${destArr.map(d => `<tr>
+              <td><strong>${d.dest}</strong></td>
+              <td>${d.tours}</td>
+              <td>${fmt(d.revenue)}</td>
+              <td>${fmt(d.cost)}</td>
+              <td style="color:${d.profit >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:600">${fmt(d.profit)}</td>
+            </tr>`).join('')}</tbody>
+          </table>` : '<div class="empty-state">No tour data yet.</div>'}
+        </div>
+
+        <div>
+          <h4 style="margin-bottom:0.8rem;font-size:0.95rem;color:var(--navy)">Client Revenue Ranking</h4>
+          ${clientArr.length ? `<table class="data-table" style="font-size:0.85rem">
+            <thead><tr><th>#</th><th>Client</th><th>Tours</th><th>Revenue</th></tr></thead>
+            <tbody>${clientArr.slice(0, 15).map((c, i) => `<tr>
+              <td>${i + 1}</td>
+              <td><strong>${c.name}</strong></td>
+              <td>${c.tours}</td>
+              <td style="font-weight:600">${fmt(c.revenue)}</td>
+            </tr>`).join('')}</tbody>
+          </table>` : '<div class="empty-state">No client data yet.</div>'}
+        </div>
+      </div>`;
+  },
+
+  exportFinancialReports() {
+    const tours = DB.getTours();
+    const invoices = DB.getInvoices();
+    const esc = (v) => { const s = String(v == null ? '' : v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
+
+    const rows = [];
+    rows.push(['=== P&L SUMMARY ===']);
+    rows.push(['Category', 'Amount']);
+    let totalRevenue = 0, totalCosts = 0, totalCommissions = 0;
+    tours.forEach(t => {
+      const c = t.costs || {};
+      totalRevenue += c.totalRevenue || 0;
+      totalCosts += c.grand || 0;
+      if (t.commissionRate && c.totalRevenue) totalCommissions += c.totalRevenue * (t.commissionRate||0) / 100;
+    });
+    rows.push(['Total Revenue', totalRevenue.toFixed(2)]);
+    rows.push(['Total Costs', totalCosts.toFixed(2)]);
+    rows.push(['Gross Profit', (totalRevenue - totalCosts).toFixed(2)]);
+    rows.push(['Commissions', totalCommissions.toFixed(2)]);
+    rows.push(['Net Profit', (totalRevenue - totalCosts - totalCommissions).toFixed(2)]);
+    rows.push([]);
+    rows.push(['=== REVENUE BY DESTINATION ===']);
+    rows.push(['Destination', 'Tours', 'Revenue', 'Cost', 'Profit']);
+    const destMap = {};
+    tours.forEach(t => {
+      const dest = t.destination || 'Unknown';
+      if (!destMap[dest]) destMap[dest] = { revenue: 0, cost: 0, tours: 0 };
+      destMap[dest].revenue += (t.costs && t.costs.totalRevenue) || 0;
+      destMap[dest].cost += (t.costs && t.costs.grand) || 0;
+      destMap[dest].tours++;
+    });
+    Object.entries(destMap).sort((a,b) => b[1].revenue - a[1].revenue).forEach(([dest, d]) => {
+      rows.push([esc(dest), d.tours, d.revenue.toFixed(2), d.cost.toFixed(2), (d.revenue - d.cost).toFixed(2)]);
+    });
+    rows.push([]);
+    rows.push(['=== CLIENT REVENUE RANKING ===']);
+    rows.push(['Client', 'Tours', 'Revenue']);
+    const clientMap = {};
+    tours.forEach(t => {
+      const client = t.clientName || 'Unknown';
+      if (!clientMap[client]) clientMap[client] = { revenue: 0, tours: 0 };
+      clientMap[client].revenue += (t.costs && t.costs.totalRevenue) || 0;
+      clientMap[client].tours++;
+    });
+    Object.entries(clientMap).sort((a,b) => b[1].revenue - a[1].revenue).forEach(([name, d]) => {
+      rows.push([esc(name), d.tours, d.revenue.toFixed(2)]);
+    });
+
+    const csv = '\uFEFF' + rows.map(r => Array.isArray(r) ? r.join(',') : r).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'financial_reports_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  },
+
   exportCSV() {
     const filter = document.getElementById('inv-filter-status').value;
     let invoices = DB.getInvoices();
@@ -427,9 +578,10 @@ const Invoicing = {
     invoices.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     const esc = (v) => { const s = String(v == null ? '' : v); return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s; };
-    const rows = [['Invoice #','Client','Tour','Amount','Currency','Paid','Balance','Due Date','Status','Created']];
+    const rows = [['Invoice #','Client','Tour','Amount','Currency','Paid','Balance','Due Date','Status','Created','Commission Agent','Commission Rate']];
     invoices.forEach(i => {
-      rows.push([esc(i.number), esc(i.clientName), esc(i.tourName), i.amount || 0, i.currency || 'EUR', i._paid || 0, i._balance || 0, i.dueDate || '', i._status, i.createdAt ? i.createdAt.slice(0, 10) : '']);
+      const tour = i.tourId ? DB.getTours().find(x => x.id === i.tourId) : null;
+      rows.push([esc(i.number), esc(i.clientName), esc(i.tourName), i.amount || 0, i.currency || 'EUR', i._paid || 0, i._balance || 0, i.dueDate || '', i._status, i.createdAt ? i.createdAt.slice(0, 10) : '', esc(tour && tour.commissionAgent || ''), tour && tour.commissionRate ? tour.commissionRate + '%' : '']);
     });
     const csv = rows.map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });

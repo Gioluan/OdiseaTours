@@ -4,9 +4,15 @@ const Tours = {
 
   init() { this.render(); },
 
+  _calendarMonth: new Date().getMonth(),
+  _calendarYear: new Date().getFullYear(),
+
   toggleView() {
-    this._viewMode = this._viewMode === 'table' ? 'board' : 'table';
-    document.getElementById('tours-view-toggle').textContent = this._viewMode === 'table' ? 'Board View' : 'Table View';
+    const modes = ['table', 'board', 'timeline', 'calendar'];
+    const labels = { table: 'Board View', board: 'Timeline View', timeline: 'Calendar View', calendar: 'Table View' };
+    const idx = modes.indexOf(this._viewMode);
+    this._viewMode = modes[(idx + 1) % modes.length];
+    document.getElementById('tours-view-toggle').textContent = labels[this._viewMode] || 'Table View';
     this.render();
   },
 
@@ -27,6 +33,10 @@ const Tours = {
       this._renderKanban(tours, invoices);
       return;
     }
+
+    if (this._viewMode === 'timeline') { this._renderTimeline(tours); return; }
+
+    if (this._viewMode === 'calendar') { this._renderCalendar(tours); return; }
 
     document.getElementById('tours-list-container').innerHTML = `
       <table class="data-table">
@@ -261,6 +271,10 @@ const Tours = {
 
       ${Tours._renderProviderExpenses(t)}
 
+      ${Tours._renderReconciliation(t)}
+
+      ${Tours._renderCommission(t)}
+
       ${Tours._renderPaymentFlowSection(t)}
 
       <h3 style="margin-top:1.5rem">Linked Invoices</h3>
@@ -281,6 +295,7 @@ const Tours = {
       <div class="modal-actions">
         <button class="btn btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.exportCalendar(${t.id})">Add to Calendar</button>
         <button class="btn btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="PDFItinerary.generate(${t.id})">Generate Itinerary PDF</button>
+        <button class="btn btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="Tours.cloneTour(${t.id})">Duplicate</button>
         <button class="btn btn-danger" onclick="if(confirm('Delete this tour?')){Tours.deleteTour(${t.id})}">Delete</button>
         <button class="btn btn-outline" onclick="closeModal('tours-modal')">Close</button>
       </div>`;
@@ -1325,19 +1340,81 @@ const Tours = {
     DB.saveTour(t);
   },
 
-  addDefaultChecklist(tourId) {
+  addDefaultChecklist(tourId, template) {
     const t = DB.getTours().find(x => x.id === tourId);
     if (!t) return;
-    t.checklist = [
-      { label: 'Hotel confirmed', done: false, dueDate: '' },
-      { label: 'Flights booked', done: false, dueDate: '' },
-      { label: 'Coach booked', done: false, dueDate: '' },
-      { label: 'Insurance arranged', done: false, dueDate: '' },
-      { label: 'Documents uploaded', done: false, dueDate: '' },
-      { label: 'Rooming list finalized', done: false, dueDate: '' },
-      { label: 'Final payment received', done: false, dueDate: '' },
-      { label: 'Passenger list complete', done: false, dueDate: '' }
-    ];
+    const templates = {
+      'School Trip': [
+        { label: 'Parental consent forms collected', done: false, dueDate: '' },
+        { label: 'Medical forms completed', done: false, dueDate: '' },
+        { label: 'Insurance arranged', done: false, dueDate: '' },
+        { label: 'Coach booking confirmed', done: false, dueDate: '' },
+        { label: 'DBS checks for staff', done: false, dueDate: '' },
+        { label: 'Risk assessment completed', done: false, dueDate: '' },
+        { label: 'Emergency contact list compiled', done: false, dueDate: '' },
+        { label: 'Hotel confirmed', done: false, dueDate: '' },
+        { label: 'Flights booked', done: false, dueDate: '' },
+        { label: 'Rooming list finalized', done: false, dueDate: '' },
+        { label: 'Final payment received', done: false, dueDate: '' },
+        { label: 'Passenger list complete', done: false, dueDate: '' }
+      ],
+      'Corporate Group': [
+        { label: 'Contract signed', done: false, dueDate: '' },
+        { label: 'Deposit received', done: false, dueDate: '' },
+        { label: 'Venue booked', done: false, dueDate: '' },
+        { label: 'Catering arranged', done: false, dueDate: '' },
+        { label: 'Transport confirmed', done: false, dueDate: '' },
+        { label: 'Insurance arranged', done: false, dueDate: '' },
+        { label: 'Attendee list finalized', done: false, dueDate: '' },
+        { label: 'Hotel confirmed', done: false, dueDate: '' },
+        { label: 'Team building activities booked', done: false, dueDate: '' },
+        { label: 'Final payment received', done: false, dueDate: '' }
+      ],
+      'Sports Tour': [
+        { label: 'Fixtures confirmed', done: false, dueDate: '' },
+        { label: 'Parental consent forms collected', done: false, dueDate: '' },
+        { label: 'Medical forms completed', done: false, dueDate: '' },
+        { label: 'Kit and equipment prepared', done: false, dueDate: '' },
+        { label: 'Training venue booked', done: false, dueDate: '' },
+        { label: 'Insurance arranged', done: false, dueDate: '' },
+        { label: 'Coach booking confirmed', done: false, dueDate: '' },
+        { label: 'Hotel confirmed', done: false, dueDate: '' },
+        { label: 'Flights booked', done: false, dueDate: '' },
+        { label: 'Rooming list finalized', done: false, dueDate: '' },
+        { label: 'Final payment received', done: false, dueDate: '' },
+        { label: 'Passenger list complete', done: false, dueDate: '' }
+      ],
+      'Custom': [
+        { label: 'Hotel confirmed', done: false, dueDate: '' },
+        { label: 'Flights booked', done: false, dueDate: '' },
+        { label: 'Coach booked', done: false, dueDate: '' },
+        { label: 'Insurance arranged', done: false, dueDate: '' },
+        { label: 'Documents uploaded', done: false, dueDate: '' },
+        { label: 'Rooming list finalized', done: false, dueDate: '' },
+        { label: 'Final payment received', done: false, dueDate: '' },
+        { label: 'Passenger list complete', done: false, dueDate: '' }
+      ]
+    };
+    if (!template) {
+      // Show template selection
+      document.getElementById('tours-modal-content').querySelector('.checklist-template-select')?.remove();
+      const container = document.createElement('div');
+      container.className = 'checklist-template-select';
+      container.style.cssText = 'margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap';
+      Object.keys(templates).forEach(name => {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-sm btn-outline';
+        btn.style.cssText = 'border-color:var(--amber);color:var(--amber)';
+        btn.textContent = name;
+        btn.onclick = () => Tours.addDefaultChecklist(tourId, name);
+        container.appendChild(btn);
+      });
+      const target = document.getElementById('tours-modal-content');
+      const checklistSection = target.querySelector('[onclick*="addDefaultChecklist"]');
+      if (checklistSection) checklistSection.parentNode.insertBefore(container, checklistSection.nextSibling);
+      return;
+    }
+    t.checklist = JSON.parse(JSON.stringify(templates[template] || templates['Custom']));
     DB.saveTour(t);
     this.viewTour(tourId);
   },
@@ -1942,5 +2019,275 @@ const Tours = {
     }
 
     geocodeNext(0);
+  },
+
+  // === Feature 1: Duplicate Tour ===
+  cloneTour(id) {
+    const original = DB.getTours().find(x => x.id === id);
+    if (!original) return;
+    const clone = JSON.parse(JSON.stringify(original));
+    delete clone.id;
+    delete clone.createdAt;
+    delete clone.confirmedAt;
+    delete clone.accessCode;
+    clone.tourName = (clone.tourName || '') + ' (Copy)';
+    clone.status = 'Preparing';
+    if (clone.checklist && clone.checklist.length) {
+      clone.checklist.forEach(item => { item.done = false; });
+    }
+    DB.saveTour(clone);
+    closeModal('tours-modal');
+    this.render();
+  },
+
+  // === Feature 2: Timeline / Gantt View ===
+  _renderTimeline(tours) {
+    const now = new Date();
+    const startMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const months = [];
+    for (let i = 0; i < 6; i++) {
+      const m = new Date(startMonth.getFullYear(), startMonth.getMonth() + i, 1);
+      months.push(m);
+    }
+    const timelineStart = months[0].getTime();
+    const timelineEnd = new Date(months[5].getFullYear(), months[5].getMonth() + 1, 0).getTime();
+    const totalDays = Math.ceil((timelineEnd - timelineStart) / (1000 * 60 * 60 * 24));
+
+    const colorMap = { 'Preparing': 'var(--amber)', 'In Progress': 'var(--blue)', 'Completed': 'var(--green)' };
+
+    // Filter tours with dates within the visible range
+    const visibleTours = tours.filter(t => {
+      if (!t.startDate || !t.endDate) return false;
+      const s = new Date(t.startDate).getTime();
+      const e = new Date(t.endDate).getTime();
+      return s <= timelineEnd && e >= timelineStart;
+    });
+
+    // Detect overlapping tours
+    const overlaps = new Set();
+    for (let i = 0; i < visibleTours.length; i++) {
+      for (let j = i + 1; j < visibleTours.length; j++) {
+        const a = visibleTours[i], b = visibleTours[j];
+        const aStart = new Date(a.startDate).getTime(), aEnd = new Date(a.endDate).getTime();
+        const bStart = new Date(b.startDate).getTime(), bEnd = new Date(b.endDate).getTime();
+        if (aStart <= bEnd && bStart <= aEnd) {
+          overlaps.add(a.id);
+          overlaps.add(b.id);
+        }
+      }
+    }
+
+    // Month headers
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    let monthHeadersHTML = months.map(m => {
+      const mStart = m.getTime();
+      const mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0).getTime();
+      const mDays = Math.ceil((mEnd - mStart) / (1000 * 60 * 60 * 24)) + 1;
+      const widthPct = (mDays / totalDays * 100).toFixed(2);
+      return `<div style="flex:0 0 ${widthPct}%;text-align:center;font-size:0.78rem;font-weight:600;padding:0.4rem 0;border-right:1px solid var(--gray-200);color:var(--gray-500)">${monthNames[m.getMonth()]} ${m.getFullYear()}</div>`;
+    }).join('');
+
+    // Tour bars
+    let barsHTML = '';
+    if (!visibleTours.length) {
+      barsHTML = '<div style="padding:2rem;text-align:center;color:var(--gray-400);font-size:0.85rem">No tours in this date range.</div>';
+    } else {
+      visibleTours.forEach(t => {
+        const tStart = Math.max(new Date(t.startDate).getTime(), timelineStart);
+        const tEnd = Math.min(new Date(t.endDate).getTime(), timelineEnd);
+        const leftPct = ((tStart - timelineStart) / (1000 * 60 * 60 * 24) / totalDays * 100).toFixed(2);
+        const widthPct = (((tEnd - tStart) / (1000 * 60 * 60 * 24) + 1) / totalDays * 100).toFixed(2);
+        const color = colorMap[t.status] || 'var(--gray-400)';
+        const isOverlap = overlaps.has(t.id);
+        barsHTML += `<div style="position:relative;height:32px;margin-bottom:0.3rem">
+          <div style="position:absolute;left:${leftPct}%;width:${widthPct}%;top:0;height:100%;background:${color};border-radius:4px;cursor:pointer;display:flex;align-items:center;padding:0 0.5rem;overflow:hidden;white-space:nowrap;font-size:0.75rem;font-weight:600;color:white;opacity:0.9;${isOverlap ? 'border:2px dashed var(--red);' : ''}" onclick="Tours.viewTour(${t.id})" title="${t.tourName} (${fmtDate(t.startDate)} - ${fmtDate(t.endDate)})${isOverlap ? ' - OVERLAP' : ''}">
+            ${t.tourName} &nbsp;<span style="opacity:0.8;font-weight:400;font-size:0.7rem">${fmtDate(t.startDate)} - ${fmtDate(t.endDate)}</span>
+          </div>
+        </div>`;
+      });
+    }
+
+    document.getElementById('tours-list-container').innerHTML = `
+      <div style="overflow-x:auto;padding-bottom:0.5rem">
+        <div style="min-width:800px">
+          <div style="display:flex;border-bottom:2px solid var(--gray-200);background:var(--gray-50);border-radius:var(--radius) var(--radius) 0 0">
+            ${monthHeadersHTML}
+          </div>
+          <div style="padding:0.8rem 0;position:relative;background:white;min-height:80px">
+            ${barsHTML}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:1rem;margin-top:0.5rem;font-size:0.78rem;color:var(--gray-500)">
+        <span><span style="display:inline-block;width:12px;height:12px;background:var(--amber);border-radius:2px;vertical-align:middle;margin-right:0.2rem"></span>Preparing</span>
+        <span><span style="display:inline-block;width:12px;height:12px;background:var(--blue);border-radius:2px;vertical-align:middle;margin-right:0.2rem"></span>In Progress</span>
+        <span><span style="display:inline-block;width:12px;height:12px;background:var(--green);border-radius:2px;vertical-align:middle;margin-right:0.2rem"></span>Completed</span>
+        <span><span style="display:inline-block;width:12px;height:12px;border:2px dashed var(--red);border-radius:2px;vertical-align:middle;margin-right:0.2rem"></span>Overlap</span>
+      </div>`;
+  },
+
+  // === Feature 4: Provider Expense Reconciliation ===
+  _renderReconciliation(t) {
+    const c = t.costs || {};
+    const exps = t.providerExpenses || [];
+    const cur = t.currency || 'EUR';
+
+    const categories = [
+      { key: 'Accommodation', estimated: (c.accommodation || 0) + (c.meals || 0), expCategory: ['Hotel', 'Accommodation'] },
+      { key: 'Transport', estimated: c.transport || 0, expCategory: ['Transport'] },
+      { key: 'Activities', estimated: c.activities || 0, expCategory: ['Activities', 'Activity'] },
+      { key: 'Guide', estimated: c.guide || 0, expCategory: ['Guide'] },
+      { key: 'Other', estimated: 0, expCategory: ['Other', ''] }
+    ];
+
+    // Calculate actuals from provider expenses grouped by category
+    const categorized = new Set();
+    categories.forEach(cat => {
+      cat.actual = 0;
+      exps.forEach((e, idx) => {
+        const eCat = (e.category || '').trim();
+        if (cat.expCategory.some(c => c.toLowerCase() === eCat.toLowerCase())) {
+          cat.actual += (e.amount || 0);
+          categorized.add(idx);
+        }
+      });
+    });
+    // Any uncategorized expenses go to Other
+    exps.forEach((e, idx) => {
+      if (!categorized.has(idx)) {
+        categories[4].actual += (e.amount || 0);
+      }
+    });
+
+    const totalEstimated = categories.reduce((s, cat) => s + cat.estimated, 0);
+    const totalActual = categories.reduce((s, cat) => s + cat.actual, 0);
+    const totalVariance = totalActual - totalEstimated;
+
+    if (!exps.length && !totalEstimated) return '';
+
+    let rowsHTML = categories.map(cat => {
+      const variance = cat.actual - cat.estimated;
+      const pct = cat.estimated > 0 ? Math.abs(variance / cat.estimated * 100) : (cat.actual > 0 ? 100 : 0);
+      const isFlag = pct > 10 && (cat.estimated > 0 || cat.actual > 0);
+      return `<tr style="${isFlag ? 'background:rgba(239,68,68,0.06)' : ''}">
+        <td><strong>${cat.key}</strong></td>
+        <td>${fmt(cat.estimated, cur)}</td>
+        <td>${fmt(cat.actual, cur)}</td>
+        <td style="color:${variance > 0 ? 'var(--red)' : variance < 0 ? 'var(--green)' : 'inherit'};font-weight:600">${variance >= 0 ? '+' : ''}${fmt(variance, cur)} ${isFlag ? '<span style="color:var(--red);font-size:0.75rem">(' + pct.toFixed(0) + '% off)</span>' : ''}</td>
+      </tr>`;
+    }).join('');
+
+    const totalPct = totalEstimated > 0 ? Math.abs(totalVariance / totalEstimated * 100) : 0;
+
+    return `
+      <h3 style="margin-top:1.5rem">Cost Reconciliation <span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">-- estimated vs actual</span></h3>
+      <table class="data-table" style="font-size:0.85rem;margin-bottom:1rem">
+        <thead><tr><th>Category</th><th>Estimated</th><th>Actual (Providers)</th><th>Variance</th></tr></thead>
+        <tbody>
+          ${rowsHTML}
+          <tr style="font-weight:700;border-top:2px solid var(--gray-200)">
+            <td>TOTAL</td>
+            <td>${fmt(totalEstimated, cur)}</td>
+            <td>${fmt(totalActual, cur)}</td>
+            <td style="color:${totalVariance > 0 ? 'var(--red)' : totalVariance < 0 ? 'var(--green)' : 'inherit'}">${totalVariance >= 0 ? '+' : ''}${fmt(totalVariance, cur)} (${totalPct.toFixed(1)}%)</td>
+          </tr>
+        </tbody>
+      </table>`;
+  },
+
+  // === Feature 5: Tour Calendar View ===
+  _renderCalendar(tours) {
+    const year = this._calendarYear;
+    const month = this._calendarMonth;
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startDow = firstDay.getDay(); // 0=Sun
+    const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+    const colorMap = { 'Preparing': 'var(--amber)', 'In Progress': 'var(--blue)', 'Completed': 'var(--green)' };
+
+    // Find tours that overlap this month
+    const monthStart = firstDay.getTime();
+    const monthEnd = lastDay.getTime();
+    const monthTours = tours.filter(t => {
+      if (!t.startDate || !t.endDate) return false;
+      const s = new Date(t.startDate).getTime();
+      const e = new Date(t.endDate).getTime();
+      return s <= monthEnd && e >= monthStart;
+    });
+
+    // Build day cells
+    const dayCells = [];
+    // Leading blanks
+    for (let i = 0; i < startDow; i++) dayCells.push('<div style="min-height:80px;background:var(--gray-50);border:1px solid var(--gray-100);border-radius:var(--radius)"></div>');
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dayDate = new Date(year, month, d).getTime();
+      const dayTours = monthTours.filter(t => {
+        const s = new Date(t.startDate).getTime();
+        const e = new Date(t.endDate).getTime();
+        return dayDate >= s && dayDate <= e;
+      });
+      const isToday = new Date().toDateString() === new Date(year, month, d).toDateString();
+      let tourBars = dayTours.map(t => {
+        const color = colorMap[t.status] || 'var(--gray-400)';
+        return `<div style="background:${color};color:white;font-size:0.68rem;font-weight:600;padding:0.1rem 0.3rem;border-radius:3px;margin-bottom:0.15rem;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" onclick="Tours.viewTour(${t.id})" title="${t.tourName}">${t.tourName}</div>`;
+      }).join('');
+      dayCells.push(`<div style="min-height:80px;background:white;border:1px solid ${isToday ? 'var(--amber)' : 'var(--gray-100)'};border-radius:var(--radius);padding:0.2rem 0.3rem;overflow:hidden">
+        <div style="font-size:0.78rem;font-weight:${isToday ? '700' : '600'};color:${isToday ? 'var(--amber)' : 'var(--gray-500)'};margin-bottom:0.2rem">${d}</div>
+        ${tourBars}
+      </div>`);
+    }
+
+    document.getElementById('tours-list-container').innerHTML = `
+      <div style="margin-bottom:0.8rem;display:flex;align-items:center;justify-content:space-between">
+        <button class="btn btn-sm btn-outline" onclick="Tours._calendarMonth--;if(Tours._calendarMonth<0){Tours._calendarMonth=11;Tours._calendarYear--;}Tours.render();">&larr; Prev</button>
+        <h3 style="margin:0;font-size:1.1rem">${monthNames[month]} ${year}</h3>
+        <button class="btn btn-sm btn-outline" onclick="Tours._calendarMonth++;if(Tours._calendarMonth>11){Tours._calendarMonth=0;Tours._calendarYear++;}Tours.render();">Next &rarr;</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:0.2rem;margin-bottom:0.3rem">
+        ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div style="text-align:center;font-size:0.75rem;font-weight:700;color:var(--gray-400);padding:0.3rem 0">${d}</div>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:0.2rem">
+        ${dayCells.join('')}
+      </div>
+      <div style="display:flex;gap:1rem;margin-top:0.8rem;font-size:0.78rem;color:var(--gray-500)">
+        <span><span style="display:inline-block;width:12px;height:12px;background:var(--amber);border-radius:2px;vertical-align:middle;margin-right:0.2rem"></span>Preparing</span>
+        <span><span style="display:inline-block;width:12px;height:12px;background:var(--blue);border-radius:2px;vertical-align:middle;margin-right:0.2rem"></span>In Progress</span>
+        <span><span style="display:inline-block;width:12px;height:12px;background:var(--green);border-radius:2px;vertical-align:middle;margin-right:0.2rem"></span>Completed</span>
+      </div>`;
+  },
+
+  // === Feature 6: Commission Section ===
+  _renderCommission(t) {
+    const cur = t.currency || 'EUR';
+    const rate = t.commissionRate || 0;
+    const totalRevenue = (t.costs && t.costs.totalRevenue) || 0;
+    const commissionAmount = totalRevenue * rate / 100;
+
+    return `
+      <h3 style="margin-top:1.5rem">Commission <span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">-- agent commission</span></h3>
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem">
+        <div class="form-row form-row-3" style="margin-bottom:0.8rem">
+          <div class="form-group">
+            <label>Commission Agent</label>
+            <input value="${(t.commissionAgent || '').replace(/"/g,'&quot;')}" placeholder="Agent name" onchange="Tours.saveOrgField(${t.id},'commissionAgent',this.value)">
+          </div>
+          <div class="form-group">
+            <label>Commission Rate (%)</label>
+            <input type="number" step="0.1" min="0" max="100" value="${rate}" onchange="Tours.saveOrgField(${t.id},'commissionRate',this.value);Tours.viewTour(${t.id})">
+          </div>
+          <div class="form-group">
+            <label>Commission Amount</label>
+            <div style="padding:0.45rem 0;font-weight:700;font-size:1rem;color:var(--navy)">${fmt(commissionAmount, cur)}</div>
+          </div>
+        </div>
+        <div style="font-size:0.85rem;color:var(--gray-500);margin-bottom:0.5rem">Based on total revenue of ${fmt(totalRevenue, cur)} at ${rate}%</div>
+        <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.88rem;cursor:pointer">
+          <input type="checkbox" ${t.commissionPaid ? 'checked' : ''} onchange="Tours.saveOrgField(${t.id},'commissionPaid',this.checked)">
+          <span style="font-weight:600;color:${t.commissionPaid ? 'var(--green)' : 'var(--gray-500)'}">Commission Paid</span>
+        </label>
+      </div>`;
   }
 };

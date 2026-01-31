@@ -135,6 +135,14 @@ const Dashboard = {
     });
     const displayCur = dashCurrency || 'EUR';
 
+    // Commission totals
+    let totalCommissions = 0;
+    tours.forEach(t => {
+      if (t.commissionRate && t.costs && t.costs.totalRevenue) {
+        totalCommissions += normalize((t.costs.totalRevenue * (t.commissionRate || 0) / 100), t.currency);
+      }
+    });
+
     // Stats cards — 3 rows
     document.getElementById('dashboard-stats').innerHTML = `
       <div class="stat-card amber"><div class="stat-label">Total Quotes</div><div class="stat-value">${quotes.length}</div><div class="stat-sub">${quoteDraft} draft, ${quoteSent} sent, ${quoteFollowUp} follow-up</div></div>
@@ -148,6 +156,7 @@ const Dashboard = {
       <div class="stat-card" style="border-left-color:${finalProfit >= 0 ? 'var(--green)' : 'var(--red)'}"><div class="stat-label">Final Profit</div><div class="stat-value" style="color:${finalProfit >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(finalProfit, displayCur)}</div><div class="stat-sub">${completedTours.length} completed tour${completedTours.length!==1?'s':''} — margin: ${finalRevenue > 0 ? (finalProfit / finalRevenue * 100).toFixed(1) + '%' : '—'}</div></div>
       <div class="stat-card blue"><div class="stat-label">Cash Flow</div><div class="stat-value" style="color:${outstanding > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(outstanding, displayCur)}</div><div class="stat-sub">outstanding of ${fmt(totalInvoiced, displayCur)} invoiced (${fmt(totalCollected, displayCur)} collected)</div></div>
       <div class="stat-card amber"><div class="stat-label">Clients</div><div class="stat-value">${clients.length}</div><div class="stat-sub">${pendingPayments.length} pending payment${pendingPayments.length!==1?'s':''}</div></div>
+      <div class="stat-card" style="border-left-color:var(--navy)"><div class="stat-label">Commissions Due</div><div class="stat-value" style="color:var(--navy)">${fmt(totalCommissions, displayCur)}</div><div class="stat-sub">From ${tours.filter(t => t.commissionRate > 0).length} tour${tours.filter(t => t.commissionRate > 0).length !== 1 ? 's' : ''} with commission</div></div>
     `;
 
     // Recent quotes
@@ -188,6 +197,9 @@ const Dashboard = {
 
     // Confirmed groups profit summary table
     this._renderConfirmedGroups(tours);
+
+    // Revenue forecast chart
+    this._renderRevenueForecast(tours, quotes);
 
     // Profit margin alerts
     this._renderProfitAlerts(tours);
@@ -476,6 +488,29 @@ const Dashboard = {
       }
     });
 
+    // Upcoming payment milestones (due within 3 days)
+    invoices.forEach(i => {
+      const paid = (i.payments||[]).reduce((s,p)=>s+Number(p.amount),0);
+      if (paid >= Number(i.amount)) return;
+      (i.paymentSchedule || []).forEach((ms, mi) => {
+        if (!ms.dueDate) return;
+        const due = new Date(ms.dueDate);
+        const daysUntil = Math.ceil((due - now) / 86400000);
+        if (daysUntil > 0 && daysUntil <= 3 && !completedActions['upcoming-pay-' + i.id + '-' + mi]) {
+          const msAmount = ms.amount || (ms.percentage ? Number(i.amount) * ms.percentage / 100 : 0);
+          actions.push({
+            id: 'upcoming-pay-' + i.id + '-' + mi,
+            type: 'upcoming-payment',
+            icon: '\u23F0',
+            label: 'Payment due soon: ' + (ms.label || 'Milestone') + ' — ' + (i.number || ''),
+            sub: (i.clientName || '') + ' — ' + fmt(msAmount, i.currency) + ' due in ' + daysUntil + ' day' + (daysUntil !== 1 ? 's' : ''),
+            action: 'email',
+            data: { to: i.clientEmail || '', subject: 'Upcoming Payment — ' + (ms.label || 'Milestone') + ' — ' + (i.number || ''), body: 'Dear ' + (i.clientName||'') + ',\n\nThis is a friendly reminder that a payment milestone is approaching:\n\nInvoice: ' + (i.number||'') + '\nMilestone: ' + (ms.label || '') + '\nAmount: ' + fmt(msAmount, i.currency) + '\nDue Date: ' + fmtDate(ms.dueDate) + '\n' + (i.paymentLinkCard ? '\nPay by card: ' + i.paymentLinkCard : '') + (i.paymentLinkWise ? '\nPay by Wise: ' + i.paymentLinkWise : '') + '\n\nKind regards,\nJuan\nOdisea Tours\njuan@odisea-tours.com' }
+          });
+        }
+      });
+    });
+
     // Tours departing within 14 days
     tours.filter(t => t.status === 'Preparing').forEach(t => {
       const start = new Date(t.startDate);
@@ -709,6 +744,66 @@ const Dashboard = {
         <div style="color:var(--amber);font-weight:600;font-size:1.1rem">${'\u2605'.repeat(Math.round(r.avgRating))} <span style="font-size:0.82rem;color:var(--gray-400)">${r.avgRating}/5</span></div>
       </div>
     `).join('');
+  },
+
+  _renderRevenueForecast(tours, quotes) {
+    const container = document.getElementById('dashboard-revenue-forecast');
+    if (!container) return;
+
+    const now = new Date();
+    const months = [];
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      months.push({ year: d.getFullYear(), month: d.getMonth(), label: d.toLocaleString('en-GB', { month: 'short', year: '2-digit' }), confirmed: 0, pipeline: 0 });
+    }
+
+    tours.forEach(t => {
+      if (!t.startDate) return;
+      const sd = new Date(t.startDate);
+      const rev = t.costs ? (t.costs.totalRevenue || 0) : 0;
+      months.forEach(m => {
+        if (sd.getFullYear() === m.year && sd.getMonth() === m.month) m.confirmed += rev;
+      });
+    });
+
+    (quotes || []).filter(q => q.status === 'Follow-up' || q.status === 'Sent').forEach(q => {
+      const sd = q.startDate ? new Date(q.startDate) : null;
+      if (!sd) return;
+      const rev = ((q.priceStudent||0)*(q.numStudents||0)) + ((q.priceSibling||0)*(q.numSiblings||0)) + ((q.priceAdult||0)*(q.numAdults||0));
+      months.forEach(m => {
+        if (sd.getFullYear() === m.year && sd.getMonth() === m.month) m.pipeline += rev;
+      });
+    });
+
+    const maxVal = Math.max(...months.map(m => m.confirmed + m.pipeline), 1);
+    const maxHeight = 200;
+
+    if (!months.some(m => m.confirmed > 0 || m.pipeline > 0)) {
+      container.innerHTML = '<div class="empty-state">No revenue data for the next 6 months.</div>';
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="display:flex;gap:0.8rem;align-items:flex-end;overflow-x:auto;padding:1rem 0;min-height:${maxHeight + 80}px">
+        ${months.map(m => {
+          const confH = maxVal > 0 ? (m.confirmed / maxVal * maxHeight) : 0;
+          const pipeH = maxVal > 0 ? (m.pipeline / maxVal * maxHeight) : 0;
+          const total = m.confirmed + m.pipeline;
+          return `<div style="flex:1;min-width:80px;display:flex;flex-direction:column;align-items:center;gap:0.3rem">
+            <div style="font-size:0.72rem;color:var(--gray-400);font-weight:600">${total > 0 ? fmt(total) : ''}</div>
+            <div style="width:100%;max-width:60px;display:flex;flex-direction:column;align-items:center">
+              ${m.pipeline > 0 ? '<div style="width:100%;height:' + Math.max(pipeH, 4) + 'px;background:transparent;border:2px dashed var(--amber);border-radius:var(--radius) var(--radius) 0 0;box-sizing:border-box"></div>' : ''}
+              ${m.confirmed > 0 ? '<div style="width:100%;height:' + Math.max(confH, 4) + 'px;background:var(--green);border-radius:' + (m.pipeline > 0 ? '0 0' : 'var(--radius) var(--radius)') + ' var(--radius) var(--radius)"></div>' : ''}
+              ${total === 0 ? '<div style="width:100%;height:4px;background:var(--gray-100);border-radius:var(--radius)"></div>' : ''}
+            </div>
+            <div style="font-size:0.78rem;font-weight:600;color:var(--navy)">${m.label}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="display:flex;gap:1rem;justify-content:center;font-size:0.78rem;margin-top:0.5rem">
+        <span style="display:flex;align-items:center;gap:0.3rem"><span style="display:inline-block;width:12px;height:12px;background:var(--green);border-radius:2px"></span> Confirmed</span>
+        <span style="display:flex;align-items:center;gap:0.3rem"><span style="display:inline-block;width:12px;height:12px;border:2px dashed var(--amber);border-radius:2px;box-sizing:border-box"></span> Pipeline</span>
+      </div>`;
   },
 
   _renderProfitAlerts(tours) {
