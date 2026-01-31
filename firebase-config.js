@@ -51,10 +51,10 @@
 */
 
 const FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyC1DQLaouWXRtlmjljB-9Vu88HnqjIDpGQ",
+  authDomain: "odisea-tours.firebaseapp.com",
+  projectId: "odisea-tours",
+  storageBucket: "odisea-tours.firebasestorage.app",
+  messagingSenderId: "1097156707780",
+  appId: "1:1097156707780:web:f6d337e0fba5bf5fc11091"
 };
