@@ -15,6 +15,25 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
+<script>
+// Force update: if cached version is old, clear caches and reload
+(function(){
+  var APP_VERSION = 20;
+  var stored = localStorage.getItem('odisea_app_version');
+  if (stored && Number(stored) >= APP_VERSION) return;
+  localStorage.setItem('odisea_app_version', APP_VERSION);
+  if (stored) {
+    // Old version detected — nuke SW caches and reload
+    if ('caches' in window) caches.keys().then(function(keys){
+      keys.forEach(function(k){ caches.delete(k); });
+    });
+    if (navigator.serviceWorker) navigator.serviceWorker.getRegistrations().then(function(regs){
+      regs.forEach(function(r){ r.unregister(); });
+    });
+    setTimeout(function(){ location.reload(true); }, 500);
+  }
+})();
+</script>
 </head>
 <body>
 
