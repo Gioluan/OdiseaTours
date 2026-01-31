@@ -139,29 +139,34 @@ const Dashboard = {
     try {
       let totalMessages = 0, totalPassengers = 0;
       for (const t of tours) {
-        const doc = await DB.firestore.collection('tours').doc(String(t.id)).get();
-        if (doc.exists) {
-          const data = doc.data();
-          totalMessages += (data.unreadMessagesCount || 0);
-          totalPassengers += (data.unreadPassengersCount || 0);
-          // Update badges in tour view if visible
-          const msgBadge = document.getElementById('msg-badge-' + t.id);
-          if (msgBadge && data.unreadMessagesCount > 0) {
-            msgBadge.textContent = data.unreadMessagesCount;
-            msgBadge.style.display = 'inline-block';
-          }
-          const paxBadge = document.getElementById('pax-badge-' + t.id);
-          if (paxBadge && data.unreadPassengersCount > 0) {
-            paxBadge.textContent = data.unreadPassengersCount;
-            paxBadge.style.display = 'inline-block';
-          }
+        const tid = String(t.id);
+        // Count actual subcollection documents instead of relying on counter fields
+        const [paxSnap, msgSnap] = await Promise.all([
+          DB.firestore.collection('tours').doc(tid).collection('passengers').get(),
+          DB.firestore.collection('tours').doc(tid).collection('messages')
+            .where('sender', '!=', 'admin').get()
+        ]);
+        const paxCount = paxSnap.size;
+        const msgCount = msgSnap.size;
+        totalPassengers += paxCount;
+        totalMessages += msgCount;
+        // Update badges in tour view if visible
+        const msgBadge = document.getElementById('msg-badge-' + t.id);
+        if (msgBadge && msgCount > 0) {
+          msgBadge.textContent = msgCount;
+          msgBadge.style.display = 'inline-block';
+        }
+        const paxBadge = document.getElementById('pax-badge-' + t.id);
+        if (paxBadge && paxCount > 0) {
+          paxBadge.textContent = paxCount;
+          paxBadge.style.display = 'inline-block';
         }
       }
       // Add summary to dashboard if there are notifications
       if (totalMessages > 0 || totalPassengers > 0) {
         let alertHTML = '';
-        if (totalMessages > 0) alertHTML += `<span style="background:var(--red);color:white;padding:0.2rem 0.6rem;border-radius:10px;font-size:0.8rem;font-weight:600;margin-right:0.5rem">${totalMessages} unread message${totalMessages!==1?'s':''}</span>`;
-        if (totalPassengers > 0) alertHTML += `<span style="background:var(--blue);color:white;padding:0.2rem 0.6rem;border-radius:10px;font-size:0.8rem;font-weight:600">${totalPassengers} new registration${totalPassengers!==1?'s':''}</span>`;
+        if (totalMessages > 0) alertHTML += `<span style="background:var(--red);color:white;padding:0.2rem 0.6rem;border-radius:10px;font-size:0.8rem;font-weight:600;margin-right:0.5rem">${totalMessages} message${totalMessages!==1?'s':''}</span>`;
+        if (totalPassengers > 0) alertHTML += `<span style="background:var(--blue);color:white;padding:0.2rem 0.6rem;border-radius:10px;font-size:0.8rem;font-weight:600">${totalPassengers} registration${totalPassengers!==1?'s':''}</span>`;
         // Insert portal alerts before stats
         const statsEl = document.getElementById('dashboard-stats');
         if (statsEl && !document.getElementById('portal-alerts-bar')) {

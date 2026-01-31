@@ -1029,6 +1029,7 @@ const Tours = {
             <span id="pax-badge-${t.id}" style="background:var(--blue);color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px;display:none">0</span>
           </div>
           <button class="btn btn-sm btn-outline" onclick="Tours.viewPortalPassengers(${t.id})">View Registrations</button>
+          <script>(async()=>{if(!DB._firebaseReady)return;try{const s=await DB.firestore.collection('tours').doc('${t.id}').collection('passengers').get();const b=document.getElementById('pax-badge-${t.id}');if(b&&s.size>0){b.textContent=s.size;b.style.display='inline-block';}}catch(e){}})()</script>
         </div>
       </div>
       <div id="portal-detail-${t.id}"></div>`;

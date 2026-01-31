@@ -353,10 +353,12 @@ const DB = {
       passenger.createdAt = new Date().toISOString();
       const ref = await this.firestore.collection('tours').doc(String(tourId))
         .collection('passengers').add(passenger);
-      // Increment unread count on tour doc
-      await this.firestore.collection('tours').doc(String(tourId)).update({
-        unreadPassengersCount: firebase.firestore.FieldValue.increment(1)
-      });
+      // Try to increment unread count (may fail if user is unauthenticated)
+      try {
+        await this.firestore.collection('tours').doc(String(tourId)).update({
+          unreadPassengersCount: firebase.firestore.FieldValue.increment(1)
+        });
+      } catch (_) { /* ignore — portal users lack write access to tour docs */ }
       return { id: ref.id, ...passenger };
     } catch (e) {
       console.warn('saveTourPassenger failed:', e.message);
@@ -428,11 +430,13 @@ const DB = {
       message.timestamp = new Date().toISOString();
       const ref = await this.firestore.collection('tours').doc(String(tourId))
         .collection('messages').add(message);
-      // Increment unread count if from client
+      // Try to increment unread count (may fail if user is unauthenticated)
       if (message.sender !== 'admin') {
-        await this.firestore.collection('tours').doc(String(tourId)).update({
-          unreadMessagesCount: firebase.firestore.FieldValue.increment(1)
-        });
+        try {
+          await this.firestore.collection('tours').doc(String(tourId)).update({
+            unreadMessagesCount: firebase.firestore.FieldValue.increment(1)
+          });
+        } catch (_) { /* ignore — portal users lack write access to tour docs */ }
       }
       return { id: ref.id, ...message };
     } catch (e) {
