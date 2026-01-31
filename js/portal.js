@@ -564,6 +564,14 @@ const Portal = {
      ============================================================ */
   _roomPlan: [],
 
+  _roomTypeLabel(count) {
+    if (count === 1) return 'Single Room';
+    if (count === 2) return 'Twin Room';
+    if (count === 3) return 'Triple Room';
+    if (count === 4) return 'Quadruple Room';
+    return count + '-Person Room';
+  },
+
   async renderRoomPlan() {
     const container = document.getElementById('section-roomplan');
     container.innerHTML = `
@@ -619,6 +627,7 @@ const Portal = {
                 <div class="rp-room-num">
                   <input value="${Portal._escapeAttr(room.name || 'Room ' + (ri+1))}" class="rp-room-name-input" onchange="Portal.updateRoomName(${ri},this.value)" onclick="event.stopPropagation()">
                 </div>
+                <span class="rp-room-type">${Portal._roomTypeLabel(roomPax.length)}</span>
                 <span class="rp-room-count">${roomPax.length} guest${roomPax.length!==1?'s':''}</span>
                 <button class="rp-room-delete" onclick="Portal.removeRoom(${ri})" title="Remove room">&times;</button>
               </div>
@@ -798,7 +807,7 @@ const Portal = {
     rooms.forEach(room => {
       const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean);
       html += `<div class="room">
-        <div class="room-header"><span>${Portal._escapeHtml(room.name || 'Room')}</span><span>${roomPax.length} guest${roomPax.length!==1?'s':''}</span></div>
+        <div class="room-header"><span>${Portal._escapeHtml(room.name || 'Room')} <span style="opacity:0.7;font-weight:400;font-size:0.85em">&mdash; ${Portal._roomTypeLabel(roomPax.length)}</span></span><span>${roomPax.length} guest${roomPax.length!==1?'s':''}</span></div>
         <div class="room-body">`;
       if (roomPax.length) {
         roomPax.forEach(p => {
@@ -825,13 +834,22 @@ const Portal = {
     const adults = passengers.filter(p => p.role==='Adult').length;
     const coaches = passengers.filter(p => p.role==='Coach').length;
 
+    const singles = rooms.filter(r => (r.passengers||[]).filter(id => passengers.find(p => p.id === id)).length === 1).length;
+    const twins = rooms.filter(r => (r.passengers||[]).filter(id => passengers.find(p => p.id === id)).length === 2).length;
+    const triples = rooms.filter(r => (r.passengers||[]).filter(id => passengers.find(p => p.id === id)).length === 3).length;
+    const quads = rooms.filter(r => (r.passengers||[]).filter(id => passengers.find(p => p.id === id)).length >= 4).length;
+
     html += `<div class="summary"><table>
       <tr><td><strong>Total Passengers:</strong></td><td>${passengers.length}</td></tr>
       <tr><td><strong>Players:</strong></td><td>${players}</td></tr>
       <tr><td><strong>Siblings:</strong></td><td>${siblings}</td></tr>
       <tr><td><strong>Adults:</strong></td><td>${adults}</td></tr>
       <tr><td><strong>Coaches:</strong></td><td>${coaches}</td></tr>
-      <tr><td><strong>Rooms:</strong></td><td>${rooms.length}</td></tr>
+      <tr><td><strong>Total Rooms:</strong></td><td>${rooms.length}</td></tr>
+      ${singles ? '<tr><td><strong>Single Rooms:</strong></td><td>' + singles + '</td></tr>' : ''}
+      ${twins ? '<tr><td><strong>Twin Rooms:</strong></td><td>' + twins + '</td></tr>' : ''}
+      ${triples ? '<tr><td><strong>Triple Rooms:</strong></td><td>' + triples + '</td></tr>' : ''}
+      ${quads ? '<tr><td><strong>Quadruple Rooms:</strong></td><td>' + quads + '</td></tr>' : ''}
       <tr><td><strong>Assigned:</strong></td><td>${assigned.size}</td></tr>
       ${unassigned.length ? '<tr><td><strong>Unassigned:</strong></td><td style="color:red">' + unassigned.length + ' (' + unassigned.map(p=>(p.firstName||'')+' '+(p.lastName||'')).join(', ') + ')</td></tr>' : ''}
     </table></div>
@@ -861,15 +879,17 @@ const Portal = {
 
     const lines = [];
     // Header
-    lines.push(['Room', 'Guest Name', 'Role', 'Family', 'Nationality', 'Date of Birth', 'Dietary', 'Medical', 'Passport'].map(esc).join(','));
+    lines.push(['Room', 'Room Type', 'Guest Name', 'Role', 'Family', 'Nationality', 'Date of Birth', 'Dietary', 'Medical', 'Passport'].map(esc).join(','));
 
     // Room rows
     rooms.forEach(room => {
       const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean);
+      const roomType = Portal._roomTypeLabel(roomPax.length);
       if (roomPax.length) {
-        roomPax.forEach(p => {
+        roomPax.forEach((p, i) => {
           lines.push([
             room.name || 'Room',
+            i === 0 ? roomType : '',
             (p.firstName || '') + ' ' + (p.lastName || ''),
             p.role || '', p.family || '', p.nationality || '',
             p.dateOfBirth || '', p.dietary || '', p.medical || '',
@@ -877,7 +897,7 @@ const Portal = {
           ].map(esc).join(','));
         });
       } else {
-        lines.push([room.name || 'Room', '(empty)', '', '', '', '', '', '', ''].map(esc).join(','));
+        lines.push([room.name || 'Room', 'Empty', '(empty)', '', '', '', '', '', '', ''].map(esc).join(','));
       }
     });
 
@@ -887,7 +907,8 @@ const Portal = {
       lines.push('UNASSIGNED');
       unassigned.forEach(p => {
         lines.push([
-          '', (p.firstName || '') + ' ' + (p.lastName || ''),
+          '', '',
+          (p.firstName || '') + ' ' + (p.lastName || ''),
           p.role || '', p.family || '', p.nationality || '',
           p.dateOfBirth || '', p.dietary || '', p.medical || '',
           p.passportNumber || ''
@@ -895,11 +916,20 @@ const Portal = {
       });
     }
 
-    // Summary
+    // Summary with room type breakdown
+    const csvSingles = rooms.filter(r => (r.passengers||[]).filter(id => passengers.find(p => p.id === id)).length === 1).length;
+    const csvTwins = rooms.filter(r => (r.passengers||[]).filter(id => passengers.find(p => p.id === id)).length === 2).length;
+    const csvTriples = rooms.filter(r => (r.passengers||[]).filter(id => passengers.find(p => p.id === id)).length === 3).length;
+    const csvQuads = rooms.filter(r => (r.passengers||[]).filter(id => passengers.find(p => p.id === id)).length >= 4).length;
+
     lines.push('');
     lines.push('SUMMARY');
     lines.push('Total Passengers,' + passengers.length);
     lines.push('Total Rooms,' + rooms.length);
+    if (csvSingles) lines.push('Single Rooms,' + csvSingles);
+    if (csvTwins) lines.push('Twin Rooms,' + csvTwins);
+    if (csvTriples) lines.push('Triple Rooms,' + csvTriples);
+    if (csvQuads) lines.push('Quadruple Rooms,' + csvQuads);
     lines.push('Assigned,' + assigned.size);
     lines.push('Unassigned,' + unassigned.length);
 
