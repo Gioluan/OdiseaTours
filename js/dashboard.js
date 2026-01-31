@@ -453,7 +453,7 @@ const Dashboard = {
           label: 'Follow up on quote: ' + (q.tourName || 'Q-' + q.id),
           sub: q.clientName + ' \u2014 sent ' + daysSince + ' days ago',
           action: 'email',
-          data: { to: q.clientEmail, subject: 'Following up \u2014 ' + q.tourName, body: 'Dear ' + (q.clientName||'') + ',\\n\\nI wanted to follow up on the quote we sent for "' + (q.tourName||'') + '". Please let us know if you have any questions.\\n\\nKind regards,\\nOdisea Tours' },
+          data: { to: q.clientEmail, subject: 'Following up \u2014 ' + q.tourName, body: 'Dear ' + (q.clientName||'') + ',\n\nI wanted to follow up on the quote we sent for "' + (q.tourName||'') + '". Please let us know if you have any questions.\n\nKind regards,\nOdisea Tours' },
           waData: { phone: q.clientPhone, text: 'Hi ' + (q.clientName||'') + ', just following up on the quote for "' + (q.tourName||'') + '". Any questions? - Odisea Tours' }
         });
       }
@@ -471,7 +471,7 @@ const Dashboard = {
           label: 'Payment reminder: ' + (i.number || ''),
           sub: (i.clientName || '') + ' \u2014 ' + fmt(balance, i.currency) + ' overdue',
           action: 'email',
-          data: { to: '', subject: 'Payment Reminder \u2014 ' + i.number, body: 'Dear ' + (i.clientName||'') + ',\\n\\nFriendly reminder that invoice ' + i.number + ' has an outstanding balance of ' + fmt(balance, i.currency) + '.\\n\\nKind regards,\\nOdisea Tours' }
+          data: { to: '', subject: 'Payment Reminder \u2014 ' + i.number, body: 'Dear ' + (i.clientName||'') + ',\n\nFriendly reminder that invoice ' + i.number + ' has an outstanding balance of ' + fmt(balance, i.currency) + '.\n\nKind regards,\nOdisea Tours' }
         });
       }
     });
@@ -488,7 +488,7 @@ const Dashboard = {
           label: 'Send pre-departure info: ' + t.tourName,
           sub: t.clientName + ' \u2014 departing in ' + daysUntil + ' days',
           action: 'email',
-          data: { to: t.clientEmail, subject: 'Pre-Departure Info \u2014 ' + t.tourName, body: 'Dear ' + (t.clientName||'') + ',\\n\\nYour tour "' + t.tourName + '" departs on ' + fmtDate(t.startDate) + '. Please ensure all passengers are registered.\\n\\nKind regards,\\nOdisea Tours' },
+          data: { to: t.clientEmail, subject: 'Pre-Departure Info \u2014 ' + t.tourName, body: 'Dear ' + (t.clientName||'') + ',\n\nYour tour "' + t.tourName + '" departs on ' + fmtDate(t.startDate) + '. Please ensure all passengers are registered.\n\nKind regards,\nOdisea Tours' },
           waData: { phone: t.clientPhone, text: 'Hi ' + (t.clientName||'') + '! Your tour "' + t.tourName + '" departs on ' + fmtDate(t.startDate) + '. Please ensure all passengers are registered. - Odisea Tours' }
         });
       }
@@ -506,7 +506,7 @@ const Dashboard = {
           label: 'Send welcome pack: ' + t.tourName,
           sub: t.clientName + ' \u2014 booked ' + daysSince + ' days ago',
           action: 'email',
-          data: { to: t.clientEmail, subject: 'Welcome! ' + t.tourName + ' Confirmed', body: 'Dear ' + (t.clientName||'') + ',\\n\\nWelcome! Your tour "' + t.tourName + '" to ' + (t.destination||'') + ' is confirmed.\\n\\nDates: ' + fmtDate(t.startDate) + ' - ' + fmtDate(t.endDate) + '\\n\\nWe will be sharing more details soon.\\n\\nKind regards,\\nOdisea Tours' },
+          data: { to: t.clientEmail, subject: 'Welcome! ' + t.tourName + ' Confirmed', body: 'Dear ' + (t.clientName||'') + ',\n\nWelcome! Your tour "' + t.tourName + '" to ' + (t.destination||'') + ' is confirmed.\n\nDates: ' + fmtDate(t.startDate) + ' - ' + fmtDate(t.endDate) + '\n\nWe will be sharing more details soon.\n\nKind regards,\nOdisea Tours' },
           waData: t.clientPhone ? { phone: t.clientPhone, text: 'Hi ' + (t.clientName||'') + '! Welcome aboard! Your tour "' + t.tourName + '" to ' + (t.destination||'') + ' is confirmed for ' + fmtDate(t.startDate) + '. - Odisea Tours' } : null
         });
       }
