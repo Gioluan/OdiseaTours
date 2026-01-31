@@ -53,7 +53,22 @@ const Email = {
       <div class="form-group"><label>To (Email)</label><input id="em-to" type="email" placeholder="recipient@email.com"></div>
       <div class="form-group"><label>Subject</label><input id="em-subject" placeholder="Email subject"></div>
       <div class="form-group"><label>Body</label><textarea id="em-body" rows="10" placeholder="Email body..."></textarea></div>
-      <button class="btn btn-primary" onclick="Email.sendFromForm()">Open in Outlook</button>
+      <div class="form-group">
+        <label>Attach Invoice PDF</label>
+        <select id="em-attach-inv" onchange="document.getElementById('em-preview-inv-btn').style.display=this.value?'':'none'">
+          <option value="">— No attachment —</option>
+          ${DB.getInvoices().map(inv => {
+            const paid = (inv.payments||[]).reduce((s,p)=>s+Number(p.amount),0);
+            const status = paid >= Number(inv.amount) ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
+            return `<option value="${inv.id}">${inv.number} — ${inv.clientName||'—'} — ${fmt(inv.amount,inv.currency)} [${status}]</option>`;
+          }).join('')}
+        </select>
+        <span style="font-size:0.78rem;color:var(--gray-400);margin-top:0.3rem;display:block">The invoice PDF will open in a new tab — save it, then drag it into your email.</span>
+      </div>
+      <div style="display:flex;gap:0.5rem">
+        <button class="btn btn-primary" onclick="Email.sendFromForm()">Open in Outlook</button>
+        <button class="btn btn-outline" id="em-preview-inv-btn" style="display:none;border-color:var(--amber);color:var(--amber)" onclick="Email.previewAttachedInvoice()">Preview Invoice PDF</button>
+      </div>
     `;
   },
 
@@ -91,7 +106,17 @@ const Email = {
     const subject = document.getElementById('em-subject').value;
     const body = document.getElementById('em-body').value;
     if (!to) { alert('Please enter a recipient email.'); return; }
+    // Generate invoice PDF if one is attached
+    const invId = Number(document.getElementById('em-attach-inv').value);
+    if (invId) {
+      PDFQuote.generateInvoice(invId);
+    }
     this.sendEmail(to, subject, body);
+  },
+
+  previewAttachedInvoice() {
+    const invId = Number(document.getElementById('em-attach-inv').value);
+    if (invId) PDFQuote.generateInvoice(invId);
   },
 
   sendEmail(to, subject, body) {
