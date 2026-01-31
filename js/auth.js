@@ -118,13 +118,10 @@ const Auth = {
     this._syncing = true;
     this._updateSyncIndicator('syncing');
     try {
-      const getters = { tours: DB.getTours.bind(DB), quotes: DB.getQuotes.bind(DB), invoices: DB.getInvoices.bind(DB), clients: DB.getClients.bind(DB), providers: DB.getProviders.bind(DB) };
-      const setters = { tours: 'tours', quotes: 'quotes', invoices: 'invoices', clients: 'clients', providers: 'providers' };
-
       for (const col of this.COLLECTIONS) {
         // 1. Pull remote data
         const remote = await DB.pullFromFirestore(col);
-        const local = getters[col]();
+        const local = DB._getAll(col); // includes soft-deleted items
 
         // 2. Merge: build map by id, newest updatedAt wins
         const merged = new Map();
@@ -140,6 +137,9 @@ const Auth = {
             // New item from another device
             merged.set(String(numId), item);
             pulled++;
+          } else if (existing._deleted) {
+            // Locally deleted — don't bring it back, delete from Firestore
+            DB.firestore.collection(col).doc(String(numId)).delete().catch(() => {});
           } else {
             // Compare updatedAt — remote wins if newer
             const remoteTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
@@ -151,12 +151,21 @@ const Auth = {
           }
         });
 
-        // 3. Save merged data to localStorage
-        const mergedArr = Array.from(merged.values());
-        DB._set(setters[col], mergedArr);
+        // 3. Remove soft-deleted items from Firestore, then clean them from local
+        const alive = [];
+        for (const item of merged.values()) {
+          if (item._deleted) {
+            DB.firestore.collection(col).doc(String(item.id)).delete().catch(() => {});
+          } else {
+            alive.push(item);
+          }
+        }
 
-        // 4. Push merged data back to Firestore
-        await DB.syncToFirestore(col, mergedArr);
+        // 4. Save clean data to localStorage (no deleted items)
+        DB._set(col, alive);
+
+        // 5. Push alive data back to Firestore
+        await DB.syncToFirestore(col, alive);
         if (pulled > 0) console.log(`Pulled ${pulled} updated items for ${col}`);
       }
 

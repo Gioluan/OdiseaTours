@@ -4,6 +4,10 @@ const DB = {
     try { return JSON.parse(localStorage.getItem('odisea_' + key)) || []; }
     catch { return []; }
   },
+  _getAll(key) {
+    // Returns ALL items including soft-deleted (for sync)
+    return this._get(key);
+  },
   _set(key, data) {
     localStorage.setItem('odisea_' + key, JSON.stringify(data));
   },
@@ -11,9 +15,27 @@ const DB = {
     const items = this._get(key);
     return items.length ? Math.max(...items.map(i => i.id || 0)) + 1 : 1;
   },
+  _softDelete(key, id) {
+    const items = this._get(key);
+    const item = items.find(x => x.id === id);
+    if (item) {
+      item._deleted = true;
+      item.updatedAt = new Date().toISOString();
+      this._set(key, items);
+      // Also delete from Firestore
+      if (this._firebaseReady) {
+        this.firestore.collection(key).doc(String(id)).delete().catch(() => {});
+      }
+    } else {
+      // Not in local — just remove from Firestore directly
+      if (this._firebaseReady) {
+        this.firestore.collection(key).doc(String(id)).delete().catch(() => {});
+      }
+    }
+  },
 
   // QUOTES
-  getQuotes() { return this._get('quotes'); },
+  getQuotes() { return this._get('quotes').filter(q => !q._deleted); },
   saveQuote(q) {
     const quotes = this.getQuotes();
     if (q.id) {
@@ -29,11 +51,11 @@ const DB = {
     return q;
   },
   deleteQuote(id) {
-    this._set('quotes', this.getQuotes().filter(q => q.id !== id));
+    this._softDelete('quotes', id);
   },
 
   // TOURS
-  getTours() { return this._get('tours'); },
+  getTours() { return this._get('tours').filter(t => !t._deleted); },
   saveTour(t) {
     const tours = this.getTours();
     if (t.id) {
@@ -49,11 +71,11 @@ const DB = {
     return t;
   },
   deleteTour(id) {
-    this._set('tours', this.getTours().filter(t => t.id !== id));
+    this._softDelete('tours', id);
   },
 
   // INVOICES
-  getInvoices() { return this._get('invoices'); },
+  getInvoices() { return this._get('invoices').filter(i => !i._deleted); },
   saveInvoice(inv) {
     const invoices = this.getInvoices();
     if (inv.id) {
@@ -71,11 +93,11 @@ const DB = {
     return inv;
   },
   deleteInvoice(id) {
-    this._set('invoices', this.getInvoices().filter(i => i.id !== id));
+    this._softDelete('invoices', id);
   },
 
   // PROVIDERS
-  getProviders() { return this._get('providers'); },
+  getProviders() { return this._get('providers').filter(p => !p._deleted); },
   saveProvider(p) {
     const providers = this.getProviders();
     if (p.id) {
@@ -89,11 +111,11 @@ const DB = {
     return p;
   },
   deleteProvider(id) {
-    this._set('providers', this.getProviders().filter(p => p.id !== id));
+    this._softDelete('providers', id);
   },
 
   // PASSENGERS
-  getPassengers() { return this._get('passengers'); },
+  getPassengers() { return this._get('passengers').filter(p => !p._deleted); },
   savePassenger(p) {
     const passengers = this.getPassengers();
     if (p.id) {
@@ -107,11 +129,11 @@ const DB = {
     return p;
   },
   deletePassenger(id) {
-    this._set('passengers', this.getPassengers().filter(p => p.id !== id));
+    this._softDelete('passengers', id);
   },
 
   // CLIENTS
-  getClients() { return this._get('clients'); },
+  getClients() { return this._get('clients').filter(c => !c._deleted); },
   saveClient(c) {
     const clients = this.getClients();
     if (c.id) {
@@ -127,7 +149,7 @@ const DB = {
     return c;
   },
   deleteClient(id) {
-    this._set('clients', this.getClients().filter(c => c.id !== id));
+    this._softDelete('clients', id);
   },
 
   // EMAIL LOG
