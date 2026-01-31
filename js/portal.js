@@ -239,14 +239,7 @@ const Portal = {
         </div>
         <div class="empty-state">
           <p>The itinerary is being prepared. Check back soon!</p>
-        </div>
-        <div id="portal-itinerary-map" style="margin-top:1.2rem">
-          <h3 style="font-family:var(--font-display);color:var(--navy);margin-bottom:0.8rem;font-size:1.05rem">Tour Map</h3>
-          <div id="portal-map" style="height:350px;border-radius:var(--radius-lg);overflow:hidden;border:1.5px solid var(--gray-200)">
-            <div style="padding:2rem;text-align:center;color:var(--gray-300)">Loading map...</div>
-          </div>
         </div>`;
-      setTimeout(() => this._initItineraryMap(), 100);
       return;
     }
 
@@ -281,90 +274,7 @@ const Portal = {
               <span style="color:var(--green);font-weight:700">&#10003;</span> ${item}
             </div>
           `).join('')}
-        </div>` : ''}
-
-      <div id="portal-itinerary-map" style="margin-top:1.2rem">
-        <h3 style="font-family:var(--font-display);color:var(--navy);margin-bottom:0.8rem;font-size:1.05rem">Tour Map</h3>
-        <div id="portal-map" style="height:350px;border-radius:var(--radius-lg);overflow:hidden;border:1.5px solid var(--gray-200)">
-          <div style="padding:2rem;text-align:center;color:var(--gray-300)">Loading map...</div>
-        </div>
-      </div>`;
-    setTimeout(() => this._initItineraryMap(), 100);
-  },
-
-  _initItineraryMap() {
-    if (typeof L === 'undefined') {
-      if (!this._mapRetries) this._mapRetries = 0;
-      if (this._mapRetries < 10) {
-        this._mapRetries++;
-        setTimeout(() => this._initItineraryMap(), 500);
-        return;
-      }
-      const el = document.getElementById('portal-map');
-      if (el) el.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--gray-300)">Map unavailable</div>';
-      return;
-    }
-    this._mapRetries = 0;
-
-    // Clean up previous map instance
-    if (this._portalMap) { try { this._portalMap.remove(); } catch(e) {} this._portalMap = null; }
-
-    const t = this.tourData;
-    if (!t) return;
-    const mapEl = document.getElementById('portal-map');
-    if (!mapEl) return;
-
-    // Collect locations
-    const locations = [];
-    const dest = (t.destination || '').split('\u2192').map(d => d.trim()).filter(Boolean);
-    dest.forEach(d => locations.push({ name: d, type: 'destination' }));
-    (t.hotels || []).forEach(h => { if (h.hotelName) locations.push({ name: h.hotelName + ', ' + (h.city || ''), type: 'hotel', label: h.hotelName }); });
-    (t.activities || []).forEach(a => { if (a.name && a.destination) locations.push({ name: a.name + ', ' + a.destination, type: 'activity', label: a.name }); });
-
-    if (!locations.length) {
-      mapEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--gray-300)">No locations to display</div>';
-      return;
-    }
-
-    const map = L.map(mapEl).setView([40.4168, -3.7038], 6);
-    this._portalMap = map;
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap',
-      maxZoom: 18
-    }).addTo(map);
-    setTimeout(() => map.invalidateSize(), 200);
-
-    const markers = [];
-    const icons = {
-      destination: L.divIcon({ className: '', html: '<div style="background:#ffb400;color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u{1F4CD}</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
-      hotel: L.divIcon({ className: '', html: '<div style="background:#1a1a2e;color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u{1F3E8}</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
-      activity: L.divIcon({ className: '', html: '<div style="background:#22c55e;color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u26BD</div>', iconSize: [28, 28], iconAnchor: [14, 14] })
-    };
-    const coords = [];
-
-    function geocodeNext(idx) {
-      if (idx >= locations.length) {
-        if (coords.length > 1) L.polyline(coords, { color: '#ffb400', weight: 3, dashArray: '10,10', opacity: 0.7 }).addTo(map);
-        if (markers.length) map.fitBounds(L.featureGroup(markers).getBounds().pad(0.2));
-        return;
-      }
-      const loc = locations[idx];
-      fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(loc.name) + '&limit=1&email=info@odisea-tours.com')
-        .then(r => r.json())
-        .then(data => {
-          if (data && data[0]) {
-            const lat = parseFloat(data[0].lat), lon = parseFloat(data[0].lon);
-            const marker = L.marker([lat, lon], { icon: icons[loc.type] || icons.destination })
-              .bindPopup('<strong>' + (loc.label || loc.name) + '</strong><br><span style="font-size:0.82rem;color:gray">' + loc.type + '</span>')
-              .addTo(map);
-            markers.push(marker);
-            if (loc.type === 'destination' || loc.type === 'hotel') coords.push([lat, lon]);
-          }
-          setTimeout(() => geocodeNext(idx + 1), 300);
-        })
-        .catch(() => setTimeout(() => geocodeNext(idx + 1), 300));
-    }
-    geocodeNext(0);
+        </div>` : ''}`;
   },
 
   async renderDocuments() {
