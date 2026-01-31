@@ -129,6 +129,7 @@ const Portal = {
       case 'itinerary': this.renderItinerary(); break;
       case 'documents': this.renderDocuments(); break;
       case 'passengers': this.renderPassengers(); break;
+      case 'roomplan': this.renderRoomPlan(); break;
       case 'messages': this.renderMessages(); break;
     }
   },
@@ -187,6 +188,10 @@ const Portal = {
         <button class="action-btn" onclick="Portal.showSection('passengers')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/></svg>
           <span>Passengers</span>
+        </button>
+        <button class="action-btn" onclick="Portal.showSection('roomplan')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+          <span>Room Plan</span>
         </button>
         <button class="action-btn" onclick="Portal.showSection('messages')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -372,6 +377,8 @@ const Portal = {
                   ${p.nationality || 'No nationality'}${p.dateOfBirth ? ' &bull; ' + Portal._fmtDate(p.dateOfBirth) : ''}
                 </div>
                 <div class="pax-tags">
+                  ${p.role ? '<span class="pax-tag pax-tag-role-' + p.role.toLowerCase() + '">' + Portal._escapeHtml(p.role) + '</span>' : ''}
+                  ${p.family ? '<span class="pax-tag pax-tag-family">' + Portal._escapeHtml(p.family) + '</span>' : ''}
                   ${paymentStatus}
                   ${passportTag}
                   ${p.dietary ? '<span class="pax-tag pax-tag-blue">' + Portal._escapeHtml(p.dietary) + '</span>' : ''}
@@ -385,6 +392,8 @@ const Portal = {
             <div class="pax-detail-panel" id="pax-${p.id}" style="display:none" onclick="event.stopPropagation()">
               <div class="pax-detail-grid">
                 <div class="pax-field"><span class="pax-field-label">Full Name</span><span class="pax-field-value">${fullName}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Role</span><span class="pax-field-value">${p.role || '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Family / Group</span><span class="pax-field-value">${p.family || '\u2014'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Date of Birth</span><span class="pax-field-value">${p.dateOfBirth ? Portal._fmtDate(p.dateOfBirth) : '\u2014'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Nationality</span><span class="pax-field-value">${p.nationality || '\u2014'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Passport</span><span class="pax-field-value">${p.passportNumber || '\u2014'}</span></div>
@@ -392,6 +401,7 @@ const Portal = {
                 <div class="pax-field"><span class="pax-field-label">Dietary</span><span class="pax-field-value">${p.dietary || '\u2014'}</span></div>
                 <div class="pax-field full-width"><span class="pax-field-label">Medical Info</span><span class="pax-field-value">${p.medical || '\u2014'}</span></div>
                 <div class="pax-field full-width"><span class="pax-field-label">Emergency Contact</span><span class="pax-field-value">${p.emergencyContact || '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Room</span><span class="pax-field-value">${p.room || 'Unassigned'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Registered</span><span class="pax-field-value">${p.createdAt ? Portal._fmtDate(p.createdAt) : '\u2014'}</span></div>
               </div>
               <div class="pax-detail-actions">
@@ -458,12 +468,31 @@ const Portal = {
 
     const isEdit = !!editId;
 
+    // Get unique family names for datalist
+    const families = [...new Set(this._passengers.map(x => x.family).filter(Boolean))];
+
     formContainer.innerHTML = `
       <form class="pax-form" onsubmit="Portal.savePassenger(event, '${editId || ''}')">
         <h3>${isEdit ? 'Edit Passenger' : 'Register Passenger'}</h3>
         <div class="form-row form-row-2">
           <div class="form-group"><label>First Name *</label><input id="pf-first" required value="${Portal._escapeAttr(p.firstName || '')}"></div>
           <div class="form-group"><label>Last Name *</label><input id="pf-last" required value="${Portal._escapeAttr(p.lastName || '')}"></div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label>Role *</label>
+            <select id="pf-role">
+              <option value="Player" ${(p.role||'')==='Player'?'selected':''}>Player</option>
+              <option value="Sibling" ${(p.role||'')==='Sibling'?'selected':''}>Sibling</option>
+              <option value="Adult" ${(p.role||'')==='Adult'?'selected':''}>Adult</option>
+              <option value="Coach" ${(p.role||'')==='Coach'?'selected':''}>Coach</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Family / Group</label>
+            <input id="pf-family" list="family-list" placeholder="e.g. Smith Family" value="${Portal._escapeAttr(p.family || '')}">
+            <datalist id="family-list">${families.map(f => '<option value="' + Portal._escapeAttr(f) + '">').join('')}</datalist>
+          </div>
         </div>
         <div class="form-row form-row-2">
           <div class="form-group"><label>Date of Birth</label><input id="pf-dob" type="date" value="${p.dateOfBirth || ''}"></div>
@@ -489,6 +518,8 @@ const Portal = {
     const passenger = {
       firstName: document.getElementById('pf-first').value.trim(),
       lastName: document.getElementById('pf-last').value.trim(),
+      role: document.getElementById('pf-role').value,
+      family: document.getElementById('pf-family').value.trim(),
       dateOfBirth: document.getElementById('pf-dob').value,
       nationality: document.getElementById('pf-nationality').value.trim(),
       passportNumber: document.getElementById('pf-passport').value.trim(),
@@ -526,6 +557,293 @@ const Portal = {
     } else {
       alert('Failed to remove passenger. Please try again.');
     }
+  },
+
+  /* ============================================================
+     ROOM PLAN — assign passengers to rooms + download
+     ============================================================ */
+  _roomPlan: [],
+
+  async renderRoomPlan() {
+    const container = document.getElementById('section-roomplan');
+    container.innerHTML = `
+      <div class="section-header">
+        <h2>Room Plan</h2>
+        <p>Assign passengers to rooms for hotel bookings</p>
+      </div>
+      <div style="text-align:center;padding:2rem"><div class="spinner"></div></div>`;
+
+    // Load passengers if not loaded
+    if (!this._passengers.length) {
+      this._passengers = await DB.getTourPassengers(this.tourId);
+    }
+
+    // Load room plan from tour doc
+    this._roomPlan = this.tourData.roomPlan || [];
+
+    const passengers = this._passengers;
+    const assigned = new Set();
+    this._roomPlan.forEach(room => (room.passengers || []).forEach(id => assigned.add(id)));
+    const unassigned = passengers.filter(p => !assigned.has(p.id));
+
+    // Group unassigned by family
+    const familyGroups = {};
+    const noFamily = [];
+    unassigned.forEach(p => {
+      if (p.family) {
+        if (!familyGroups[p.family]) familyGroups[p.family] = [];
+        familyGroups[p.family].push(p);
+      } else {
+        noFamily.push(p);
+      }
+    });
+
+    container.innerHTML = `
+      <div class="section-header">
+        <h2>Room Plan</h2>
+        <p>${this._roomPlan.length} room${this._roomPlan.length!==1?'s':''} &bull; ${passengers.length - unassigned.length} assigned &bull; ${unassigned.length} unassigned</p>
+      </div>
+
+      <div class="rp-actions">
+        <button class="btn-primary btn-sm" onclick="Portal.addRoom()">+ Add Room</button>
+        <button class="btn-outline btn-sm" onclick="Portal.autoAssignRooms()">Auto-Assign</button>
+        ${this._roomPlan.length ? '<button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlan()">Download Room Plan</button>' : ''}
+      </div>
+
+      ${this._roomPlan.length ? `<div class="rp-rooms">
+        ${this._roomPlan.map((room, ri) => {
+          const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean);
+          return `
+            <div class="rp-room">
+              <div class="rp-room-header">
+                <div class="rp-room-num">
+                  <input value="${Portal._escapeAttr(room.name || 'Room ' + (ri+1))}" class="rp-room-name-input" onchange="Portal.updateRoomName(${ri},this.value)" onclick="event.stopPropagation()">
+                </div>
+                <span class="rp-room-count">${roomPax.length} guest${roomPax.length!==1?'s':''}</span>
+                <button class="rp-room-delete" onclick="Portal.removeRoom(${ri})" title="Remove room">&times;</button>
+              </div>
+              <div class="rp-room-guests">
+                ${roomPax.length ? roomPax.map(p => `
+                  <div class="rp-guest">
+                    <div class="rp-guest-avatar">${((p.firstName||'')[0]||'')+((p.lastName||'')[0]||'')}</div>
+                    <div class="rp-guest-info">
+                      <div class="rp-guest-name">${p.firstName||''} ${p.lastName||''}</div>
+                      <div class="rp-guest-meta">${p.role||''}${p.family?' &bull; '+Portal._escapeHtml(p.family):''}</div>
+                    </div>
+                    <button class="rp-guest-remove" onclick="Portal.removeFromRoom(${ri},'${p.id}')" title="Remove from room">&times;</button>
+                  </div>
+                `).join('') : '<div class="rp-empty">No guests assigned</div>'}
+              </div>
+              <div class="rp-room-add">
+                <select onchange="Portal.assignToRoom(${ri},this.value);this.value=''" class="rp-assign-select">
+                  <option value="">+ Add guest...</option>
+                  ${unassigned.map(p => '<option value="' + p.id + '">' + Portal._escapeAttr((p.firstName||'')+' '+(p.lastName||'')) + (p.family?' ('+Portal._escapeAttr(p.family)+')':'') + (p.role?' - '+p.role:'') + '</option>').join('')}
+                </select>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>` : ''}
+
+      ${unassigned.length ? `
+        <div class="rp-unassigned">
+          <h3 class="rp-unassigned-title">Unassigned Passengers (${unassigned.length})</h3>
+          ${Object.keys(familyGroups).length ? Object.entries(familyGroups).map(([family, members]) => `
+            <div class="rp-family-group">
+              <div class="rp-family-label">${Portal._escapeHtml(family)} (${members.length})</div>
+              <div class="rp-family-members">
+                ${members.map(p => `
+                  <div class="rp-unassigned-pax">
+                    <span class="rp-ua-name">${p.firstName||''} ${p.lastName||''}</span>
+                    <span class="pax-tag pax-tag-role-${(p.role||'player').toLowerCase()}">${p.role||'Player'}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `).join('') : ''}
+          ${noFamily.length ? `
+            <div class="rp-family-group">
+              <div class="rp-family-label">No Family Group (${noFamily.length})</div>
+              <div class="rp-family-members">
+                ${noFamily.map(p => `
+                  <div class="rp-unassigned-pax">
+                    <span class="rp-ua-name">${p.firstName||''} ${p.lastName||''}</span>
+                    <span class="pax-tag pax-tag-role-${(p.role||'player').toLowerCase()}">${p.role||'Player'}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      ` : ''}`;
+  },
+
+  addRoom() {
+    this._roomPlan.push({ name: 'Room ' + (this._roomPlan.length + 1), passengers: [] });
+    this._saveRoomPlan();
+  },
+
+  removeRoom(idx) {
+    if (!confirm('Remove this room? Guests will become unassigned.')) return;
+    this._roomPlan.splice(idx, 1);
+    this._saveRoomPlan();
+  },
+
+  updateRoomName(idx, name) {
+    if (this._roomPlan[idx]) this._roomPlan[idx].name = name;
+    this._saveRoomPlan(false);
+  },
+
+  assignToRoom(roomIdx, passengerId) {
+    if (!passengerId || !this._roomPlan[roomIdx]) return;
+    // Remove from any other room first
+    this._roomPlan.forEach(r => { r.passengers = (r.passengers || []).filter(id => id !== passengerId); });
+    this._roomPlan[roomIdx].passengers.push(passengerId);
+    this._saveRoomPlan();
+  },
+
+  removeFromRoom(roomIdx, passengerId) {
+    if (!this._roomPlan[roomIdx]) return;
+    this._roomPlan[roomIdx].passengers = (this._roomPlan[roomIdx].passengers || []).filter(id => id !== passengerId);
+    this._saveRoomPlan();
+  },
+
+  autoAssignRooms() {
+    const passengers = this._passengers;
+    if (!passengers.length) return;
+
+    // Group by family first, then solo passengers
+    const familyGroups = {};
+    const solos = [];
+    passengers.forEach(p => {
+      if (p.family) {
+        if (!familyGroups[p.family]) familyGroups[p.family] = [];
+        familyGroups[p.family].push(p.id);
+      } else {
+        solos.push(p.id);
+      }
+    });
+
+    this._roomPlan = [];
+    let roomNum = 1;
+
+    // Each family gets a room
+    Object.entries(familyGroups).forEach(([family, ids]) => {
+      this._roomPlan.push({ name: family, passengers: ids });
+      roomNum++;
+    });
+
+    // Solo passengers: group by role, 2-3 per room
+    const roleGroups = {};
+    solos.forEach(id => {
+      const p = passengers.find(x => x.id === id);
+      const role = (p && p.role) || 'Player';
+      if (!roleGroups[role]) roleGroups[role] = [];
+      roleGroups[role].push(id);
+    });
+
+    Object.entries(roleGroups).forEach(([role, ids]) => {
+      for (let i = 0; i < ids.length; i += 2) {
+        const chunk = ids.slice(i, i + 2);
+        this._roomPlan.push({ name: 'Room ' + roomNum, passengers: chunk });
+        roomNum++;
+      }
+    });
+
+    this._saveRoomPlan();
+  },
+
+  async _saveRoomPlan(rerender) {
+    this.tourData.roomPlan = this._roomPlan;
+    if (DB._firebaseReady) {
+      try {
+        await DB.firestore.collection('tours').doc(this.tourId).update({ roomPlan: this._roomPlan });
+      } catch (e) {
+        console.warn('Save room plan failed:', e.message);
+      }
+    }
+    if (rerender !== false) this.renderRoomPlan();
+  },
+
+  downloadRoomPlan() {
+    const t = this.tourData;
+    const passengers = this._passengers;
+    const rooms = this._roomPlan;
+
+    // Build HTML document for printing/saving
+    let html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Room Plan - ${Portal._escapeHtml(t.tourName || 'Tour')}</title>
+      <style>
+        body{font-family:'Segoe UI',Arial,sans-serif;margin:2rem;color:#333;font-size:14px}
+        h1{color:#0B1D3A;border-bottom:3px solid #E8913A;padding-bottom:0.5rem;margin-bottom:0.3rem;font-size:1.5rem}
+        .subtitle{color:#888;margin-bottom:1.5rem;font-size:0.9rem}
+        .room{border:1px solid #ddd;border-radius:8px;margin-bottom:1rem;overflow:hidden;page-break-inside:avoid}
+        .room-header{background:#0B1D3A;color:white;padding:0.6rem 1rem;font-weight:600;display:flex;justify-content:space-between}
+        .room-body{padding:0.8rem 1rem}
+        .guest{display:flex;align-items:center;gap:0.8rem;padding:0.4rem 0;border-bottom:1px solid #f0f0f0}
+        .guest:last-child{border-bottom:none}
+        .guest-name{font-weight:600;min-width:180px}
+        .guest-detail{color:#888;font-size:0.85rem}
+        .tag{display:inline-block;padding:0.1rem 0.5rem;border-radius:10px;font-size:0.75rem;font-weight:600}
+        .tag-player{background:#e8f5e9;color:#2e7d32}
+        .tag-sibling{background:#e3f2fd;color:#1565c0}
+        .tag-adult{background:#fce4ec;color:#c62828}
+        .tag-coach{background:#f3e5f5;color:#6a1b9a}
+        .summary{margin-top:2rem;background:#f8f9fa;border-radius:8px;padding:1rem;font-size:0.9rem}
+        .summary td{padding:0.3rem 1rem 0.3rem 0}
+        @media print{body{margin:1rem}.room{break-inside:avoid}}
+      </style></head><body>
+      <h1>Room Plan</h1>
+      <div class="subtitle">${Portal._escapeHtml(t.tourName||'')} &mdash; ${Portal._escapeHtml(t.destination||'')} &mdash; ${Portal._fmtDate(t.startDate)} to ${Portal._fmtDate(t.endDate)}</div>`;
+
+    rooms.forEach(room => {
+      const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean);
+      html += `<div class="room">
+        <div class="room-header"><span>${Portal._escapeHtml(room.name || 'Room')}</span><span>${roomPax.length} guest${roomPax.length!==1?'s':''}</span></div>
+        <div class="room-body">`;
+      if (roomPax.length) {
+        roomPax.forEach(p => {
+          html += `<div class="guest">
+            <span class="guest-name">${Portal._escapeHtml((p.firstName||'')+' '+(p.lastName||''))}</span>
+            <span class="tag tag-${(p.role||'player').toLowerCase()}">${Portal._escapeHtml(p.role||'Player')}</span>
+            ${p.family ? '<span class="guest-detail">'+Portal._escapeHtml(p.family)+'</span>' : ''}
+            ${p.dietary ? '<span class="guest-detail">Diet: '+Portal._escapeHtml(p.dietary)+'</span>' : ''}
+            ${p.medical ? '<span class="guest-detail">Medical: Yes</span>' : ''}
+          </div>`;
+        });
+      } else {
+        html += '<div style="color:#aaa;padding:0.5rem 0">Empty room</div>';
+      }
+      html += `</div></div>`;
+    });
+
+    // Summary
+    const assigned = new Set();
+    rooms.forEach(r => (r.passengers||[]).forEach(id => assigned.add(id)));
+    const unassigned = passengers.filter(p => !assigned.has(p.id));
+    const players = passengers.filter(p => (p.role||'Player')==='Player').length;
+    const siblings = passengers.filter(p => p.role==='Sibling').length;
+    const adults = passengers.filter(p => p.role==='Adult').length;
+    const coaches = passengers.filter(p => p.role==='Coach').length;
+
+    html += `<div class="summary"><table>
+      <tr><td><strong>Total Passengers:</strong></td><td>${passengers.length}</td></tr>
+      <tr><td><strong>Players:</strong></td><td>${players}</td></tr>
+      <tr><td><strong>Siblings:</strong></td><td>${siblings}</td></tr>
+      <tr><td><strong>Adults:</strong></td><td>${adults}</td></tr>
+      <tr><td><strong>Coaches:</strong></td><td>${coaches}</td></tr>
+      <tr><td><strong>Rooms:</strong></td><td>${rooms.length}</td></tr>
+      <tr><td><strong>Assigned:</strong></td><td>${assigned.size}</td></tr>
+      ${unassigned.length ? '<tr><td><strong>Unassigned:</strong></td><td style="color:red">' + unassigned.length + ' (' + unassigned.map(p=>(p.firstName||'')+' '+(p.lastName||'')).join(', ') + ')</td></tr>' : ''}
+    </table></div>
+    <div style="margin-top:2rem;text-align:center;color:#aaa;font-size:0.8rem">
+      Generated by Odisea Tours &mdash; ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}
+    </div></body></html>`;
+
+    // Open as printable page
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 500);
   },
 
   async renderMessages() {

@@ -1035,6 +1035,236 @@ body {
   background: var(--amber-dark);
 }
 
+/* ── ROLE & FAMILY TAGS ── */
+.pax-tag-role-player { background: rgba(46,204,113,0.12); color: #1e8449; }
+.pax-tag-role-sibling { background: rgba(52,152,219,0.12); color: #2471a3; }
+.pax-tag-role-adult { background: rgba(155,89,182,0.12); color: #6c3483; }
+.pax-tag-role-coach { background: rgba(243,156,18,0.12); color: #b7791f; }
+.pax-tag-family { background: rgba(11,29,58,0.08); color: var(--navy); border: 1px solid rgba(11,29,58,0.15); }
+
+/* ── ROOM PLAN ── */
+.rp-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.2rem;
+}
+
+.rp-rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin-bottom: 1.5rem;
+}
+
+.rp-room {
+  background: white;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  border: 1.5px solid var(--gray-100);
+  transition: border-color 0.2s;
+}
+
+.rp-room:hover {
+  border-color: var(--amber-light);
+}
+
+.rp-room-header {
+  background: linear-gradient(135deg, var(--navy), var(--navy-light));
+  color: white;
+  padding: 0.6rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.rp-room-name-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255,255,255,0.3);
+  color: white;
+  font-weight: 600;
+  font-size: 0.95rem;
+  font-family: var(--font-body);
+  padding: 0.1rem 0.3rem;
+  width: 160px;
+}
+
+.rp-room-name-input:focus {
+  outline: none;
+  border-bottom-color: var(--amber);
+}
+
+.rp-room-count {
+  margin-left: auto;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.rp-room-delete {
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.rp-room-delete:hover {
+  background: rgba(231,76,60,0.6);
+}
+
+.rp-room-guests {
+  padding: 0.5rem 1rem;
+}
+
+.rp-guest {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--gray-50);
+}
+
+.rp-guest:last-child {
+  border-bottom: none;
+}
+
+.rp-guest-avatar {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--navy-light), var(--navy));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
+.rp-guest-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.rp-guest-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--navy);
+}
+
+.rp-guest-meta {
+  font-size: 0.75rem;
+  color: var(--gray-400);
+}
+
+.rp-guest-remove {
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: 1px solid var(--gray-200);
+  border-radius: 50%;
+  color: var(--gray-400);
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.rp-guest-remove:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.rp-empty {
+  color: var(--gray-300);
+  font-size: 0.85rem;
+  padding: 0.8rem 0;
+  text-align: center;
+}
+
+.rp-room-add {
+  padding: 0 1rem 0.6rem;
+}
+
+.rp-assign-select {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1.5px dashed var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--gray-50);
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  color: var(--gray-500);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.rp-assign-select:focus {
+  outline: none;
+  border-color: var(--amber);
+}
+
+.rp-unassigned {
+  background: white;
+  border-radius: var(--radius-lg);
+  padding: 1.2rem;
+  box-shadow: var(--shadow);
+  border-left: 3px solid var(--amber);
+}
+
+.rp-unassigned-title {
+  font-family: var(--font-display);
+  color: var(--navy);
+  font-size: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.rp-family-group {
+  margin-bottom: 0.8rem;
+}
+
+.rp-family-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gray-400);
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.rp-family-members {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.rp-unassigned-pax {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.4rem;
+  font-size: 0.85rem;
+}
+
+.rp-ua-name {
+  color: var(--gray-600);
+  font-weight: 500;
+}
+
 /* ── SECTION HEADERS ── */
 .section-header {
   margin-bottom: 1rem;
@@ -1102,7 +1332,7 @@ body {
   .form-row-2 { grid-template-columns: 1fr; }
   .form-row-3 { grid-template-columns: 1fr; }
   .action-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
