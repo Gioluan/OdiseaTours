@@ -2,6 +2,10 @@
 const Auth = {
   user: null,
   _unsubscribe: null,
+  _syncInterval: null,
+  _syncing: false,
+  SYNC_INTERVAL_MS: 5 * 60 * 1000, // 5 minutes
+  COLLECTIONS: ['tours', 'quotes', 'invoices', 'clients', 'providers'],
 
   init() {
     if (!DB._firebaseReady) {
@@ -15,7 +19,14 @@ const Auth = {
       if (user) {
         console.log('Signed in as:', user.email);
         this.syncAllData();
+        this._startAutoSync();
+      } else {
+        this._stopAutoSync();
       }
+    });
+    // Sync when app regains focus (e.g. switching back from another app)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.user) this.syncAllData();
     });
     // Show login form if not authenticated after a short delay
     setTimeout(() => {
@@ -23,6 +34,15 @@ const Auth = {
         this.showLoginForm();
       }
     }, 1500);
+  },
+
+  _startAutoSync() {
+    this._stopAutoSync();
+    this._syncInterval = setInterval(() => this.syncAllData(), this.SYNC_INTERVAL_MS);
+  },
+
+  _stopAutoSync() {
+    if (this._syncInterval) { clearInterval(this._syncInterval); this._syncInterval = null; }
   },
 
   showLoginForm() {
@@ -83,6 +103,7 @@ const Auth = {
 
   async logout() {
     if (!DB._firebaseReady) return;
+    this._stopAutoSync();
     try {
       await DB.auth.signOut();
       this.user = null;
@@ -92,19 +113,89 @@ const Auth = {
     }
   },
 
-  // Sync all collections from localStorage to Firestore on login
+  // Two-way sync: pull from Firestore, merge, push back
   async syncAllData() {
-    if (!DB._firebaseReady || !this.user) return;
+    if (!DB._firebaseReady || !this.user || this._syncing) return;
+    this._syncing = true;
+    this._updateSyncIndicator('syncing');
     try {
-      // Push local data to Firestore
-      await DB.syncToFirestore('tours', DB.getTours());
-      await DB.syncToFirestore('quotes', DB.getQuotes());
-      await DB.syncToFirestore('invoices', DB.getInvoices());
-      await DB.syncToFirestore('clients', DB.getClients());
-      await DB.syncToFirestore('providers', DB.getProviders());
-      console.log('All data synced to Firestore.');
+      const getters = { tours: DB.getTours.bind(DB), quotes: DB.getQuotes.bind(DB), invoices: DB.getInvoices.bind(DB), clients: DB.getClients.bind(DB), providers: DB.getProviders.bind(DB) };
+      const setters = { tours: 'tours', quotes: 'quotes', invoices: 'invoices', clients: 'clients', providers: 'providers' };
+
+      for (const col of this.COLLECTIONS) {
+        // 1. Pull remote data
+        const remote = await DB.pullFromFirestore(col);
+        const local = getters[col]();
+
+        // 2. Merge: build map by id, newest updatedAt wins
+        const merged = new Map();
+        local.forEach(item => merged.set(String(item.id), item));
+        let pulled = 0;
+        remote.forEach(item => {
+          const key = item._firestoreId || String(item.id);
+          const numId = Number(key) || item.id;
+          item.id = numId;
+          delete item._firestoreId;
+          const existing = merged.get(String(numId));
+          if (!existing) {
+            // New item from another device
+            merged.set(String(numId), item);
+            pulled++;
+          } else {
+            // Compare updatedAt — remote wins if newer
+            const remoteTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+            const localTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+            if (remoteTime > localTime) {
+              merged.set(String(numId), item);
+              pulled++;
+            }
+          }
+        });
+
+        // 3. Save merged data to localStorage
+        const mergedArr = Array.from(merged.values());
+        DB._set(setters[col], mergedArr);
+
+        // 4. Push merged data back to Firestore
+        await DB.syncToFirestore(col, mergedArr);
+        if (pulled > 0) console.log(`Pulled ${pulled} updated items for ${col}`);
+      }
+
+      this._lastSync = new Date();
+      this._updateSyncIndicator('done');
+      console.log('Two-way sync complete.');
+      // Refresh current view if data changed
+      if (typeof App !== 'undefined' && App._currentTab) {
+        const tab = App._currentTab;
+        if (tab === 'dashboard' && typeof Dashboard !== 'undefined') Dashboard.render();
+        else if (tab === 'tours' && typeof Tours !== 'undefined') Tours.render();
+        else if (tab === 'crm' && typeof CRM !== 'undefined') CRM.render();
+        else if (tab === 'invoicing' && typeof Invoicing !== 'undefined') Invoicing.render();
+      }
     } catch (e) {
       console.warn('Sync failed:', e.message);
+      this._updateSyncIndicator('error');
+    } finally {
+      this._syncing = false;
+    }
+  },
+
+  // Manual sync trigger
+  async manualSync() {
+    await this.syncAllData();
+    if (this._lastSync) alert('Sync complete! Data is up to date.');
+  },
+
+  _updateSyncIndicator(state) {
+    let el = document.getElementById('sync-status');
+    if (!el) return;
+    if (state === 'syncing') {
+      el.innerHTML = '<span style="color:var(--amber)">⟳ Syncing...</span>';
+    } else if (state === 'done') {
+      const t = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      el.innerHTML = `<span style="color:var(--green)">✓ Synced ${t}</span>`;
+    } else {
+      el.innerHTML = '<span style="color:var(--red)">✗ Sync error</span>';
     }
   },
 
@@ -123,7 +214,9 @@ const Auth = {
     if (user) {
       indicator.style.background = 'rgba(46,204,113,0.15)';
       indicator.style.color = 'var(--green)';
-      indicator.innerHTML = `<span style="display:inline-block;width:6px;height:6px;background:var(--green);border-radius:50%;margin-right:4px"></span>${user.email.split('@')[0]} <a href="#" onclick="Auth.logout();return false" style="color:var(--gray-400);margin-left:4px;font-size:0.72rem">logout</a>`;
+      indicator.innerHTML = `<span style="display:inline-block;width:6px;height:6px;background:var(--green);border-radius:50%;margin-right:4px"></span>${user.email.split('@')[0]} <a href="#" onclick="Auth.logout();return false" style="color:var(--gray-400);margin-left:4px;font-size:0.72rem">logout</a>
+        <div id="sync-status" style="margin-top:0.3rem;font-size:0.72rem"></div>
+        <a href="#" onclick="Auth.manualSync();return false" style="display:inline-block;margin-top:0.25rem;font-size:0.72rem;color:var(--amber);text-decoration:none">⟳ Sync Now</a>`;
     } else if (DB._firebaseReady) {
       indicator.style.background = 'rgba(232,145,58,0.15)';
       indicator.style.color = 'var(--amber)';
