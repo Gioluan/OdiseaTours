@@ -297,6 +297,9 @@ const Portal = {
       }).join('')}`;
   },
 
+  _passengers: [],
+  _invoices: [],
+
   async renderPassengers() {
     const container = document.getElementById('section-passengers');
     container.innerHTML = `
@@ -306,28 +309,99 @@ const Portal = {
       </div>
       <div style="text-align:center;padding:2rem"><div class="spinner"></div></div>`;
 
-    const passengers = await DB.getTourPassengers(this.tourId);
+    // Load passengers and invoices in parallel
+    const [passengers, invoices] = await Promise.all([
+      DB.getTourPassengers(this.tourId),
+      DB.getTourInvoices(this.tourId)
+    ]);
+    this._passengers = passengers;
+    this._invoices = invoices;
+
+    const t = this.tourData;
+    const totalExpected = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
 
     let html = `
       <div class="section-header">
         <h2>Passengers</h2>
-        <p>${passengers.length} registered</p>
+        <p>${passengers.length} registered${totalExpected ? ' of ' + totalExpected + ' expected' : ''}</p>
       </div>
-      <button class="add-pax-btn" onclick="Portal.showPassengerForm()">+ Add Passenger</button>
+
+      ${totalExpected ? `<div class="pax-progress-bar">
+        <div class="pax-progress-fill" style="width:${Math.min(100, Math.round(passengers.length / totalExpected * 100))}%"></div>
+        <span class="pax-progress-label">${Math.round(passengers.length / totalExpected * 100)}%</span>
+      </div>` : ''}
+
+      <button class="add-pax-btn" onclick="Portal.showPassengerForm()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom:2px"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+        Add Passenger
+      </button>
       <div id="pax-form-container"></div>`;
 
     if (passengers.length) {
+      html += `<div class="pax-list">`;
       html += passengers.map(p => {
         const initials = ((p.firstName || '')[0] || '') + ((p.lastName || '')[0] || '');
+        const fullName = (p.firstName || '') + ' ' + (p.lastName || '');
+
+        // Try to match passenger to an individual client invoice by name
+        const paymentStatus = this._getPaymentStatus(fullName);
+
+        // Passport status
+        let passportTag = '';
+        if (p.passportNumber) {
+          if (p.passportExpiry) {
+            const exp = new Date(p.passportExpiry);
+            const monthsLeft = (exp - new Date()) / (1000*60*60*24*30);
+            if (monthsLeft < 0) passportTag = '<span class="pax-tag pax-tag-red">Expired</span>';
+            else if (monthsLeft < 6) passportTag = '<span class="pax-tag pax-tag-amber">Expiring Soon</span>';
+            else passportTag = '<span class="pax-tag pax-tag-green">Valid</span>';
+          } else {
+            passportTag = '<span class="pax-tag pax-tag-gray">No Expiry</span>';
+          }
+        } else {
+          passportTag = '<span class="pax-tag pax-tag-red">No Passport</span>';
+        }
+
         return `
-          <div class="pax-card">
-            <div class="pax-avatar">${initials.toUpperCase() || '?'}</div>
-            <div class="pax-info">
-              <div class="pax-name">${p.firstName || ''} ${p.lastName || ''}</div>
-              <div class="pax-detail">${p.nationality || ''}${p.dateOfBirth ? ' \u2022 DOB: ' + Portal._fmtDate(p.dateOfBirth) : ''}</div>
+          <div class="pax-card-detail" onclick="Portal.togglePaxDetail('pax-${p.id}')">
+            <div class="pax-card-main">
+              <div class="pax-avatar">${initials.toUpperCase() || '?'}</div>
+              <div class="pax-info">
+                <div class="pax-name">${fullName}</div>
+                <div class="pax-detail">
+                  ${p.nationality || 'No nationality'}${p.dateOfBirth ? ' &bull; ' + Portal._fmtDate(p.dateOfBirth) : ''}
+                </div>
+                <div class="pax-tags">
+                  ${paymentStatus}
+                  ${passportTag}
+                  ${p.dietary ? '<span class="pax-tag pax-tag-blue">' + Portal._escapeHtml(p.dietary) + '</span>' : ''}
+                  ${p.medical ? '<span class="pax-tag pax-tag-amber">Medical Note</span>' : ''}
+                </div>
+              </div>
+              <div class="pax-chevron">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+            <div class="pax-detail-panel" id="pax-${p.id}" style="display:none" onclick="event.stopPropagation()">
+              <div class="pax-detail-grid">
+                <div class="pax-field"><span class="pax-field-label">Full Name</span><span class="pax-field-value">${fullName}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Date of Birth</span><span class="pax-field-value">${p.dateOfBirth ? Portal._fmtDate(p.dateOfBirth) : '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Nationality</span><span class="pax-field-value">${p.nationality || '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Passport</span><span class="pax-field-value">${p.passportNumber || '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Passport Expiry</span><span class="pax-field-value">${p.passportExpiry ? Portal._fmtDate(p.passportExpiry) : '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Dietary</span><span class="pax-field-value">${p.dietary || '\u2014'}</span></div>
+                <div class="pax-field full-width"><span class="pax-field-label">Medical Info</span><span class="pax-field-value">${p.medical || '\u2014'}</span></div>
+                <div class="pax-field full-width"><span class="pax-field-label">Emergency Contact</span><span class="pax-field-value">${p.emergencyContact || '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Registered</span><span class="pax-field-value">${p.createdAt ? Portal._fmtDate(p.createdAt) : '\u2014'}</span></div>
+              </div>
+              <div class="pax-detail-actions">
+                <button class="btn-primary btn-sm" onclick="Portal.showPassengerForm('${p.id}')">Edit</button>
+                <button class="btn-outline btn-sm btn-danger-outline" onclick="Portal.deletePassenger('${p.id}')">Remove</button>
+              </div>
             </div>
           </div>`;
       }).join('');
+      html += `</div>`;
     } else {
       html += '<div class="empty-state"><p>No passengers registered yet. Be the first to register!</p></div>';
     }
@@ -335,36 +409,82 @@ const Portal = {
     container.innerHTML = html;
   },
 
-  showPassengerForm() {
+  _getPaymentStatus(fullName) {
+    const t = this.tourData;
+    if (!t || !t.individualClients) return '<span class="pax-tag pax-tag-gray">No Invoice</span>';
+
+    // Try to match by name (fuzzy: check if passenger name contains individual client name or vice versa)
+    const nameLower = fullName.toLowerCase().trim();
+    const ic = t.individualClients.find(c => {
+      const icName = (c.name || '').toLowerCase().trim();
+      return icName && (nameLower.includes(icName) || icName.includes(nameLower));
+    });
+
+    if (!ic) return '<span class="pax-tag pax-tag-gray">No Invoice</span>';
+
+    // Find matching invoice
+    const inv = this._invoices.find(i => i.individualClientRef === ic.id && i.tourId === t.id);
+    if (!inv) return '<span class="pax-tag pax-tag-gray">No Invoice</span>';
+
+    const paid = (inv.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+    const amount = Number(inv.amount) || 0;
+    if (paid >= amount) return '<span class="pax-tag pax-tag-green">Paid</span>';
+    if (paid > 0) return '<span class="pax-tag pax-tag-amber">Partial (' + Math.round(paid/amount*100) + '%)</span>';
+    return '<span class="pax-tag pax-tag-red">Unpaid</span>';
+  },
+
+  togglePaxDetail(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const isOpen = el.style.display !== 'none';
+    // Close all others
+    document.querySelectorAll('.pax-detail-panel').forEach(p => p.style.display = 'none');
+    document.querySelectorAll('.pax-card-detail').forEach(c => c.classList.remove('expanded'));
+    if (!isOpen) {
+      el.style.display = 'block';
+      el.closest('.pax-card-detail').classList.add('expanded');
+    }
+  },
+
+  showPassengerForm(editId) {
     const formContainer = document.getElementById('pax-form-container');
     if (!formContainer) return;
+
+    // If editing, find existing passenger data
+    let p = {};
+    if (editId) {
+      p = this._passengers.find(x => x.id === editId) || {};
+    }
+
+    const isEdit = !!editId;
+
     formContainer.innerHTML = `
-      <form class="pax-form" onsubmit="Portal.savePassenger(event)">
-        <h3>Register Passenger</h3>
+      <form class="pax-form" onsubmit="Portal.savePassenger(event, '${editId || ''}')">
+        <h3>${isEdit ? 'Edit Passenger' : 'Register Passenger'}</h3>
         <div class="form-row form-row-2">
-          <div class="form-group"><label>First Name *</label><input id="pf-first" required></div>
-          <div class="form-group"><label>Last Name *</label><input id="pf-last" required></div>
+          <div class="form-group"><label>First Name *</label><input id="pf-first" required value="${Portal._escapeAttr(p.firstName || '')}"></div>
+          <div class="form-group"><label>Last Name *</label><input id="pf-last" required value="${Portal._escapeAttr(p.lastName || '')}"></div>
         </div>
         <div class="form-row form-row-2">
-          <div class="form-group"><label>Date of Birth</label><input id="pf-dob" type="date"></div>
-          <div class="form-group"><label>Nationality</label><input id="pf-nationality" placeholder="e.g. British"></div>
+          <div class="form-group"><label>Date of Birth</label><input id="pf-dob" type="date" value="${p.dateOfBirth || ''}"></div>
+          <div class="form-group"><label>Nationality</label><input id="pf-nationality" placeholder="e.g. British" value="${Portal._escapeAttr(p.nationality || '')}"></div>
         </div>
         <div class="form-row form-row-2">
-          <div class="form-group"><label>Passport Number</label><input id="pf-passport"></div>
-          <div class="form-group"><label>Passport Expiry</label><input id="pf-passport-exp" type="date"></div>
+          <div class="form-group"><label>Passport Number</label><input id="pf-passport" value="${Portal._escapeAttr(p.passportNumber || '')}"></div>
+          <div class="form-group"><label>Passport Expiry</label><input id="pf-passport-exp" type="date" value="${p.passportExpiry || ''}"></div>
         </div>
-        <div class="form-group"><label>Dietary Requirements</label><input id="pf-dietary" placeholder="e.g. Vegetarian, Gluten-free"></div>
-        <div class="form-group"><label>Medical Information</label><textarea id="pf-medical" rows="2" placeholder="Allergies, medications, conditions..."></textarea></div>
-        <div class="form-group"><label>Emergency Contact</label><input id="pf-emergency" placeholder="Name and phone number"></div>
-        <div style="display:flex;gap:0.5rem;margin-top:1rem">
-          <button type="submit" class="btn-primary">Save Passenger</button>
+        <div class="form-group"><label>Dietary Requirements</label><input id="pf-dietary" placeholder="e.g. Vegetarian, Gluten-free" value="${Portal._escapeAttr(p.dietary || '')}"></div>
+        <div class="form-group"><label>Medical Information</label><textarea id="pf-medical" rows="2" placeholder="Allergies, medications, conditions...">${Portal._escapeHtml(p.medical || '')}</textarea></div>
+        <div class="form-group"><label>Emergency Contact</label><input id="pf-emergency" placeholder="Name and phone number" value="${Portal._escapeAttr(p.emergencyContact || '')}"></div>
+        <div class="pax-form-actions">
+          <button type="submit" class="btn-primary">${isEdit ? 'Update Passenger' : 'Save Passenger'}</button>
           <button type="button" class="btn-outline" onclick="document.getElementById('pax-form-container').innerHTML=''">Cancel</button>
         </div>
       </form>`;
     formContainer.scrollIntoView({ behavior: 'smooth' });
   },
 
-  async savePassenger(event) {
+  async savePassenger(event, editId) {
     event.preventDefault();
     const passenger = {
       firstName: document.getElementById('pf-first').value.trim(),
@@ -384,11 +504,27 @@ const Portal = {
       return;
     }
 
-    const result = await DB.saveTourPassenger(this.tourId, passenger);
+    let result;
+    if (editId) {
+      result = await DB.updateTourPassenger(this.tourId, editId, passenger);
+    } else {
+      result = await DB.saveTourPassenger(this.tourId, passenger);
+    }
+
     if (result) {
       this.renderPassengers();
     } else {
       alert('Failed to save passenger. Please try again.');
+    }
+  },
+
+  async deletePassenger(passengerId) {
+    if (!confirm('Remove this passenger?')) return;
+    const result = await DB.deleteTourPassenger(this.tourId, passengerId);
+    if (result) {
+      this.renderPassengers();
+    } else {
+      alert('Failed to remove passenger. Please try again.');
     }
   },
 
@@ -467,6 +603,10 @@ const Portal = {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  },
+
+  _escapeAttr(str) {
+    return (str || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 };
 

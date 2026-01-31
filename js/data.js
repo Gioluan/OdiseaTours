@@ -364,6 +364,48 @@ const DB = {
     }
   },
 
+  // Update an existing passenger in tour subcollection
+  async updateTourPassenger(tourId, passengerId, data) {
+    if (!this._firebaseReady) return null;
+    try {
+      data.updatedAt = new Date().toISOString();
+      await this.firestore.collection('tours').doc(String(tourId))
+        .collection('passengers').doc(passengerId).update(data);
+      return { id: passengerId, ...data };
+    } catch (e) {
+      console.warn('updateTourPassenger failed:', e.message);
+      return null;
+    }
+  },
+
+  // Delete a passenger from tour subcollection
+  async deleteTourPassenger(tourId, passengerId) {
+    if (!this._firebaseReady) return false;
+    try {
+      await this.firestore.collection('tours').doc(String(tourId))
+        .collection('passengers').doc(passengerId).delete();
+      return true;
+    } catch (e) {
+      console.warn('deleteTourPassenger failed:', e.message);
+      return false;
+    }
+  },
+
+  // Get invoices for a tour from Firestore
+  async getTourInvoices(tourId) {
+    if (!this._firebaseReady) return [];
+    try {
+      const snapshot = await this.firestore.collection('invoices')
+        .where('tourId', '==', Number(tourId)).get();
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      return items;
+    } catch (e) {
+      console.warn('getTourInvoices failed:', e.message);
+      return [];
+    }
+  },
+
   // Get all passengers from tour subcollection
   async getTourPassengers(tourId) {
     if (!this._firebaseReady) return [];
