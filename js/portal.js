@@ -239,7 +239,14 @@ const Portal = {
         </div>
         <div class="empty-state">
           <p>The itinerary is being prepared. Check back soon!</p>
+        </div>
+        <div id="portal-itinerary-map" style="margin-top:1.2rem">
+          <h3 style="font-family:var(--font-display);color:var(--navy);margin-bottom:0.8rem;font-size:1.05rem">Tour Map</h3>
+          <div id="portal-map" style="height:350px;border-radius:var(--radius-lg);overflow:hidden;border:1.5px solid var(--gray-200)">
+            <div style="padding:2rem;text-align:center;color:var(--gray-300)">Loading map...</div>
+          </div>
         </div>`;
+      setTimeout(() => this._initItineraryMap(), 100);
       return;
     }
 
@@ -299,10 +306,13 @@ const Portal = {
     }
     this._mapRetries = 0;
 
+    // Clean up previous map instance
+    if (this._portalMap) { try { this._portalMap.remove(); } catch(e) {} this._portalMap = null; }
+
     const t = this.tourData;
     if (!t) return;
     const mapEl = document.getElementById('portal-map');
-    if (!mapEl || mapEl._leaflet_id) return;
+    if (!mapEl) return;
 
     // Collect locations
     const locations = [];
@@ -317,6 +327,7 @@ const Portal = {
     }
 
     const map = L.map(mapEl).setView([40.4168, -3.7038], 6);
+    this._portalMap = map;
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap',
       maxZoom: 18
