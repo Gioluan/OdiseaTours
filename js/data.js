@@ -16,22 +16,27 @@ const DB = {
     return items.length ? Math.max(...items.map(i => i.id || 0)) + 1 : 1;
   },
   _softDelete(key, id) {
+    // Remove from localStorage
     const items = this._get(key);
-    const item = items.find(x => x.id === id);
-    if (item) {
-      item._deleted = true;
-      item.updatedAt = new Date().toISOString();
-      this._set(key, items);
-      // Also delete from Firestore
-      if (this._firebaseReady) {
-        this.firestore.collection(key).doc(String(id)).delete().catch(() => {});
-      }
-    } else {
-      // Not in local — just remove from Firestore directly
-      if (this._firebaseReady) {
-        this.firestore.collection(key).doc(String(id)).delete().catch(() => {});
-      }
+    this._set(key, items.filter(x => x.id !== id));
+    // Delete from Firestore + record deletion so all devices know
+    if (this._firebaseReady) {
+      this.firestore.collection(key).doc(String(id)).delete().catch(() => {});
+      this.firestore.collection('_deletions').doc(key + '_' + id).set({
+        collection: key, itemId: id, deletedAt: new Date().toISOString()
+      }).catch(() => {});
     }
+  },
+
+  // Get all deletion records from Firestore
+  async getDeletions() {
+    if (!this._firebaseReady) return [];
+    try {
+      const snap = await this.firestore.collection('_deletions').get();
+      const items = [];
+      snap.forEach(doc => items.push(doc.data()));
+      return items;
+    } catch (e) { return []; }
   },
 
   // QUOTES

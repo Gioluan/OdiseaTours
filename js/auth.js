@@ -118,30 +118,43 @@ const Auth = {
     this._syncing = true;
     this._updateSyncIndicator('syncing');
     try {
+      // 0. Fetch global deletion records — these apply to ALL devices
+      const deletions = await DB.getDeletions();
+      const deletedIds = {};
+      deletions.forEach(d => {
+        if (!deletedIds[d.collection]) deletedIds[d.collection] = new Set();
+        deletedIds[d.collection].add(Number(d.itemId));
+      });
+
       for (const col of this.COLLECTIONS) {
+        const colDeletions = deletedIds[col] || new Set();
+
         // 1. Pull remote data
         const remote = await DB.pullFromFirestore(col);
-        const local = DB._getAll(col); // includes soft-deleted items
+        const local = DB._getAll(col);
 
-        // 2. Merge: build map by id, newest updatedAt wins
+        // 2. Remove locally deleted items (from _deletions collection)
+        const localClean = local.filter(item => !colDeletions.has(item.id));
+
+        // 3. Merge: build map by id, newest updatedAt wins
         const merged = new Map();
-        local.forEach(item => merged.set(String(item.id), item));
+        localClean.forEach(item => merged.set(String(item.id), item));
         let pulled = 0;
         remote.forEach(item => {
           const key = item._firestoreId || String(item.id);
           const numId = Number(key) || item.id;
           item.id = numId;
           delete item._firestoreId;
+          // Skip if this item was deleted on any device
+          if (colDeletions.has(numId)) {
+            DB.firestore.collection(col).doc(String(numId)).delete().catch(() => {});
+            return;
+          }
           const existing = merged.get(String(numId));
           if (!existing) {
-            // New item from another device
             merged.set(String(numId), item);
             pulled++;
-          } else if (existing._deleted) {
-            // Locally deleted — don't bring it back, delete from Firestore
-            DB.firestore.collection(col).doc(String(numId)).delete().catch(() => {});
           } else {
-            // Compare updatedAt — remote wins if newer
             const remoteTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
             const localTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
             if (remoteTime > localTime) {
@@ -151,21 +164,11 @@ const Auth = {
           }
         });
 
-        // 3. Delete soft-deleted items from Firestore
-        const all = Array.from(merged.values());
-        const alive = [];
-        for (const item of all) {
-          if (item._deleted) {
-            await DB.firestore.collection(col).doc(String(item.id)).delete().catch(() => {});
-          } else {
-            alive.push(item);
-          }
-        }
+        // 4. Save merged data to localStorage
+        const alive = Array.from(merged.values());
+        DB._set(col, alive);
 
-        // 4. Keep tombstones in localStorage so future syncs remember deletions
-        DB._set(col, all);
-
-        // 5. Push only alive data to Firestore
+        // 5. Push to Firestore
         await DB.syncToFirestore(col, alive);
         if (pulled > 0) console.log(`Pulled ${pulled} updated items for ${col}`);
       }
