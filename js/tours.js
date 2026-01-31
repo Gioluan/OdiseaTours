@@ -668,20 +668,30 @@ const Tours = {
         <div class="form-group"><label>Amount Due (${t.currency})</label><input id="ic-amount" type="number" step="0.01" value="${ic.amountDue||0}"></div>
       </div>
       <div class="form-row form-row-3">
-        <div class="form-group"><label>Students / Players</label><input id="ic-students" type="number" min="0" value="${ic.numStudents||0}"></div>
-        <div class="form-group"><label>Siblings</label><input id="ic-siblings" type="number" min="0" value="${ic.numSiblings||0}"></div>
-        <div class="form-group"><label>Adults</label><input id="ic-adults" type="number" min="0" value="${ic.numAdults||0}"></div>
+        <div class="form-group"><label>Students / Players</label><input id="ic-students" type="number" min="0" value="${ic.numStudents||0}" oninput="Tours._updateICCalc(${t.priceStudent||0},${t.priceSibling||0},${t.priceAdult||0},'${t.currency||'EUR'}')"></div>
+        <div class="form-group"><label>Siblings</label><input id="ic-siblings" type="number" min="0" value="${ic.numSiblings||0}" oninput="Tours._updateICCalc(${t.priceStudent||0},${t.priceSibling||0},${t.priceAdult||0},'${t.currency||'EUR'}')"></div>
+        <div class="form-group"><label>Adults</label><input id="ic-adults" type="number" min="0" value="${ic.numAdults||0}" oninput="Tours._updateICCalc(${t.priceStudent||0},${t.priceSibling||0},${t.priceAdult||0},'${t.currency||'EUR'}')"></div>
       </div>
       <div class="form-group"><label>Notes</label><textarea id="ic-notes" rows="2" placeholder="Room preferences, dietary requirements, etc.">${ic.notes||''}</textarea></div>
-      <p style="font-size:0.82rem;color:var(--gray-400);margin:0.5rem 0">
-        Quick calc: ${ic.numStudents||0} students × ${fmt(t.priceStudent||0, t.currency)} + ${ic.numSiblings||0} siblings × ${fmt(t.priceSibling||0, t.currency)} + ${ic.numAdults||0} adults × ${fmt(t.priceAdult||0, t.currency)}
-        = <strong>${fmt(((ic.numStudents||0)*(t.priceStudent||0)) + ((ic.numSiblings||0)*(t.priceSibling||0)) + ((ic.numAdults||0)*(t.priceAdult||0)), t.currency)}</strong>
-        <button class="btn btn-sm btn-outline" style="margin-left:0.5rem;font-size:0.75rem" onclick="document.getElementById('ic-amount').value=${((ic.numStudents||0)*(t.priceStudent||0)) + ((ic.numSiblings||0)*(t.priceSibling||0)) + ((ic.numAdults||0)*(t.priceAdult||0))}">Use this amount</button>
-      </p>
+      <div id="ic-calc-line" style="font-size:0.82rem;color:var(--gray-400);margin:0.5rem 0"></div>
+      <script>Tours._updateICCalc(${t.priceStudent||0},${t.priceSibling||0},${t.priceAdult||0},'${t.currency||'EUR'}')</script>
       <div class="modal-actions">
         <button class="btn btn-primary" onclick="Tours.saveIndividualClient(${tourId},${idx})">Save</button>
         <button class="btn btn-outline" onclick="Tours.viewTour(${tourId})">Cancel</button>
       </div>`;
+  },
+
+  _updateICCalc(priceStudent, priceSibling, priceAdult, currency) {
+    const s = Number(document.getElementById('ic-students').value) || 0;
+    const si = Number(document.getElementById('ic-siblings').value) || 0;
+    const a = Number(document.getElementById('ic-adults').value) || 0;
+    const total = (s * priceStudent) + (si * priceSibling) + (a * priceAdult);
+    const el = document.getElementById('ic-calc-line');
+    if (el) el.innerHTML = 'Quick calc: ' + s + ' students &times; ' + fmt(priceStudent, currency) +
+      ' + ' + si + ' siblings &times; ' + fmt(priceSibling, currency) +
+      ' + ' + a + ' adults &times; ' + fmt(priceAdult, currency) +
+      ' = <strong>' + fmt(total, currency) + '</strong>' +
+      ' <button class="btn btn-sm btn-outline" style="margin-left:0.5rem;font-size:0.75rem" onclick="document.getElementById(\'ic-amount\').value=' + total + '">Use this amount</button>';
   },
 
   saveIndividualClient(tourId, idx) {
