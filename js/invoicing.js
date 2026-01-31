@@ -190,8 +190,16 @@ const Invoicing = {
           <div class="form-group"><label>Notes</label><input id="pay-notes" placeholder="Optional"></div>
         </div>
         <button class="btn btn-success" onclick="Invoicing.addPayment(${i.id})">Record Payment</button>` : ''}
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin:1rem 0">
+        <h3 style="margin-bottom:0.6rem;font-size:0.95rem">Payment Links (for PDF Invoice)</h3>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label>Credit Card Payment Link</label><input id="inv-link-card" value="${i.paymentLinkCard || ''}" placeholder="e.g. https://pay.stripe.com/your-link"></div>
+          <div class="form-group"><label>Wise Payment Link</label><input id="inv-link-wise" value="${i.paymentLinkWise || ''}" placeholder="e.g. https://wise.com/pay/your-link"></div>
+        </div>
+        <button class="btn btn-sm btn-outline" onclick="Invoicing.savePaymentLinks(${i.id})" style="margin-top:0.3rem">Save Links</button>
+      </div>
       <div class="modal-actions">
-        <button class="btn btn-outline" onclick="PDFQuote.generateInvoice(${i.id})" style="border-color:#111;color:#111">PDF Invoice</button>
+        <button class="btn btn-outline" onclick="Invoicing.savePaymentLinks(${i.id});PDFQuote.generateInvoice(${i.id})" style="border-color:#111;color:#111">PDF Invoice</button>
         <button class="btn btn-danger" onclick="if(confirm('Delete this invoice?')){Invoicing.deleteInvoice(${i.id})}">Delete</button>
         <button class="btn btn-outline" onclick="closeModal('inv-modal')">Close</button>
       </div>`;
@@ -211,6 +219,16 @@ const Invoicing = {
     this.viewInvoice(id);
     this.render();
     Dashboard.render();
+  },
+
+  savePaymentLinks(id) {
+    const i = DB.getInvoices().find(x => x.id === id);
+    if (!i) return;
+    const cardEl = document.getElementById('inv-link-card');
+    const wiseEl = document.getElementById('inv-link-wise');
+    if (cardEl) i.paymentLinkCard = cardEl.value.trim();
+    if (wiseEl) i.paymentLinkWise = wiseEl.value.trim();
+    DB.saveInvoice(i);
   },
 
   deleteInvoice(id) {

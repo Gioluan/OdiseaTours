@@ -875,15 +875,16 @@ const PDFQuote = {
           <div class="bank-row"><span class="bl">Currency</span><span class="bv">${cur}</span></div>
         </div>
       </div>
-      <div class="pay-online">
+      ${(inv.paymentLinkCard || inv.paymentLinkWise) ? `<div class="pay-online">
         <div style="font-size:8.5pt;color:#999;margin-bottom:8px">Or pay securely online:</div>
-        <a href="https://pay.stripe.com/odisea-tours">Pay with Card</a>
-        <a href="https://paypal.me/odiseatours" style="background:#0070ba;color:#fff">Pay with PayPal</a>
+        ${inv.paymentLinkCard ? `<a href="${inv.paymentLinkCard}">Pay with Card</a>` : ''}
+        ${inv.paymentLinkWise ? `<a href="${inv.paymentLinkWise}" style="background:#9fe870;color:#111">Pay with Wise</a>` : ''}
         <div style="margin-top:8px">
-          <span class="alt-link">Stripe: pay.stripe.com/odisea-tours</span> &nbsp;|&nbsp;
-          <span class="alt-link">PayPal: paypal.me/odiseatours</span>
+          ${inv.paymentLinkCard ? `<span class="alt-link">${inv.paymentLinkCard}</span>` : ''}
+          ${inv.paymentLinkCard && inv.paymentLinkWise ? ' &nbsp;|&nbsp; ' : ''}
+          ${inv.paymentLinkWise ? `<span class="alt-link">${inv.paymentLinkWise}</span>` : ''}
         </div>
-      </div>
+      </div>` : ''}
     </div>` : `
     <div style="text-align:center;padding:20px;background:#f0fdf4;border-radius:8px;border:2px solid #22c55e;margin-top:20px">
       <div style="font-size:14pt;font-weight:700;color:#22c55e">&#10003; PAID IN FULL</div>
