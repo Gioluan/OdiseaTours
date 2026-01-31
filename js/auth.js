@@ -151,20 +151,21 @@ const Auth = {
           }
         });
 
-        // 3. Remove soft-deleted items from Firestore, then clean them from local
+        // 3. Delete soft-deleted items from Firestore
+        const all = Array.from(merged.values());
         const alive = [];
-        for (const item of merged.values()) {
+        for (const item of all) {
           if (item._deleted) {
-            DB.firestore.collection(col).doc(String(item.id)).delete().catch(() => {});
+            await DB.firestore.collection(col).doc(String(item.id)).delete().catch(() => {});
           } else {
             alive.push(item);
           }
         }
 
-        // 4. Save clean data to localStorage (no deleted items)
-        DB._set(col, alive);
+        // 4. Keep tombstones in localStorage so future syncs remember deletions
+        DB._set(col, all);
 
-        // 5. Push alive data back to Firestore
+        // 5. Push only alive data to Firestore
         await DB.syncToFirestore(col, alive);
         if (pulled > 0) console.log(`Pulled ${pulled} updated items for ${col}`);
       }
