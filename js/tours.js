@@ -674,11 +674,11 @@ const Tours = {
       </div>
       <div class="form-group"><label>Notes</label><textarea id="ic-notes" rows="2" placeholder="Room preferences, dietary requirements, etc.">${ic.notes||''}</textarea></div>
       <div id="ic-calc-line" style="font-size:0.82rem;color:var(--gray-400);margin:0.5rem 0"></div>
-      <script>Tours._updateICCalc(${t.priceStudent||0},${t.priceSibling||0},${t.priceAdult||0},'${t.currency||'EUR'}')</script>
       <div class="modal-actions">
         <button class="btn btn-primary" onclick="Tours.saveIndividualClient(${tourId},${idx})">Save</button>
         <button class="btn btn-outline" onclick="Tours.viewTour(${tourId})">Cancel</button>
       </div>`;
+    Tours._updateICCalc(t.priceStudent||0, t.priceSibling||0, t.priceAdult||0, t.currency||'EUR');
   },
 
   _updateICCalc(priceStudent, priceSibling, priceAdult, currency) {
