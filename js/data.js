@@ -20,7 +20,7 @@ const DB = {
   },
   _remoteMaxIds: {},
   _pushToFirestore(collection, item) {
-    if (!this._firebaseReady) return;
+    if (!this._firebaseReady || !this.auth || !this.auth.currentUser) return;
     const clean = JSON.parse(JSON.stringify(item));
     if (clean.providerExpenses) {
       clean.providerExpenses.forEach(e => {

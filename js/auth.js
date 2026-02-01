@@ -121,9 +121,12 @@ const Auth = {
       // 0. Fetch global deletion records — these apply to ALL devices
       const deletions = await DB.getDeletions();
       const deletedIds = {};
+      const deletedAt = {};
       deletions.forEach(d => {
         if (!deletedIds[d.collection]) deletedIds[d.collection] = new Set();
         deletedIds[d.collection].add(Number(d.itemId));
+        if (!deletedAt[d.collection]) deletedAt[d.collection] = {};
+        deletedAt[d.collection][Number(d.itemId)] = d.deletedAt;
       });
 
       for (const col of this.COLLECTIONS) {
@@ -134,7 +137,14 @@ const Auth = {
         const local = DB._getAll(col);
 
         // 2. Remove locally deleted items (from _deletions collection)
-        const localClean = local.filter(item => !colDeletions.has(item.id));
+        //    But keep items created AFTER the deletion (ID was reused)
+        const colDeletedAt = deletedAt[col] || {};
+        const localClean = local.filter(item => {
+          if (!colDeletions.has(item.id)) return true;
+          const delTime = colDeletedAt[item.id];
+          if (delTime && item.createdAt && new Date(item.createdAt) > new Date(delTime)) return true;
+          return false;
+        });
 
         // 3. Merge: build map by id, newest updatedAt wins
         const merged = new Map();
@@ -146,9 +156,14 @@ const Auth = {
           item.id = numId;
           delete item._firestoreId;
           // Skip if this item was deleted on any device
+          //   — unless the item was created after the deletion (ID reuse)
           if (colDeletions.has(numId)) {
-            DB.firestore.collection(col).doc(String(numId)).delete().catch(() => {});
-            return;
+            const delTime = colDeletedAt[numId];
+            const createdTime = item.createdAt;
+            if (!createdTime || !delTime || new Date(createdTime) <= new Date(delTime)) {
+              DB.firestore.collection(col).doc(String(numId)).delete().catch(() => {});
+              return;
+            }
           }
           const existing = merged.get(String(numId));
           if (!existing) {
