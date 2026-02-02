@@ -34,6 +34,13 @@
        match /tours/{tourId}/documents/{docId} {
          allow read: if true;
        }
+       // Guide portal can read/create/delete expenses and notes
+       match /tours/{tourId}/guideExpenses/{expenseId} {
+         allow read, create, delete: if true;
+       }
+       match /tours/{tourId}/guideNotes/{noteId} {
+         allow read, create, delete: if true;
+       }
      }
    }
 
