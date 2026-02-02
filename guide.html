@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Odisea Tours — Guide Portal</title>
+<!-- PWA -->
+<link rel="manifest" href="guide-manifest.json">
+<meta name="theme-color" content="#111111">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Odisea Guide">
+<link rel="apple-touch-icon" href="img/icon-192.png">
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<!-- Styles -->
+<link rel="stylesheet" href="css/guide.css">
+<script>
+(function(){
+  var APP_VERSION = 24;
+  var stored = localStorage.getItem('odisea_guide_version');
+  if (stored && Number(stored) >= APP_VERSION) return;
+  localStorage.setItem('odisea_guide_version', APP_VERSION);
+  if (stored) {
+    if ('caches' in window) caches.keys().then(function(keys){
+      keys.forEach(function(k){ caches.delete(k); });
+    });
+    if (navigator.serviceWorker) navigator.serviceWorker.getRegistrations().then(function(regs){
+      regs.forEach(function(r){ r.unregister(); });
+    });
+    setTimeout(function(){ location.reload(true); }, 500);
+  }
+})();
+</script>
+</head>
+<body>
+
+<!-- ═══════════════════ LOGIN SCREEN ═══════════════════ -->
+<div id="guide-login" class="login-screen">
+  <div class="login-card">
+    <img src="img/logo-black.png" alt="Odisea Tours" style="height:50px;width:auto;margin:0 auto 1rem;display:block">
+    <h1>Guide Portal</h1>
+    <p class="subtitle">Enter your guide access code</p>
+    <form onsubmit="Guide.handleLogin(event)">
+      <input type="text" id="guide-code-input" class="login-input" placeholder="GUIDE CODE" autocomplete="off" maxlength="20">
+      <div id="guide-login-error" class="login-error"></div>
+      <button type="submit" class="login-btn">Continue</button>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════════════ MAIN PORTAL ═══════════════════ -->
+<div id="guide-main" style="display:none">
+
+  <!-- Header -->
+  <header class="guide-header">
+    <div class="guide-header-logo">
+      <img src="img/logo-dark.png" alt="Odisea Tours" style="height:28px;width:auto">
+    </div>
+    <div class="guide-header-title" id="guide-header-tour-name"></div>
+    <button class="guide-header-btn" onclick="Guide.logout()" aria-label="Sign Out">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    </button>
+  </header>
+
+  <!-- Content -->
+  <div class="guide-content">
+    <section id="section-today" class="guide-section active"></section>
+    <section id="section-itinerary" class="guide-section"></section>
+    <section id="section-roomplan" class="guide-section"></section>
+    <section id="section-providers" class="guide-section"></section>
+    <section id="section-flights" class="guide-section"></section>
+    <section id="section-leader" class="guide-section"></section>
+    <section id="section-expenses" class="guide-section"></section>
+    <section id="section-medical" class="guide-section"></section>
+    <section id="section-headcount" class="guide-section"></section>
+    <section id="section-notes" class="guide-section"></section>
+    <section id="section-chat" class="guide-section"></section>
+  </div>
+
+  <!-- Bottom Tab Bar -->
+  <nav class="guide-tab-bar">
+    <button class="tab-btn active" data-section="today" onclick="Guide.showSection('today')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>Today</span>
+    </button>
+    <button class="tab-btn" data-section="itinerary" onclick="Guide.showSection('itinerary')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <span>Itinerary</span>
+    </button>
+    <button class="tab-btn" data-section="roomplan" onclick="Guide.showSection('roomplan')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+      <span>Rooms</span>
+    </button>
+    <button class="tab-btn" data-section="chat" onclick="Guide.showSection('chat')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      <span>Chat</span>
+    </button>
+    <button class="tab-btn" data-section="more" onclick="Guide.toggleMoreMenu()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+      <span>More</span>
+    </button>
+  </nav>
+
+  <!-- More Menu Overlay -->
+  <div id="more-menu-overlay" class="more-menu-overlay" onclick="Guide.closeMoreMenu()" style="display:none"></div>
+  <div id="more-menu" class="more-menu" style="display:none">
+    <button onclick="Guide.showSection('providers');Guide.closeMoreMenu()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+      Provider Contacts
+    </button>
+    <button onclick="Guide.showSection('flights');Guide.closeMoreMenu()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      Flight Details
+    </button>
+    <button onclick="Guide.showSection('leader');Guide.closeMoreMenu()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Group Leader
+    </button>
+    <button onclick="Guide.showSection('expenses');Guide.closeMoreMenu()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      Expenses
+    </button>
+    <button onclick="Guide.showSection('medical');Guide.closeMoreMenu()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Medical & Dietary
+    </button>
+    <button onclick="Guide.showSection('headcount');Guide.closeMoreMenu()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Headcount
+    </button>
+    <button onclick="Guide.showSection('notes');Guide.closeMoreMenu()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Incident Notes
+    </button>
+  </div>
+
+</div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<!-- App Config & Logic -->
+<script src="firebase-config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/guide.js"></script>
+
+<!-- Service Worker -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('SW registered:', reg.scope))
+      .catch(err => console.log('SW registration failed:', err));
+  });
+}
+</script>
+</body>
+</html>

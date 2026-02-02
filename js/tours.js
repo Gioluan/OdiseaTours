@@ -220,6 +220,8 @@ const Tours = {
 
       ${Tours._renderPortalSection(t)}
 
+      ${Tours._renderGuideSection(t)}
+
       <h3 style="margin-top:1rem">Organization</h3>
       <p style="font-size:0.82rem;color:var(--gray-400);margin-bottom:0.8rem">Modify tour items below if the client adds/changes features. Changes are saved to this tour.</p>
       <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem">
@@ -1548,6 +1550,160 @@ const Tours = {
       DB.syncToFirestore('tours', [t]);
     }
     this.viewTour(tourId);
+  },
+
+  /* ============================================================
+     GUIDE PORTAL — Access codes, expenses, notes viewer
+     ============================================================ */
+  _renderGuideSection(t) {
+    const hasCode = !!t.guideAccessCode;
+    const guideUrl = hasCode ? `${window.location.origin}${window.location.pathname.replace('index.html', '')}guide.html?code=${t.guideAccessCode}` : '';
+
+    return `
+      <h3 style="margin-top:1.5rem">Guide Portal <span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">— share with tour guide</span></h3>
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem">
+        ${hasCode ? `
+          <div style="margin-bottom:0.8rem">
+            <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Guide Access Code</label>
+            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+              <code style="font-family:'Courier New',monospace;font-size:1.4rem;font-weight:700;color:var(--navy);background:white;padding:0.4rem 1rem;border-radius:var(--radius);border:1.5px solid var(--gray-200);letter-spacing:0.1em">${t.guideAccessCode}</code>
+              <button class="btn btn-sm btn-outline" onclick="Tours.copyGuideLink(${t.id},'${t.guideAccessCode}')">Copy Link</button>
+              <button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.generateGuideAccessCode(${t.id})">New Code</button>
+            </div>
+          </div>
+          <div style="margin-bottom:0.8rem">
+            <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Guide Portal URL</label>
+            <input type="text" readonly value="${guideUrl}" style="width:100%;padding:0.4rem 0.6rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);background:white;color:var(--gray-500)" onclick="this.select()">
+          </div>
+        ` : `
+          <p style="color:var(--gray-400);margin-bottom:0.8rem;font-size:0.85rem">Generate a guide access code so your tour guide can view tour info, manage room plans, track expenses, and communicate with the office.</p>
+          <button class="btn btn-primary" onclick="Tours.generateGuideAccessCode(${t.id})">Generate Guide Code</button>
+        `}
+      </div>
+
+      ${hasCode ? `
+      <div style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-bottom:1rem">
+        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
+          <h4 style="font-size:0.88rem;color:var(--navy);margin-bottom:0.5rem">Guide Expenses</h4>
+          <button class="btn btn-sm btn-outline" onclick="Tours.viewGuideExpenses(${t.id})">View Expenses</button>
+        </div>
+        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
+          <h4 style="font-size:0.88rem;color:var(--navy);margin-bottom:0.5rem">Guide Notes</h4>
+          <button class="btn btn-sm btn-outline" onclick="Tours.viewGuideNotes(${t.id})">View Notes</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
+        <button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${guideUrl}','_blank')">Open Guide Portal</button>
+        <button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="window.open('https://wa.me/?text='+encodeURIComponent('Hi! Here is the guide portal for ${(t.tourName||'').replace(/'/g,"\\'")}:\\n${guideUrl}'),'_blank')">WhatsApp Share</button>
+      </div>
+      ` : ''}
+      <div id="guide-detail-${t.id}"></div>`;
+  },
+
+  generateGuideAccessCode(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    t.guideAccessCode = DB.generateGuideAccessCode(t.tourName);
+    DB.saveTour(t);
+    if (DB._firebaseReady) {
+      DB.syncToFirestore('tours', [t]);
+    }
+    this.viewTour(tourId);
+  },
+
+  copyGuideLink(tourId, code) {
+    const url = `${window.location.origin}${window.location.pathname.replace('index.html', '')}guide.html?code=${code}`;
+    navigator.clipboard.writeText(url).then(() => {
+      alert('Guide portal link copied to clipboard!');
+    }).catch(() => {
+      prompt('Copy this link:', url);
+    });
+  },
+
+  async viewGuideExpenses(tourId) {
+    const container = document.getElementById('guide-detail-' + tourId);
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div>';
+
+    const expenses = await DB.getGuideExpenses(String(tourId));
+    const total = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+
+    container.innerHTML = `
+      <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
+        <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+          <span>Guide Expenses (${expenses.length}) — Total: ${fmt(total)}</span>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <button style="background:none;border:1px solid rgba(255,255,255,0.3);color:white;cursor:pointer;font-size:0.75rem;padding:0.2rem 0.6rem;border-radius:var(--radius)" onclick="Tours.exportGuideExpensesCSV(${tourId})">CSV Export</button>
+            <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('guide-detail-${tourId}').innerHTML=''">&times; Close</button>
+          </div>
+        </div>
+        <div style="padding:1rem;max-height:400px;overflow-y:auto">
+          ${expenses.length ? `<table class="data-table" style="font-size:0.82rem">
+            <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th>Receipt</th></tr></thead>
+            <tbody>${expenses.map(e => `<tr>
+              <td>${e.createdAt ? new Date(e.createdAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+              <td>${e.category||'—'}</td>
+              <td>${e.description||'—'}</td>
+              <td><strong>${fmt(e.amount, e.currency)}</strong></td>
+              <td>${e.receiptPhoto ? '<img src="'+e.receiptPhoto+'" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="window.open(this.src)">' : '—'}</td>
+            </tr>`).join('')}</tbody>
+          </table>` : '<p style="color:var(--gray-400);font-size:0.85rem">No expenses recorded by guide yet.</p>'}
+        </div>
+      </div>`;
+
+    // Store for CSV export
+    this._guideExpenses = expenses;
+  },
+
+  exportGuideExpensesCSV(tourId) {
+    const expenses = this._guideExpenses || [];
+    if (!expenses.length) { alert('No expenses to export.'); return; }
+    const header = 'Date,Category,Description,Amount,Currency\n';
+    const rows = expenses.map(e => {
+      const date = e.createdAt ? new Date(e.createdAt).toISOString().split('T')[0] : '';
+      return `"${date}","${(e.category||'').replace(/"/g,'""')}","${(e.description||'').replace(/"/g,'""')}","${e.amount||0}","${e.currency||'EUR'}"`;
+    }).join('\n');
+    const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `guide-expenses-${tourId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  async viewGuideNotes(tourId) {
+    const container = document.getElementById('guide-detail-' + tourId);
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div>';
+
+    const notes = await DB.getGuideNotes(String(tourId));
+
+    container.innerHTML = `
+      <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
+        <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+          <span>Guide Notes (${notes.length})</span>
+          <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('guide-detail-${tourId}').innerHTML=''">&times; Close</button>
+        </div>
+        <div style="padding:1rem;max-height:400px;overflow-y:auto">
+          ${notes.length ? notes.map(n => {
+            const typeColors = { incident: 'var(--red)', delay: 'var(--amber)', issue: '#9B59B6', note: 'var(--blue)' };
+            const sevColors = { high: 'var(--red)', medium: 'var(--amber)', low: 'var(--green)' };
+            return `<div style="padding:0.7rem 0;border-bottom:1px solid var(--gray-50)">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.2rem">
+                <div>
+                  <span style="font-size:0.7rem;font-weight:700;text-transform:uppercase;color:${typeColors[n.type]||'var(--blue)'};margin-right:0.5rem">${n.type||'note'}</span>
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${sevColors[n.severity]||'var(--green)'};vertical-align:middle"></span>
+                  <span style="font-size:0.72rem;color:var(--gray-400);margin-left:0.3rem">${n.severity||'low'}</span>
+                </div>
+                <span style="font-size:0.72rem;color:var(--gray-400)">${n.createdAt ? new Date(n.createdAt).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</span>
+              </div>
+              <div style="font-weight:700;font-size:0.88rem;color:var(--navy)">${(n.title||'').replace(/</g,'&lt;')}</div>
+              ${n.description ? `<div style="font-size:0.82rem;color:var(--gray-500);margin-top:0.2rem">${(n.description||'').replace(/</g,'&lt;')}</div>` : ''}
+            </div>`;
+          }).join('') : '<p style="color:var(--gray-400);font-size:0.85rem">No notes recorded by guide yet.</p>'}
+        </div>
+      </div>`;
   },
 
   copyPortalLink(tourId, code) {

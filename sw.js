@@ -1,11 +1,13 @@
 /* === SERVICE WORKER — Odisea Tours PWA === */
-const CACHE_NAME = 'odisea-tours-v26';
+const CACHE_NAME = 'odisea-tours-v27';
 const ASSETS = [
   './',
   './index.html',
   './portal.html',
+  './guide.html',
   './css/styles.css',
   './css/portal.css',
+  './css/guide.css',
   './js/data.js',
   './js/auth.js',
   './js/dashboard.js',
@@ -20,10 +22,12 @@ const ASSETS = [
   './js/pdf-quote.js',
   './js/pdf-itinerary.js',
   './js/portal.js',
+  './js/guide.js',
   './js/app.js',
   './firebase-config.js',
   './manifest.json',
   './portal-manifest.json',
+  './guide-manifest.json',
   './img/icon-192.png',
   './img/icon-512.png'
 ];

@@ -581,6 +581,108 @@ const DB = {
     }
   },
 
+  // Generate a unique guide access code for a tour
+  generateGuideAccessCode(tourName) {
+    const base = (tourName || 'GUIDE').replace(/[^a-zA-Z0-9]/g, '').substring(0, 3).toUpperCase();
+    const rand = Math.random().toString(36).substring(2, 7).toUpperCase();
+    return 'G' + base + '-' + rand;
+  },
+
+  // Query Firestore for a tour by guide access code
+  async getTourByGuideAccessCode(code) {
+    if (!this._firebaseReady) return null;
+    try {
+      const snapshot = await this.firestore.collection('tours')
+        .where('guideAccessCode', '==', code).limit(1).get();
+      if (snapshot.empty) return null;
+      const doc = snapshot.docs[0];
+      return { id: doc.id, ...doc.data() };
+    } catch (e) {
+      console.warn('getTourByGuideAccessCode failed:', e.message);
+      return null;
+    }
+  },
+
+  // === GUIDE EXPENSES (subcollection: tours/{tourId}/guideExpenses) ===
+  async saveGuideExpense(tourId, expense) {
+    if (!this._firebaseReady) return null;
+    try {
+      expense.createdAt = new Date().toISOString();
+      const ref = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('guideExpenses').add(expense);
+      return { id: ref.id, ...expense };
+    } catch (e) {
+      console.warn('saveGuideExpense failed:', e.message);
+      return null;
+    }
+  },
+
+  async getGuideExpenses(tourId) {
+    if (!this._firebaseReady) return [];
+    try {
+      const snapshot = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('guideExpenses').orderBy('createdAt', 'desc').get();
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      return items;
+    } catch (e) {
+      console.warn('getGuideExpenses failed:', e.message);
+      return [];
+    }
+  },
+
+  async deleteGuideExpense(tourId, expenseId) {
+    if (!this._firebaseReady) return false;
+    try {
+      await this.firestore.collection('tours').doc(String(tourId))
+        .collection('guideExpenses').doc(expenseId).delete();
+      return true;
+    } catch (e) {
+      console.warn('deleteGuideExpense failed:', e.message);
+      return false;
+    }
+  },
+
+  // === GUIDE NOTES (subcollection: tours/{tourId}/guideNotes) ===
+  async saveGuideNote(tourId, note) {
+    if (!this._firebaseReady) return null;
+    try {
+      note.createdAt = new Date().toISOString();
+      const ref = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('guideNotes').add(note);
+      return { id: ref.id, ...note };
+    } catch (e) {
+      console.warn('saveGuideNote failed:', e.message);
+      return null;
+    }
+  },
+
+  async getGuideNotes(tourId) {
+    if (!this._firebaseReady) return [];
+    try {
+      const snapshot = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('guideNotes').orderBy('createdAt', 'desc').get();
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      return items;
+    } catch (e) {
+      console.warn('getGuideNotes failed:', e.message);
+      return [];
+    }
+  },
+
+  async deleteGuideNote(tourId, noteId) {
+    if (!this._firebaseReady) return false;
+    try {
+      await this.firestore.collection('tours').doc(String(tourId))
+        .collection('guideNotes').doc(noteId).delete();
+      return true;
+    } catch (e) {
+      console.warn('deleteGuideNote failed:', e.message);
+      return false;
+    }
+  },
+
   // EXPORT / IMPORT ALL
   exportAll() {
     return JSON.stringify({
