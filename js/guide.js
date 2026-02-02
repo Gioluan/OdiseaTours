@@ -83,6 +83,7 @@ const Guide = {
       }
       await this.loadTour(code, tour.id);
     } catch (e) {
+      console.error('handleLogin error:', e);
       errorEl.textContent = 'Connection error. Please try again.';
       input.disabled = false;
     }
