@@ -41,6 +41,10 @@
        match /tours/{tourId}/guideNotes/{noteId} {
          allow read, create, delete: if true;
        }
+       // Guide portal can read documents shared by admin
+       match /tours/{tourId}/guideDocuments/{docId} {
+         allow read: if true;
+       }
      }
    }
 

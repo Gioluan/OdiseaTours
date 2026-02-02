@@ -1591,6 +1591,23 @@ const Tours = {
           <h4 style="font-size:0.88rem;color:var(--navy);margin-bottom:0.5rem">Guide Notes</h4>
           <button class="btn btn-sm btn-outline" onclick="Tours.viewGuideNotes(${t.id})">View Notes</button>
         </div>
+        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+            <h4 style="font-size:0.88rem;color:var(--navy)">Guide Documents</h4>
+          </div>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+            <button class="btn btn-sm btn-outline" onclick="Tours.uploadGuideDocument(${t.id})">Upload Document</button>
+            <button class="btn btn-sm btn-outline" onclick="Tours.viewGuideDocuments(${t.id})">View All</button>
+          </div>
+          <input type="file" id="guide-doc-upload-${t.id}" style="display:none" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" onchange="Tours.handleGuideDocUpload(${t.id},event)">
+        </div>
+      </div>
+      <div style="margin-bottom:1rem">
+        <button class="btn btn-sm btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.sendProviderDetailsToGuide(${t.id})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="vertical-align:-2px;margin-right:0.3rem"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          Send Provider Details to Guide
+        </button>
+        ${t.guideProviderDetails ? '<span style="font-size:0.78rem;color:var(--green);margin-left:0.5rem">&#10003; Sent</span>' : ''}
       </div>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
         <button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${guideUrl}','_blank')">Open Guide Portal</button>
@@ -1704,6 +1721,150 @@ const Tours = {
           }).join('') : '<p style="color:var(--gray-400);font-size:0.85rem">No notes recorded by guide yet.</p>'}
         </div>
       </div>`;
+  },
+
+  // === GUIDE DOCUMENTS ===
+  uploadGuideDocument(tourId) {
+    const input = document.getElementById('guide-doc-upload-' + tourId);
+    if (input) input.click();
+  },
+
+  async handleGuideDocUpload(tourId, event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File too large (max 10 MB).');
+      return;
+    }
+    if (!DB._firebaseReady) {
+      alert('Firebase not configured. Cannot upload documents.');
+      return;
+    }
+    const result = await DB.uploadGuideDocument(String(tourId), file);
+    if (result) {
+      alert('Guide document uploaded: ' + file.name);
+      this.viewTour(tourId);
+    } else {
+      alert('Upload failed. Please try again.');
+    }
+    event.target.value = '';
+  },
+
+  async viewGuideDocuments(tourId) {
+    const container = document.getElementById('guide-detail-' + tourId);
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div>';
+
+    const docs = await DB.getGuideDocuments(String(tourId));
+    container.innerHTML = `
+      <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
+        <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+          <span>Guide Documents (${docs.length})</span>
+          <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('guide-detail-${tourId}').innerHTML=''">&times; Close</button>
+        </div>
+        <div style="padding:1rem">
+          ${docs.length ? docs.map(d => {
+            const size = d.size ? (d.size < 1024*1024 ? Math.round(d.size/1024)+' KB' : (d.size/(1024*1024)).toFixed(1)+' MB') : '';
+            return `<div style="display:flex;align-items:center;gap:0.8rem;padding:0.6rem 0;border-bottom:1px solid var(--gray-50)">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.name}</div>
+                <div style="font-size:0.75rem;color:var(--gray-400)">${size} &bull; ${d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : ''}</div>
+              </div>
+              <a href="${d.url}" target="_blank" rel="noopener" class="btn btn-sm btn-outline" style="white-space:nowrap">Download</a>
+              <button class="btn btn-sm btn-danger" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.deleteGuideDocument(${tourId},'${d.id}','${(d.storagePath||'').replace(/'/g,"\\'")}')">X</button>
+            </div>`;
+          }).join('') : '<p style="color:var(--gray-400);font-size:0.85rem">No guide documents uploaded yet.</p>'}
+        </div>
+      </div>`;
+  },
+
+  async deleteGuideDocument(tourId, docId, storagePath) {
+    if (!confirm('Delete this guide document?')) return;
+    await DB.deleteGuideDocument(String(tourId), docId, storagePath);
+    this.viewGuideDocuments(tourId);
+  },
+
+  // === SEND PROVIDER DETAILS TO GUIDE ===
+  async sendProviderDetailsToGuide(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const providers = DB.getProviders();
+    const details = [];
+
+    // Hotels
+    if (t.hotels && t.hotels.length) {
+      t.hotels.forEach(h => {
+        const name = h.name || h.hotel || h.hotelName || '';
+        const prov = providers.find(p => p.companyName && name && p.companyName.toLowerCase().includes(name.toLowerCase()));
+        details.push({
+          name: name,
+          category: 'Hotel',
+          phone: (prov && prov.phone) || h.phone || '',
+          email: (prov && prov.email) || h.email || '',
+          website: (prov && prov.website) || '',
+          address: (prov && prov.address) || h.address || '',
+          notes: (prov && prov.notes) || '',
+          starRating: (prov && prov.starRating) || h.starRating || 0,
+          checkIn: h.checkIn || '',
+          checkOut: h.checkOut || '',
+          service: '',
+          costInfo: ''
+        });
+      });
+    }
+
+    // Activities
+    if (t.activities && t.activities.length) {
+      t.activities.forEach(a => {
+        const name = a.name || a.activity || '';
+        const prov = providers.find(p => p.companyName && name && p.companyName.toLowerCase().includes(name.toLowerCase()));
+        details.push({
+          name: name,
+          category: 'Activity',
+          phone: (prov && prov.phone) || '',
+          email: (prov && prov.email) || '',
+          website: (prov && prov.website) || '',
+          address: (prov && prov.address) || a.location || '',
+          notes: (prov && prov.notes) || a.notes || '',
+          starRating: 0,
+          checkIn: a.date || '',
+          checkOut: '',
+          service: a.description || '',
+          costInfo: ''
+        });
+      });
+    }
+
+    // Provider expenses (transport, other)
+    if (t.providerExpenses && t.providerExpenses.length) {
+      t.providerExpenses.forEach(pe => {
+        const name = pe.providerName || '';
+        if (!name || details.find(d => d.name.toLowerCase() === name.toLowerCase())) return;
+        const prov = providers.find(p => p.companyName && name && p.companyName.toLowerCase().includes(name.toLowerCase()));
+        details.push({
+          name: name,
+          category: pe.category || (prov && prov.category) || 'Provider',
+          phone: (prov && prov.phone) || '',
+          email: (prov && prov.email) || '',
+          website: (prov && prov.website) || '',
+          address: (prov && prov.address) || '',
+          notes: (prov && prov.notes) || '',
+          starRating: (prov && prov.starRating) || 0,
+          checkIn: '',
+          checkOut: '',
+          service: pe.description || '',
+          costInfo: ''
+        });
+      });
+    }
+
+    t.guideProviderDetails = details;
+    DB.saveTour(t);
+    if (DB._firebaseReady) {
+      DB.syncToFirestore('tours', [t]);
+    }
+    alert('Provider details sent to guide portal (' + details.length + ' providers).');
+    this.viewTour(tourId);
   },
 
   copyPortalLink(tourId, code) {

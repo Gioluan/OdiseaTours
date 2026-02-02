@@ -442,6 +442,90 @@ body {
   color: var(--gray-600);
 }
 
+/* ── DOCUMENTS ── */
+.doc-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--gray-50);
+}
+.doc-list-item:last-child { border-bottom: none; }
+.doc-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.doc-icon.pdf { background: rgba(231,76,60,0.1); color: var(--red); }
+.doc-icon.img { background: rgba(52,152,219,0.1); color: var(--blue); }
+.doc-icon.doc { background: rgba(52,152,219,0.1); color: #2980B9; }
+.doc-icon.xls { background: rgba(46,204,113,0.1); color: var(--green); }
+.doc-icon.other { background: var(--gray-100); color: var(--gray-500); }
+.doc-info { flex: 1; min-width: 0; }
+.doc-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--navy);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-meta {
+  font-size: 0.75rem;
+  color: var(--gray-400);
+}
+.doc-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+  background: rgba(255,180,0,0.1);
+  color: var(--amber-dark);
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+.doc-download:hover { opacity: 0.8; }
+
+/* ── PROVIDER DETAILS (enhanced) ── */
+.provider-detail-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  padding: 0.15rem 0;
+  color: var(--gray-600);
+}
+.provider-detail-row svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--gray-400);
+  position: relative;
+  top: 2px;
+}
+.provider-detail-label {
+  font-weight: 600;
+  color: var(--gray-500);
+  font-size: 0.75rem;
+  min-width: 50px;
+}
+.provider-star-rating {
+  color: var(--amber);
+  font-size: 0.82rem;
+  letter-spacing: 1px;
+}
+
 /* ── PROVIDER CONTACTS ── */
 .provider-card {
   background: white;

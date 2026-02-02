@@ -683,6 +683,56 @@ const DB = {
     }
   },
 
+  // === GUIDE DOCUMENTS (subcollection: tours/{tourId}/guideDocuments) ===
+  async uploadGuideDocument(tourId, file) {
+    if (!this._firebaseReady) return null;
+    try {
+      const path = `tours/${tourId}/guide/${Date.now()}_${file.name}`;
+      const ref = this.storage.ref(path);
+      await ref.put(file);
+      const url = await ref.getDownloadURL();
+      const meta = {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        url: url,
+        storagePath: path,
+        uploadedAt: new Date().toISOString()
+      };
+      const docRef = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('guideDocuments').add(meta);
+      return { id: docRef.id, ...meta };
+    } catch (e) {
+      console.warn('uploadGuideDocument failed:', e.message);
+      return null;
+    }
+  },
+
+  async getGuideDocuments(tourId) {
+    if (!this._firebaseReady) return [];
+    try {
+      const snapshot = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('guideDocuments').orderBy('uploadedAt', 'desc').get();
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      return items;
+    } catch (e) {
+      console.warn('getGuideDocuments failed:', e.message);
+      return [];
+    }
+  },
+
+  async deleteGuideDocument(tourId, docId, storagePath) {
+    if (!this._firebaseReady) return;
+    try {
+      if (storagePath) await this.storage.ref(storagePath).delete();
+      await this.firestore.collection('tours').doc(String(tourId))
+        .collection('guideDocuments').doc(docId).delete();
+    } catch (e) {
+      console.warn('deleteGuideDocument failed:', e.message);
+    }
+  },
+
   // EXPORT / IMPORT ALL
   exportAll() {
     return JSON.stringify({

@@ -174,6 +174,7 @@ const Guide = {
       case 'medical': this.renderMedical(); break;
       case 'headcount': this.renderHeadcount(); break;
       case 'notes': this.renderNotes(); break;
+      case 'documents': this.renderDocuments(); break;
       case 'chat': this.renderChat(); break;
     }
   },
@@ -475,13 +476,45 @@ const Guide = {
   renderProviders() {
     const t = this.tourData;
     const container = document.getElementById('section-providers');
+
+    // Prefer admin-curated guideProviderDetails if available
+    if (t.guideProviderDetails && t.guideProviderDetails.length) {
+      container.innerHTML = `
+        <h2 class="section-title">Provider Contacts</h2>
+        ${t.guideProviderDetails.map(c => {
+          const stars = c.starRating ? '★'.repeat(c.starRating) + '☆'.repeat(5 - c.starRating) : '';
+          return `
+          <div class="provider-card">
+            <div class="provider-name">${this._escapeHtml(c.name)}</div>
+            <div class="provider-type">${this._escapeHtml(c.category || 'Provider')}${stars ? ' <span class="provider-star-rating">' + stars + '</span>' : ''}</div>
+            ${c.checkIn ? `<div class="provider-detail-row"><span class="provider-detail-label">Dates</span> ${this._fmtDate(c.checkIn)}${c.checkOut ? ' — ' + this._fmtDate(c.checkOut) : ''}</div>` : ''}
+            ${c.service ? `<div class="provider-detail-row"><span class="provider-detail-label">Service</span> ${this._escapeHtml(c.service)}</div>` : ''}
+            ${c.address ? `<div class="provider-detail-row"><span class="provider-detail-label">Address</span> ${this._escapeHtml(c.address)}</div>` : ''}
+            ${c.website ? `<div class="provider-detail-row"><span class="provider-detail-label">Web</span> <a href="${this._escapeHtml(c.website)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">${this._escapeHtml(c.website)}</a></div>` : ''}
+            ${c.notes ? `<div class="provider-detail-row" style="color:var(--gray-400);font-size:0.78rem;font-style:italic">${this._escapeHtml(c.notes)}</div>` : ''}
+            <div class="provider-actions" style="margin-top:0.4rem">
+              ${c.phone ? `<a href="tel:${this._escapeHtml(c.phone)}" class="call-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+                ${this._escapeHtml(c.phone)}
+              </a>` : ''}
+              ${c.email ? `<a href="mailto:${this._escapeHtml(c.email)}" class="email-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                Email
+              </a>` : ''}
+            </div>
+          </div>`;
+        }).join('')}
+      `;
+      return;
+    }
+
+    // Fallback: auto-enrich from hotels + providerExpenses
     const contacts = [];
 
     // Hotels from tour data
     if (t.hotels && t.hotels.length) {
       t.hotels.forEach(h => {
         const name = h.name || h.hotel || '';
-        // Try to enrich from providers collection
         const prov = this._providers.find(p => p.companyName && name && p.companyName.toLowerCase().includes(name.toLowerCase()));
         contacts.push({
           name: name,
@@ -496,8 +529,8 @@ const Guide = {
     // Providers from tour's providerExpenses
     if (t.providerExpenses && t.providerExpenses.length) {
       t.providerExpenses.forEach(pe => {
-        const name = pe.provider || pe.companyName || '';
-        if (contacts.find(c => c.name.toLowerCase() === name.toLowerCase())) return;
+        const name = pe.providerName || '';
+        if (!name || contacts.find(c => c.name.toLowerCase() === name.toLowerCase())) return;
         const prov = this._providers.find(p => p.companyName && name && p.companyName.toLowerCase().includes(name.toLowerCase()));
         contacts.push({
           name: name,
@@ -917,7 +950,58 @@ const Guide = {
   },
 
   // ══════════════════════════════════════════════════════════
-  //  11. CHAT WITH OFFICE
+  //  11b. DOCUMENTS
+  // ══════════════════════════════════════════════════════════
+  async renderDocuments() {
+    const container = document.getElementById('section-documents');
+    container.innerHTML = '<h2 class="section-title">Documents</h2><div style="text-align:center;padding:1rem"><div class="spinner"></div></div>';
+
+    const docs = await DB.getGuideDocuments(this.tourId);
+
+    const getIconClass = (name) => {
+      const ext = (name || '').split('.').pop().toLowerCase();
+      if (ext === 'pdf') return 'pdf';
+      if (['jpg','jpeg','png','gif','webp'].includes(ext)) return 'img';
+      if (['doc','docx'].includes(ext)) return 'doc';
+      if (['xls','xlsx','csv'].includes(ext)) return 'xls';
+      return 'other';
+    };
+
+    const getIconLabel = (name) => {
+      const ext = (name || '').split('.').pop().toLowerCase();
+      if (ext === 'pdf') return 'PDF';
+      if (['jpg','jpeg','png','gif','webp'].includes(ext)) return 'IMG';
+      if (['doc','docx'].includes(ext)) return 'DOC';
+      if (['xls','xlsx'].includes(ext)) return 'XLS';
+      if (ext === 'csv') return 'CSV';
+      return 'FILE';
+    };
+
+    const fmtSize = (size) => {
+      if (!size) return '';
+      return size < 1024 * 1024 ? Math.round(size / 1024) + ' KB' : (size / (1024 * 1024)).toFixed(1) + ' MB';
+    };
+
+    container.innerHTML = `
+      <h2 class="section-title">Documents</h2>
+      ${docs.length ? `<div class="g-card">${docs.map(d => `
+        <div class="doc-list-item">
+          <div class="doc-icon ${getIconClass(d.name)}">${getIconLabel(d.name)}</div>
+          <div class="doc-info">
+            <div class="doc-name">${this._escapeHtml(d.name)}</div>
+            <div class="doc-meta">${fmtSize(d.size)}${d.uploadedAt ? ' &bull; ' + this._fmtDate(d.uploadedAt) : ''}</div>
+          </div>
+          <a href="${d.url}" target="_blank" rel="noopener" class="doc-download">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download
+          </a>
+        </div>
+      `).join('')}</div>` : '<div class="empty-state">No documents shared yet.</div>'}
+    `;
+  },
+
+  // ══════════════════════════════════════════════════════════
+  //  12. CHAT WITH OFFICE
   // ══════════════════════════════════════════════════════════
   renderChat() {
     const container = document.getElementById('section-chat');
