@@ -417,6 +417,21 @@ const PDFQuote = {
       <tbody>${actRows}</tbody>
     </table>` : ''}
 
+    ${q.itinerary && q.itinerary.length ? `
+    <!-- Itinerary -->
+    <div class="section-title">Sample Itinerary</div>
+    <div style="margin-bottom:16px">
+      ${q.itinerary.map(item => `<div style="display:flex;gap:12px;margin-bottom:8px;align-items:flex-start">
+        <div style="background:#ffb400;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:8pt;flex-shrink:0;margin-top:1px">
+          ${item.day}
+        </div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:9.5pt;color:#111;margin-bottom:1px">${item.title || 'Day ' + item.day}</div>
+          ${item.description ? `<div style="font-size:8.5pt;color:#555;line-height:1.5">${item.description}</div>` : ''}
+        </div>
+      </div>`).join('')}
+    </div>` : ''}
+
     <!-- What's Included -->
     <div class="section-title">What's Included</div>
     <ul class="included-list">

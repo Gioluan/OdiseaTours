@@ -1,10 +1,10 @@
 /* === NEW QUOTE / PRICING CALCULATOR === */
 const Quote = {
   currentStep: 0,
-  totalSteps: 7,
+  totalSteps: 8,
   data: {},
   editingQuoteId: null,
-  stepNames: ['Setup', 'Group', 'Hotel', 'Transport', 'Activities', 'Guide', 'Summary'],
+  stepNames: ['Setup', 'Group', 'Hotel', 'Transport', 'Activities', 'Guide', 'Itinerary', 'Summary'],
 
   init() {
     this.editingQuoteId = null;
@@ -16,6 +16,7 @@ const Quote = {
       flightCostPerPerson: 0, airportTransfers: 0, coachHire: 0, internalTransport: 0,
       activities: [],
       noGuide: false, numGuides: 1, guideDailyRate: 0, guideFlights: 0, guideAccommodation: 0, guideMeals: 0,
+      itinerary: [],
       priceStudent: 0, priceSibling: 0, priceAdult: 0,
       clientId: null, clientName: '', clientEmail: '', clientPhone: '', followUpDate: ''
     };
@@ -49,6 +50,7 @@ const Quote = {
       guideFlights: q.guideFlights || 0,
       guideAccommodation: q.guideAccommodation || 0,
       guideMeals: q.guideMeals || 0,
+      itinerary: q.itinerary ? JSON.parse(JSON.stringify(q.itinerary)) : [],
       priceStudent: q.priceStudent || 0,
       priceSibling: q.priceSibling || 0,
       priceAdult: q.priceAdult || 0,
@@ -498,6 +500,9 @@ const Quote = {
         }
         break;
       case 6:
+        this.collectItinerary();
+        break;
+      case 7:
         d.priceStudent = Number(this.val('q-priceStudent')) || 0;
         d.priceSibling = Number(this.val('q-priceSibling')) || 0;
         d.priceAdult = Number(this.val('q-priceAdult')) || 0;
@@ -685,7 +690,27 @@ const Quote = {
         break;
       }
 
-      case 6:
+      case 6: {
+        const days = d.nights + 1;
+        const itin = d.itinerary || [];
+        let itinHTML = '<h3>Sample Itinerary</h3>';
+        itinHTML += '<div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:var(--gray-500);border-left:4px solid var(--amber)">';
+        itinHTML += 'Create a day-by-day itinerary to include in the PDF quote. This is optional.';
+        itinHTML += '</div>';
+        itinHTML += '<div style="display:flex;gap:0.5rem;margin-bottom:1rem">';
+        itinHTML += '<button class="btn btn-outline btn-sm" onclick="Quote.autoPopulateItinerary()">Auto-fill ' + days + ' Days</button>';
+        itinHTML += '<button class="btn btn-outline btn-sm" onclick="Quote.addItineraryDay()">+ Add Day</button>';
+        itinHTML += '</div>';
+        itinHTML += '<div id="itinerary-list">';
+        itin.forEach((item, idx) => {
+          itinHTML += this.itineraryDayHTML(item, idx);
+        });
+        itinHTML += '</div>';
+        w.innerHTML = itinHTML;
+        break;
+      }
+
+      case 7:
         this.renderSummary(w);
         break;
     }
@@ -977,6 +1002,66 @@ const Quote = {
     this.onClientSelect();
   },
 
+  /* --- Itinerary helpers --- */
+  itineraryDayHTML(item, idx) {
+    return `<div class="card itin-day" style="margin-bottom:0.8rem;border-left:4px solid var(--amber);position:relative">
+      <div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:0.5rem">
+        <div style="background:var(--amber);color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.9rem;flex-shrink:0">
+          ${item.day}
+        </div>
+        <input class="itin-title" value="${(item.title || '').replace(/"/g, '&quot;')}" placeholder="e.g. Arrival & City Tour" style="flex:1;padding:0.5rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:var(--font-body);font-size:0.88rem;font-weight:600">
+        <button class="btn btn-sm btn-danger" onclick="Quote.removeItineraryDay(${idx})" style="flex-shrink:0">X</button>
+      </div>
+      <textarea class="itin-desc" rows="2" placeholder="Describe the day's activities..." style="width:100%;padding:0.5rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:var(--font-body);font-size:0.85rem;resize:vertical">${item.description || ''}</textarea>
+    </div>`;
+  },
+
+  collectItinerary() {
+    const cards = document.querySelectorAll('.itin-day');
+    this.data.itinerary = [];
+    cards.forEach((card, idx) => {
+      this.data.itinerary.push({
+        day: idx + 1,
+        title: card.querySelector('.itin-title').value,
+        description: card.querySelector('.itin-desc').value
+      });
+    });
+  },
+
+  addItineraryDay() {
+    this.collectItinerary();
+    const nextDay = this.data.itinerary.length + 1;
+    this.data.itinerary.push({ day: nextDay, title: '', description: '' });
+    this.renderStep();
+  },
+
+  removeItineraryDay(idx) {
+    this.collectItinerary();
+    this.data.itinerary.splice(idx, 1);
+    this.data.itinerary.forEach((item, i) => { item.day = i + 1; });
+    this.renderStep();
+  },
+
+  autoPopulateItinerary() {
+    this.collectItinerary();
+    const days = this.data.nights + 1;
+    const existing = this.data.itinerary;
+    const result = [];
+    for (let i = 0; i < days; i++) {
+      if (existing[i]) {
+        existing[i].day = i + 1;
+        result.push(existing[i]);
+      } else {
+        let title = '';
+        if (i === 0) title = 'Arrival Day';
+        else if (i === days - 1) title = 'Departure Day';
+        result.push({ day: i + 1, title, description: '' });
+      }
+    }
+    this.data.itinerary = result;
+    this.renderStep();
+  },
+
   resetQuote() {
     if (!confirm('Are you sure you want to reset this quote? All entered data will be cleared.')) return;
     this.init();
@@ -996,6 +1081,7 @@ const Quote = {
       destination: dest,
       destinations: d.destinations,
       hotels: JSON.parse(JSON.stringify(d.hotels)),
+      itinerary: d.itinerary && d.itinerary.length ? JSON.parse(JSON.stringify(d.itinerary)) : [],
       // Backward compat flat fields from first hotel
       hotelName: h0.hotelName || '',
       starRating: h0.starRating || 3,
