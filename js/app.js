@@ -1,6 +1,6 @@
 /* === APP CONTROLLER === */
 const App = {
-  currentTab: 'dashboard',
+  currentTab: 'briefing',
 
   init() {
     // Initialize Firebase (before modules)
@@ -17,6 +17,7 @@ const App = {
     DB.seedProviders();
 
     // Initialize all modules
+    Briefing.init();
     Dashboard.init();
     Quote.init();
     CRM.init();
@@ -45,6 +46,7 @@ const App = {
 
   refreshTab(tab) {
     switch (tab) {
+      case 'briefing': Briefing.render(); break;
       case 'dashboard': Dashboard.render(); break;
       case 'new-quote': Quote.render(); break;
       case 'crm': CRM.render(); break;
