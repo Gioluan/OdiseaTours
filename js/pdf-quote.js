@@ -58,7 +58,7 @@ const PDFQuote = {
     if (q.airportTransfers) included.push('Airport transfers');
     if (q.coachHire) included.push('Coach / bus hire');
     if (q.internalTransport) included.push('Internal transport');
-    if (q.numGuides) included.push(`${q.numGuides} professional guide${q.numGuides > 1 ? 's' : ''}`);
+    if (q.numGuides && !q.noGuide) included.push(`${q.numGuides} professional guide${q.numGuides > 1 ? 's' : ''}`);
     if (q.numFOC) included.push(`${q.numFOC} FOC place${q.numFOC > 1 ? 's' : ''} for teachers / coaches`);
     activities.forEach(a => {
       if (!a.isFree) included.push(a.name);
@@ -559,7 +559,7 @@ const PDFQuote = {
     if (src.airportTransfers) included.push('Airport transfers');
     if (src.coachHire) included.push('Coach / bus hire');
     if (src.internalTransport) included.push('Internal transport');
-    if (src.numGuides) included.push(`${src.numGuides} professional guide${src.numGuides > 1 ? 's' : ''}`);
+    if (src.numGuides && !src.noGuide) included.push(`${src.numGuides} professional guide${src.numGuides > 1 ? 's' : ''}`);
     if (src.numFOC) included.push(`${src.numFOC} FOC place${src.numFOC > 1 ? 's' : ''} for teachers / coaches`);
     (src.activities || []).forEach(a => {
       if (!a.isFree) included.push(a.name);

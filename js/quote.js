@@ -15,7 +15,7 @@ const Quote = {
       hotels: [],
       flightCostPerPerson: 0, airportTransfers: 0, coachHire: 0, internalTransport: 0,
       activities: [],
-      numGuides: 1, guideDailyRate: 0, guideFlights: 0, guideAccommodation: 0, guideMeals: 0,
+      noGuide: false, numGuides: 1, guideDailyRate: 0, guideFlights: 0, guideAccommodation: 0, guideMeals: 0,
       priceStudent: 0, priceSibling: 0, priceAdult: 0,
       clientId: null, clientName: '', clientEmail: '', clientPhone: '', followUpDate: ''
     };
@@ -43,6 +43,7 @@ const Quote = {
       coachHire: q.coachHire || 0,
       internalTransport: q.internalTransport || 0,
       activities: q.activities ? JSON.parse(JSON.stringify(q.activities)) : [],
+      noGuide: q.noGuide || false,
       numGuides: q.numGuides || 1,
       guideDailyRate: q.guideDailyRate || 0,
       guideFlights: q.guideFlights || 0,
@@ -485,11 +486,16 @@ const Quote = {
         this.collectActivities();
         break;
       case 5:
-        d.numGuides = Number(this.val('q-numGuides')) || 1;
-        d.guideDailyRate = Number(this.val('q-guideRate')) || 0;
-        d.guideFlights = Number(this.val('q-guideFlights')) || 0;
-        d.guideAccommodation = Number(this.val('q-guideAccom')) || 0;
-        d.guideMeals = Number(this.val('q-guideMeals')) || 0;
+        d.noGuide = document.getElementById('q-noGuide') ? document.getElementById('q-noGuide').checked : false;
+        if (d.noGuide) {
+          d.numGuides = 0; d.guideDailyRate = 0; d.guideFlights = 0; d.guideAccommodation = 0; d.guideMeals = 0;
+        } else {
+          d.numGuides = Number(this.val('q-numGuides')) || 1;
+          d.guideDailyRate = Number(this.val('q-guideRate')) || 0;
+          d.guideFlights = Number(this.val('q-guideFlights')) || 0;
+          d.guideAccommodation = Number(this.val('q-guideAccom')) || 0;
+          d.guideMeals = Number(this.val('q-guideMeals')) || 0;
+        }
         break;
       case 6:
         d.priceStudent = Number(this.val('q-priceStudent')) || 0;
@@ -650,22 +656,32 @@ const Quote = {
       case 5: {
         const tp = d.numStudents + d.numSiblings + d.numAdults;
         const days = d.nights + 1;
-        const guideTotal = (d.numGuides * d.guideDailyRate * days) + d.guideFlights + d.guideAccommodation + d.guideMeals;
+        const guideTotal = d.noGuide ? 0 : (d.numGuides * d.guideDailyRate * days) + d.guideFlights + d.guideAccommodation + d.guideMeals;
         const perPax = tp > 0 ? guideTotal / tp : 0;
         w.innerHTML = `
           <h3>Guide Costs</h3>
-          <div class="form-row form-row-3">
-            <div class="form-group"><label>Number of Guides</label><input id="q-numGuides" type="number" min="0" value="${d.numGuides}"></div>
-            <div class="form-group"><label>Guide Daily Rate (${d.currency})</label><input id="q-guideRate" type="number" step="0.01" value="${d.guideDailyRate}"></div>
-            <div class="form-group"><label>Guide Flights (${d.currency})</label><input id="q-guideFlights" type="number" step="0.01" value="${d.guideFlights}"></div>
+          <div style="margin-bottom:1rem;padding:1rem;background:${d.noGuide ? 'var(--red-bg)' : 'var(--gray-50)'};border-radius:var(--radius-lg);border:1.5px solid ${d.noGuide ? 'var(--red)' : 'var(--gray-200)'}">
+            <label class="checkbox-label" style="font-size:1rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:0.5rem">
+              <input type="checkbox" id="q-noGuide" ${d.noGuide ? 'checked' : ''} onchange="Quote.toggleNoGuide(this.checked)">
+              No Guide Required
+            </label>
+            <p style="font-size:0.82rem;color:var(--gray-400);margin-top:0.3rem;margin-left:1.5rem">Check this if the tour does not require a professional guide. Guide costs will be set to zero and excluded from the quote PDF.</p>
           </div>
-          <div class="form-row form-row-2">
-            <div class="form-group"><label>Guide Accommodation (${d.currency})</label><input id="q-guideAccom" type="number" step="0.01" value="${d.guideAccommodation}"></div>
-            <div class="form-group"><label>Guide Meals (${d.currency})</label><input id="q-guideMeals" type="number" step="0.01" value="${d.guideMeals}"></div>
+          <div id="guide-fields" style="display:${d.noGuide ? 'none' : 'block'}">
+            <div class="form-row form-row-3">
+              <div class="form-group"><label>Number of Guides</label><input id="q-numGuides" type="number" min="0" value="${d.numGuides}"></div>
+              <div class="form-group"><label>Guide Daily Rate (${d.currency})</label><input id="q-guideRate" type="number" step="0.01" value="${d.guideDailyRate}"></div>
+              <div class="form-group"><label>Guide Flights (${d.currency})</label><input id="q-guideFlights" type="number" step="0.01" value="${d.guideFlights}"></div>
+            </div>
+            <div class="form-row form-row-2">
+              <div class="form-group"><label>Guide Accommodation (${d.currency})</label><input id="q-guideAccom" type="number" step="0.01" value="${d.guideAccommodation}"></div>
+              <div class="form-group"><label>Guide Meals (${d.currency})</label><input id="q-guideMeals" type="number" step="0.01" value="${d.guideMeals}"></div>
+            </div>
+            <div class="card" style="margin-top:1rem;background:var(--gray-50)">
+              <strong>Total Guide Cost: ${fmt(guideTotal, d.currency)}</strong> | <strong>Per Participant: ${fmt(perPax, d.currency)}</strong>
+            </div>
           </div>
-          <div class="card" style="margin-top:1rem;background:var(--gray-50)">
-            <strong>Total Guide Cost: ${fmt(guideTotal, d.currency)}</strong> | <strong>Per Participant: ${fmt(perPax, d.currency)}</strong>
-          </div>`;
+          ${d.noGuide ? '<div class="card" style="margin-top:1rem;background:var(--green-bg);border:1.5px solid var(--green);text-align:center"><strong style="color:var(--green)">No guide — guide costs set to zero</strong></div>' : ''}`;
         break;
       }
 
@@ -705,7 +721,7 @@ const Quote = {
       const pax = a.playersOnly ? d.numStudents : tp;
       return s + a.costPerPerson * pax;
     }, 0);
-    const guide = (d.numGuides * d.guideDailyRate * days) + d.guideFlights + d.guideAccommodation + d.guideMeals;
+    const guide = d.noGuide ? 0 : (d.numGuides * d.guideDailyRate * days) + d.guideFlights + d.guideAccommodation + d.guideMeals;
     const grand = accommodation + meals + transport + activities + guide;
     const costPerPerson = paying > 0 ? grand / paying : 0;
     return { accommodation, meals, flights, transport, activities, guide, grand, totalParticipants: tp, payingParticipants: paying, costPerPerson, days, hotelDetails };
@@ -779,7 +795,7 @@ const Quote = {
           <p><strong>Students:</strong> ${d.numStudents} | <strong>Siblings:</strong> ${d.numSiblings} | <strong>Adults:</strong> ${d.numAdults}</p>
           <p><strong>FOC Places:</strong> ${d.numFOC || 0}</p>
           <p><strong>Total Participants:</strong> ${c.totalParticipants} (${c.payingParticipants} paying)</p>
-          <p><strong>Guides:</strong> ${d.numGuides}</p>
+          <p><strong>Guides:</strong> ${d.noGuide ? 'None' : d.numGuides}</p>
           <p><strong>Activities:</strong> ${d.activities.length}</p>
           ${actSummary ? '<div style="margin-top:0.5rem">' + actSummary + '</div>' : ''}
         </div>
@@ -794,7 +810,7 @@ const Quote = {
         <div class="cost-line"><span>Coach / Bus Hire</span><span>${fmt(d.coachHire, d.currency)}</span></div>
         <div class="cost-line"><span>Internal Transport</span><span>${fmt(d.internalTransport, d.currency)}</span></div>
         <div class="cost-line"><span>Activities</span><span>${fmt(c.activities, d.currency)}</span></div>
-        <div class="cost-line"><span>Guide Costs</span><span>${fmt(c.guide, d.currency)}</span></div>
+        ${d.noGuide ? '' : `<div class="cost-line"><span>Guide Costs</span><span>${fmt(c.guide, d.currency)}</span></div>`}
         <div class="cost-line total"><span>TOTAL COST</span><span class="cost-val">${fmt(c.grand, d.currency)}</span></div>
         <div class="cost-line"><span>Suggested Min. Per Person</span><span>${fmt(c.costPerPerson, d.currency)}</span></div>
       </div>
@@ -891,6 +907,20 @@ const Quote = {
           </div>
         </div>
       </div>`;
+  },
+
+  toggleNoGuide(checked) {
+    this.data.noGuide = checked;
+    const fields = document.getElementById('guide-fields');
+    if (fields) fields.style.display = checked ? 'none' : 'block';
+    if (checked) {
+      this.data.numGuides = 0;
+      this.data.guideDailyRate = 0;
+      this.data.guideFlights = 0;
+      this.data.guideAccommodation = 0;
+      this.data.guideMeals = 0;
+    }
+    this.renderStep();
   },
 
   onClientSelect() {
