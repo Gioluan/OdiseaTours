@@ -10,6 +10,7 @@ const Portal = {
   _familyData: null,
   _messageTab: 'announcements', // 'announcements' or 'private'
   _allMessages: [],
+  _flightData: null,
   _translations: {
     en: {
       overview: 'Overview', itinerary: 'Itinerary', documents: 'Documents',
@@ -48,7 +49,19 @@ const Portal = {
       familyMessagesDesc: 'Group announcements and private messages',
       chatWithOperator: 'Chat with your tour operator',
       announcementsReadOnly: 'Announcements are read-only. Switch to Private Chat to send a message.',
-      announcement: 'Announcement'
+      announcement: 'Announcement',
+      flights: 'Flights', flightDetails: 'Flight Details', arrivalFlight: 'Arrival Flight',
+      returnFlight: 'Return Flight', flightNumber: 'Flight Number', airline: 'Airline',
+      departureAirport: 'Departure Airport', arrivalAirport: 'Arrival Airport',
+      departureTime: 'Departure Time', arrivalTime: 'Arrival Time', terminal: 'Terminal',
+      flightNotes: 'Notes', flightDate: 'Date', submitFlights: 'Save Flight Details',
+      flightsSubmitted: 'Submitted', flightsSaved: 'Flight details saved successfully!',
+      flightsNotSubmitted: 'Not yet submitted',
+      checklistTitle: 'Trip Preparation', checklistDesc: 'Track your progress before departure',
+      clTravelersRegistered: 'All travelers registered', clPassportDetails: 'Passport details complete',
+      clFlightDetails: 'Flight details submitted', clEmergencyContacts: 'Emergency contacts provided',
+      clDietaryRequirements: 'Dietary requirements noted', clPaymentComplete: 'Payment complete',
+      clItemsComplete: 'items complete'
     },
     es: {
       overview: 'Resumen', itinerary: 'Itinerario', documents: 'Documentos',
@@ -87,7 +100,19 @@ const Portal = {
       familyMessagesDesc: 'Anuncios del grupo y mensajes privados',
       chatWithOperator: 'Chatea con tu operador turistico',
       announcementsReadOnly: 'Los anuncios son de solo lectura. Cambia a Chat Privado para enviar un mensaje.',
-      announcement: 'Anuncio'
+      announcement: 'Anuncio',
+      flights: 'Vuelos', flightDetails: 'Datos de Vuelo', arrivalFlight: 'Vuelo de Ida',
+      returnFlight: 'Vuelo de Regreso', flightNumber: 'Numero de Vuelo', airline: 'Aerolinea',
+      departureAirport: 'Aeropuerto de Salida', arrivalAirport: 'Aeropuerto de Llegada',
+      departureTime: 'Hora de Salida', arrivalTime: 'Hora de Llegada', terminal: 'Terminal',
+      flightNotes: 'Notas', flightDate: 'Fecha', submitFlights: 'Guardar Datos de Vuelo',
+      flightsSubmitted: 'Enviado', flightsSaved: 'Datos de vuelo guardados correctamente!',
+      flightsNotSubmitted: 'Pendiente de envio',
+      checklistTitle: 'Preparacion del Viaje', checklistDesc: 'Controla tu progreso antes de la salida',
+      clTravelersRegistered: 'Viajeros registrados', clPassportDetails: 'Datos de pasaporte completos',
+      clFlightDetails: 'Datos de vuelo enviados', clEmergencyContacts: 'Contactos de emergencia',
+      clDietaryRequirements: 'Requisitos dieteticos indicados', clPaymentComplete: 'Pago completado',
+      clItemsComplete: 'elementos completados'
     }
   },
 
@@ -110,7 +135,7 @@ const Portal = {
   _updateNavLabels() {
     const navMap = {
       overview: 'overview', itinerary: 'itinerary', documents: 'documents',
-      passengers: 'passengers', roomplan: 'roomPlan', messages: 'messages',
+      passengers: 'passengers', flights: 'flights', roomplan: 'roomPlan', messages: 'messages',
       forms: 'formsConsent', feedback: 'feedback', payments: 'payments'
     };
     document.querySelectorAll('.nav-drawer-links li').forEach(li => {
@@ -293,10 +318,13 @@ const Portal = {
   },
 
   _updateNavForMode() {
-    // In family mode, hide Room Plan (group-level feature)
+    // In family mode, hide Room Plan (group-level feature), show Flights
     document.querySelectorAll('.nav-drawer-links li').forEach(li => {
       if (li.dataset.section === 'roomplan') {
         li.style.display = this._portalMode === 'family' ? 'none' : '';
+      }
+      if (li.dataset.section === 'flights') {
+        li.style.display = this._portalMode === 'family' ? '' : 'none';
       }
     });
   },
@@ -321,6 +349,7 @@ const Portal = {
       case 'itinerary': this.renderItinerary(); break;
       case 'documents': this.renderDocuments(); break;
       case 'passengers': this.renderPassengers(); break;
+      case 'flights': this.renderFlights(); break;
       case 'roomplan': this.renderRoomPlan(); break;
       case 'messages': this.renderMessages(); break;
       case 'forms': this.renderForms(); break;
@@ -396,7 +425,10 @@ const Portal = {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/></svg>
           <span>${Portal._t('passengers')}</span>
         </button>
-        ${isFamily ? '' : `<button class="action-btn" onclick="Portal.showSection('roomplan')">
+        ${isFamily ? `<button class="action-btn" onclick="Portal.showSection('flights')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5 5.1 3 -1.9 1.9-2.1-.5-.6.6 2.6 1.5 1.5 2.6.6-.6-.5-2.1 1.9-1.9 3 5.1.5-.3c.4-.2.6-.6.5-1.1z"/></svg>
+          <span>${Portal._t('flights')}</span>
+        </button>` : `<button class="action-btn" onclick="Portal.showSection('roomplan')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
           <span>${Portal._t('roomPlan')}</span>
         </button>`}
@@ -422,11 +454,16 @@ const Portal = {
         </div>
       </div>` : ''}
 
+      ${isFamily ? '<div id="family-checklist"></div>' : ''}
+
       <div class="contact-card">
         <h4>${Portal._t('tourOperator')}</h4>
         <p><strong>Odisea Tours</strong></p>
         <p>For any questions, use the Messages section or contact us directly.</p>
       </div>`;
+
+    // Load checklist async for family mode
+    if (isFamily) this._renderFamilyChecklist();
   },
 
   renderItinerary() {
@@ -1646,6 +1683,190 @@ const Portal = {
           ${t.portalPaymentCard ? '<a href="' + Portal._escapeAttr(t.portalPaymentCard) + '" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600">Pay by Card</a>' : ''}
           ${t.portalPaymentWise ? '<a href="' + Portal._escapeAttr(t.portalPaymentWise) + '" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600">Pay via Wise</a>' : ''}
         </div>` : ''}`;
+  },
+
+  // ── Flights Section ──
+  async renderFlights() {
+    const container = document.getElementById('section-flights');
+    if (!container) return;
+
+    // Only available in family mode
+    if (this._portalMode !== 'family' || !this._familyId) {
+      container.innerHTML = '<div class="empty-state"><p>Flight details are available in family portal mode.</p></div>';
+      return;
+    }
+
+    // Load existing flight data
+    container.innerHTML = '<div style="text-align:center;padding:2rem"><div class="spinner"></div></div>';
+    this._flightData = await DB.getFamilyFlight(this.tourId, this._familyId);
+    const f = this._flightData || {};
+    const arr = f.arrival || {};
+    const ret = f.return || {};
+    const isSubmitted = !!(arr.flightNumber || ret.flightNumber);
+    const statusTag = isSubmitted
+      ? `<span style="background:rgba(46,204,113,0.12);color:#1e8449;padding:0.25rem 0.75rem;border-radius:12px;font-size:0.78rem;font-weight:600">${Portal._t('flightsSubmitted')}</span>`
+      : `<span style="background:rgba(231,76,60,0.12);color:#c0392b;padding:0.25rem 0.75rem;border-radius:12px;font-size:0.78rem;font-weight:600">${Portal._t('flightsNotSubmitted')}</span>`;
+
+    container.innerHTML = `
+      <div class="section-header">
+        <h2>${Portal._t('flightDetails')}</h2>
+        <p style="display:flex;align-items:center;gap:0.5rem">${this._familyData ? this._familyData.name : ''} ${statusTag}</p>
+      </div>
+      <form onsubmit="Portal.saveFlights(event)">
+        <div class="flight-section">
+          <div class="flight-section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5 5.1 3 -1.9 1.9-2.1-.5-.6.6 2.6 1.5 1.5 2.6.6-.6-.5-2.1 1.9-1.9 3 5.1.5-.3c.4-.2.6-.6.5-1.1z"/></svg>
+            ${Portal._t('arrivalFlight')}
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label>${Portal._t('flightDate')}</label><input type="date" id="fl-arr-date" value="${Portal._escapeAttr(arr.date || '')}"></div>
+            <div class="form-group"><label>${Portal._t('flightNumber')}</label><input id="fl-arr-number" placeholder="e.g. BA2472" value="${Portal._escapeAttr(arr.flightNumber || '')}"></div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label>${Portal._t('airline')}</label><input id="fl-arr-airline" placeholder="e.g. British Airways" value="${Portal._escapeAttr(arr.airline || '')}"></div>
+            <div class="form-group"><label>${Portal._t('terminal')}</label><input id="fl-arr-terminal" placeholder="e.g. T5" value="${Portal._escapeAttr(arr.terminal || '')}"></div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label>${Portal._t('departureAirport')}</label><input id="fl-arr-dep-airport" placeholder="e.g. LHR" value="${Portal._escapeAttr(arr.departureAirport || '')}"></div>
+            <div class="form-group"><label>${Portal._t('arrivalAirport')}</label><input id="fl-arr-arr-airport" placeholder="e.g. MAD" value="${Portal._escapeAttr(arr.arrivalAirport || '')}"></div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label>${Portal._t('departureTime')}</label><input type="time" id="fl-arr-dep-time" value="${Portal._escapeAttr(arr.departureTime || '')}"></div>
+            <div class="form-group"><label>${Portal._t('arrivalTime')}</label><input type="time" id="fl-arr-arr-time" value="${Portal._escapeAttr(arr.arrivalTime || '')}"></div>
+          </div>
+          <div class="form-group"><label>${Portal._t('flightNotes')}</label><input id="fl-arr-notes" placeholder="" value="${Portal._escapeAttr(arr.notes || '')}"></div>
+        </div>
+
+        <div class="flight-section">
+          <div class="flight-section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform:scaleX(-1)"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5 5.1 3 -1.9 1.9-2.1-.5-.6.6 2.6 1.5 1.5 2.6.6-.6-.5-2.1 1.9-1.9 3 5.1.5-.3c.4-.2.6-.6.5-1.1z"/></svg>
+            ${Portal._t('returnFlight')}
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label>${Portal._t('flightDate')}</label><input type="date" id="fl-ret-date" value="${Portal._escapeAttr(ret.date || '')}"></div>
+            <div class="form-group"><label>${Portal._t('flightNumber')}</label><input id="fl-ret-number" placeholder="e.g. BA2473" value="${Portal._escapeAttr(ret.flightNumber || '')}"></div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label>${Portal._t('airline')}</label><input id="fl-ret-airline" placeholder="e.g. British Airways" value="${Portal._escapeAttr(ret.airline || '')}"></div>
+            <div class="form-group"><label>${Portal._t('terminal')}</label><input id="fl-ret-terminal" placeholder="e.g. T5" value="${Portal._escapeAttr(ret.terminal || '')}"></div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label>${Portal._t('departureAirport')}</label><input id="fl-ret-dep-airport" placeholder="e.g. MAD" value="${Portal._escapeAttr(ret.departureAirport || '')}"></div>
+            <div class="form-group"><label>${Portal._t('arrivalAirport')}</label><input id="fl-ret-arr-airport" placeholder="e.g. LHR" value="${Portal._escapeAttr(ret.arrivalAirport || '')}"></div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label>${Portal._t('departureTime')}</label><input type="time" id="fl-ret-dep-time" value="${Portal._escapeAttr(ret.departureTime || '')}"></div>
+            <div class="form-group"><label>${Portal._t('arrivalTime')}</label><input type="time" id="fl-ret-arr-time" value="${Portal._escapeAttr(ret.arrivalTime || '')}"></div>
+          </div>
+          <div class="form-group"><label>${Portal._t('flightNotes')}</label><input id="fl-ret-notes" placeholder="" value="${Portal._escapeAttr(ret.notes || '')}"></div>
+        </div>
+
+        <button type="submit" class="btn-primary" style="width:100%;margin-top:0.5rem">${Portal._t('submitFlights')}</button>
+      </form>`;
+  },
+
+  async saveFlights(event) {
+    if (event) event.preventDefault();
+    if (!this.tourId || !this._familyId) return;
+
+    const val = id => (document.getElementById(id) || {}).value || '';
+    const flightData = {
+      familyName: (this._familyData && this._familyData.name) || '',
+      arrival: {
+        date: val('fl-arr-date'), flightNumber: val('fl-arr-number').toUpperCase(),
+        airline: val('fl-arr-airline'), departureAirport: val('fl-arr-dep-airport').toUpperCase(),
+        arrivalAirport: val('fl-arr-arr-airport').toUpperCase(), departureTime: val('fl-arr-dep-time'),
+        arrivalTime: val('fl-arr-arr-time'), terminal: val('fl-arr-terminal').toUpperCase(),
+        notes: val('fl-arr-notes')
+      },
+      return: {
+        date: val('fl-ret-date'), flightNumber: val('fl-ret-number').toUpperCase(),
+        airline: val('fl-ret-airline'), departureAirport: val('fl-ret-dep-airport').toUpperCase(),
+        arrivalAirport: val('fl-ret-arr-airport').toUpperCase(), departureTime: val('fl-ret-dep-time'),
+        arrivalTime: val('fl-ret-arr-time'), terminal: val('fl-ret-terminal').toUpperCase(),
+        notes: val('fl-ret-notes')
+      },
+      submittedBy: 'portal'
+    };
+    // Preserve original createdAt if exists
+    if (this._flightData && this._flightData.createdAt) {
+      flightData.createdAt = this._flightData.createdAt;
+    }
+
+    const ok = await DB.saveFamilyFlight(this.tourId, this._familyId, flightData);
+    if (ok) {
+      // Brief success feedback then re-render
+      const btn = document.querySelector('#section-flights .btn-primary');
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = Portal._t('flightsSaved');
+        btn.style.background = 'var(--green)';
+        setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 2000);
+      }
+      this._flightData = flightData;
+    }
+  },
+
+  async _renderFamilyChecklist() {
+    const el = document.getElementById('family-checklist');
+    if (!el || !this._familyId || !this.tourId) return;
+
+    el.innerHTML = '<div style="text-align:center;padding:1rem"><div class="spinner"></div></div>';
+
+    // Load data in parallel
+    const [passengers, flights, invoicesRaw] = await Promise.all([
+      DB.firestore ? DB.firestore.collection('tours').doc(this.tourId).collection('passengers').where('familyId', '==', this._familyId).get().then(s => { const a=[]; s.forEach(d => a.push({id:d.id,...d.data()})); return a; }).catch(() => []) : Promise.resolve([]),
+      DB.getFamilyFlight(this.tourId, this._familyId),
+      DB._firebaseReady && this._familyData ? Promise.resolve(DB.getInvoices().find(i => i.individualClientRef === this._familyId && i.tourId === this.tourId) || null) : Promise.resolve(null)
+    ]);
+
+    const expectedCount = this._familyData ? ((this._familyData.numStudents||0) + (this._familyData.numSiblings||0) + (this._familyData.numAdults||0)) : 0;
+
+    // Calculate 6 checklist items
+    const items = [];
+
+    // 1. Travelers registered
+    const travelersOk = expectedCount > 0 && passengers.length >= expectedCount;
+    items.push({ done: travelersOk, label: Portal._t('clTravelersRegistered'), detail: `${passengers.length}/${expectedCount}`, section: 'passengers' });
+
+    // 2. Passport details complete
+    const passportsOk = passengers.length > 0 && passengers.every(p => p.passportNumber && p.passportExpiry && p.nationality);
+    items.push({ done: passportsOk, label: Portal._t('clPassportDetails'), section: 'passengers' });
+
+    // 3. Flight details submitted
+    const flightsOk = !!(flights && flights.arrival && flights.arrival.flightNumber && flights.return && flights.return.flightNumber);
+    items.push({ done: flightsOk, label: Portal._t('clFlightDetails'), section: 'flights' });
+
+    // 4. Emergency contacts
+    const emergencyOk = passengers.length > 0 && passengers.every(p => p.emergencyContact);
+    items.push({ done: emergencyOk, label: Portal._t('clEmergencyContacts'), section: 'passengers' });
+
+    // 5. Dietary requirements noted
+    const dietaryOk = passengers.length > 0 && passengers.every(p => p.dietary);
+    items.push({ done: dietaryOk, label: Portal._t('clDietaryRequirements'), section: 'passengers' });
+
+    // 6. Payment complete
+    const paymentOk = !!(invoicesRaw && invoicesRaw.amount && (invoicesRaw.payments || []).reduce((s,p) => s + Number(p.amount), 0) >= Number(invoicesRaw.amount));
+    items.push({ done: paymentOk, label: Portal._t('clPaymentComplete'), section: 'payments' });
+
+    const doneCount = items.filter(i => i.done).length;
+    const pct = Math.round((doneCount / items.length) * 100);
+
+    el.innerHTML = `
+      <div class="checklist-card">
+        <h3 style="font-family:var(--font-display);color:var(--navy);font-size:1.05rem;margin-bottom:0.2rem">${Portal._t('checklistTitle')}</h3>
+        <p style="font-size:0.82rem;color:var(--gray-400);margin-bottom:0.8rem">${Portal._t('checklistDesc')} &mdash; ${doneCount}/6 ${Portal._t('clItemsComplete')}</p>
+        <div class="checklist-progress"><div class="checklist-progress-fill" style="width:${pct}%"></div></div>
+        <div style="display:flex;flex-direction:column;gap:0.1rem">
+          ${items.map(item => `
+            <div class="checklist-item ${item.done ? 'checklist-done' : ''}" onclick="Portal.showSection('${item.section}')">
+              <span class="checklist-icon">${item.done ? '&#10003;' : '&#9675;'}</span>
+              <span>${item.label}</span>
+              ${item.detail ? `<span style="margin-left:auto;font-size:0.78rem;color:var(--gray-400)">${item.detail}</span>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
   },
 
   _fmtCurrency(amount, currency) {

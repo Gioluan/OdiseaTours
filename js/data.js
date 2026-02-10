@@ -792,6 +792,48 @@ const DB = {
     }
   },
 
+  // === FAMILY FLIGHTS (subcollection: tours/{tourId}/familyFlights/{familyId}) ===
+  async saveFamilyFlight(tourId, familyId, flightData) {
+    if (!this._firebaseReady) return false;
+    try {
+      const now = new Date().toISOString();
+      const data = { ...flightData, familyId: String(familyId), updatedAt: now };
+      if (!flightData.createdAt) data.createdAt = now;
+      await this.firestore.collection('tours').doc(String(tourId))
+        .collection('familyFlights').doc(String(familyId)).set(data, { merge: true });
+      return true;
+    } catch (e) {
+      console.warn('saveFamilyFlight failed:', e.message);
+      return false;
+    }
+  },
+
+  async getFamilyFlight(tourId, familyId) {
+    if (!this._firebaseReady) return null;
+    try {
+      const doc = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('familyFlights').doc(String(familyId)).get();
+      return doc.exists ? { id: doc.id, ...doc.data() } : null;
+    } catch (e) {
+      console.warn('getFamilyFlight failed:', e.message);
+      return null;
+    }
+  },
+
+  async getAllFamilyFlights(tourId) {
+    if (!this._firebaseReady) return [];
+    try {
+      const snapshot = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('familyFlights').get();
+      const items = [];
+      snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+      return items;
+    } catch (e) {
+      console.warn('getAllFamilyFlights failed:', e.message);
+      return [];
+    }
+  },
+
   // EXPORT / IMPORT ALL
   exportAll() {
     return JSON.stringify({

@@ -20,6 +20,10 @@ service cloud.firestore {
     match /tours/{tourId}/documents/{docId} {
       allow read: if true;
     }
+    // Family flights (portal submissions)
+    match /tours/{tourId}/familyFlights/{familyId} {
+      allow read, create, update: if true;
+    }
     // Guide portal can read/create/delete expenses and notes
     match /tours/{tourId}/guideExpenses/{expenseId} {
       allow read, create, delete: if true;

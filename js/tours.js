@@ -900,7 +900,7 @@ const Tours = {
         <span><strong>Outstanding:</strong> <span style="color:${totalDue - totalPaidIC > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(totalDue - totalPaidIC, t.currency)}</span></span>
       </div>
       <table class="data-table" style="font-size:0.82rem;margin-bottom:0.8rem">
-        <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Students</th><th>Siblings</th><th>Adults</th><th>Amount Due</th><th>Status</th><th>Portal</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Flights</th><th>Students</th><th>Siblings</th><th>Adults</th><th>Amount Due</th><th>Status</th><th>Portal</th><th>Actions</th></tr></thead>
         <tbody>${clients.map((ic, i) => {
           const inv = invoices.find(iv => iv.individualClientRef === ic.id && iv.tourId === t.id);
           const paid = inv ? (inv.payments || []).reduce((s, p) => s + Number(p.amount), 0) : 0;
@@ -912,6 +912,7 @@ const Tours = {
             <td><strong>${ic.name || '—'}</strong></td>
             <td>${ic.email || '—'}</td>
             <td>${ic.phone || '—'}</td>
+            <td id="fl-status-${t.id}-${ic.id}" style="text-align:center"><span class="spinner" style="width:14px;height:14px;border-width:2px"></span></td>
             <td>${ic.numStudents || 0}</td>
             <td>${ic.numSiblings || 0}</td>
             <td>${ic.numAdults || 0}</td>
@@ -930,7 +931,9 @@ const Tours = {
             </td>
           </tr>`;
         }).join('')}</tbody>
-      </table>` : '<p style="color:var(--gray-400);margin-bottom:0.5rem;font-size:0.85rem">No individual clients added yet. Use this for groups where families pay separately.</p>'}
+      </table>
+      <script>(async()=>{if(!DB._firebaseReady)return;try{const flights=await DB.getAllFamilyFlights('${t.id}');flights.forEach(f=>{const el=document.getElementById('fl-status-${t.id}-'+f.familyId);if(el){const has=f.arrival&&f.arrival.flightNumber;el.innerHTML=has?'<span style="color:var(--green);cursor:pointer" onclick="event.stopPropagation();Tours.viewFamilyFlights(\\\'${t.id}\\\',\\\''+f.familyId+'\\\')" title="View flights">&#10003; View</span>':'<span style="color:var(--gray-300)">&times;</span>';}});${JSON.stringify(clients.map(c=>c.id))}.forEach(cid=>{const el=document.getElementById('fl-status-${t.id}-'+cid);if(el&&el.querySelector('.spinner'))el.innerHTML='<span style="color:var(--gray-300)">&times;</span>';});}catch(e){}})()</script>
+      ` : '<p style="color:var(--gray-400);margin-bottom:0.5rem;font-size:0.85rem">No individual clients added yet. Use this for groups where families pay separately.</p>'}
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
         <button class="btn btn-sm btn-outline" onclick="Tours.addIndividualClient(${t.id})">+ Add Individual Client</button>
         ${isFamilyMode ? `
@@ -1551,6 +1554,14 @@ const Tours = {
           </div>
           <button class="btn btn-sm btn-outline" onclick="Tours.viewPortalPassengers(${t.id})">View Registrations</button>
           <script>(async()=>{if(!DB._firebaseReady)return;try{const s=await DB.firestore.collection('tours').doc('${t.id}').collection('passengers').get();const b=document.getElementById('pax-badge-${t.id}');if(b&&s.size>0){b.textContent=s.size;b.style.display='inline-block';}}catch(e){}})()</script>
+        </div>
+        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+            <h4 style="font-size:0.88rem;color:var(--navy)">Family Flights</h4>
+            <span id="flight-badge-${t.id}" style="background:var(--green);color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px;display:none">0</span>
+          </div>
+          <button class="btn btn-sm btn-outline" onclick="Tours.viewAllFamilyFlights(${t.id})">View All Flights</button>
+          <script>(async()=>{if(!DB._firebaseReady)return;try{const s=await DB.getAllFamilyFlights('${t.id}');const b=document.getElementById('flight-badge-${t.id}');if(b&&s.length>0){b.textContent=s.length;b.style.display='inline-block';}}catch(e){}})()</script>
         </div>
       </div>
       ${hasCode ? `<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${portalUrl}','_blank')">Open Client Portal</button><button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="window.open('https://wa.me/?text='+encodeURIComponent('Hi! Here is the portal for the tour ${(t.tourName||'').replace(/'/g,"\\'")}:\\n${portalUrl}'),'_blank')">WhatsApp Share</button></div>` : ''}
@@ -2283,6 +2294,79 @@ juan@odisea-tours.com`;
               <td>${p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '—'}</td>
             </tr>`).join('')}</tbody>
           </table>` : '<p style="color:var(--gray-400);font-size:0.85rem">No passengers registered through the portal yet.</p>'}
+        </div>
+      </div>`;
+  },
+
+  async viewFamilyFlights(tourId, familyId) {
+    const container = document.getElementById('portal-detail-' + tourId);
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div>';
+
+    const flight = await DB.getFamilyFlight(String(tourId), String(familyId));
+    if (!flight) {
+      container.innerHTML = '<div style="padding:1rem;color:var(--gray-400);font-size:0.85rem">No flight details submitted by this family.</div>';
+      return;
+    }
+
+    const arr = flight.arrival || {};
+    const ret = flight.return || {};
+    const fmtFl = (f) => f.flightNumber
+      ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem 1rem;font-size:0.82rem">
+          <div><strong>Date:</strong> ${f.date || '—'}</div><div><strong>Flight:</strong> ${f.flightNumber || '—'}</div>
+          <div><strong>Airline:</strong> ${f.airline || '—'}</div><div><strong>Terminal:</strong> ${f.terminal || '—'}</div>
+          <div><strong>From:</strong> ${f.departureAirport || '—'} at ${f.departureTime || '—'}</div>
+          <div><strong>To:</strong> ${f.arrivalAirport || '—'} at ${f.arrivalTime || '—'}</div>
+          ${f.notes ? '<div style="grid-column:1/-1"><strong>Notes:</strong> ' + f.notes + '</div>' : ''}
+        </div>`
+      : '<p style="color:var(--gray-300);font-size:0.82rem">Not submitted</p>';
+
+    container.innerHTML = `
+      <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
+        <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+          <span>${flight.familyName || 'Family'} — Flight Details</span>
+          <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">&times; Close</button>
+        </div>
+        <div style="padding:1rem">
+          <h4 style="font-size:0.88rem;color:var(--amber);margin-bottom:0.5rem">Arrival Flight</h4>
+          ${fmtFl(arr)}
+          <h4 style="font-size:0.88rem;color:var(--amber);margin-top:1rem;margin-bottom:0.5rem">Return Flight</h4>
+          ${fmtFl(ret)}
+          <p style="font-size:0.72rem;color:var(--gray-300);margin-top:0.8rem">Last updated: ${flight.updatedAt ? new Date(flight.updatedAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</p>
+        </div>
+      </div>`;
+  },
+
+  async viewAllFamilyFlights(tourId) {
+    const container = document.getElementById('portal-detail-' + tourId);
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div>';
+
+    const flights = await DB.getAllFamilyFlights(String(tourId));
+
+    container.innerHTML = `
+      <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
+        <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+          <span>All Family Flights (${flights.length})</span>
+          <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">&times; Close</button>
+        </div>
+        <div style="padding:1rem">
+          ${flights.length ? `<table class="data-table" style="font-size:0.82rem">
+            <thead><tr><th>Family</th><th>Arr. Date</th><th>Arr. Flight</th><th>Arr. Time</th><th>Ret. Date</th><th>Ret. Flight</th><th>Ret. Time</th></tr></thead>
+            <tbody>${flights.map(f => {
+              const a = f.arrival || {};
+              const r = f.return || {};
+              return `<tr style="cursor:pointer" onclick="Tours.viewFamilyFlights('${tourId}','${f.familyId}')">
+                <td><strong>${f.familyName || f.familyId}</strong></td>
+                <td>${a.date || '—'}</td>
+                <td>${a.flightNumber || '—'}</td>
+                <td>${a.departureTime ? a.departureTime + ' &rarr; ' + (a.arrivalTime||'') : '—'}</td>
+                <td>${r.date || '—'}</td>
+                <td>${r.flightNumber || '—'}</td>
+                <td>${r.departureTime ? r.departureTime + ' &rarr; ' + (r.arrivalTime||'') : '—'}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>` : '<p style="color:var(--gray-400);font-size:0.85rem">No families have submitted flight details yet.</p>'}
         </div>
       </div>`;
   },
