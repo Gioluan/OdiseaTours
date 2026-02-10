@@ -57,7 +57,10 @@ const Tours = {
             <td><span class="badge ${badgeClass(t.status)}">${t.status}</span></td>
             <td style="color:${(t.costs&&t.costs.profit||0)>=0?'var(--green)':'var(--red)'};font-weight:600">${t.costs && t.costs.profit != null ? fmt(t.costs.profit, t.currency) : '—'}</td>
             <td>${tourInvoices.length ? fmt(paidTotal, t.currency) + ' / ' + fmt(invoiceTotal, t.currency) : '—'}</td>
-            <td><button class="btn btn-sm btn-outline" onclick="Tours.viewTour(${t.id})">View</button></td>
+            <td style="display:flex;gap:0.3rem">
+              <button class="btn btn-sm btn-outline" onclick="Tours.viewTour(${t.id})">View</button>
+              <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();if(confirm('Delete tour \\'${t.tourName.replace(/'/g,"\\\\'")}\\' and all its data?')){Tours.deleteTour(${t.id})}" title="Delete tour">✕</button>
+            </td>
           </tr>`;
         }).join('')}</tbody>
       </table>`;
@@ -315,9 +318,19 @@ const Tours = {
   },
 
   deleteTour(id) {
+    const tour = DB.getTours().find(t => t.id === id);
     DB.deleteTour(id);
+    // Revert linked quote status so it can be re-confirmed later
+    if (tour && tour.quoteId) {
+      const q = DB.getQuotes().find(x => x.id === tour.quoteId);
+      if (q && q.status === 'Confirmed') {
+        q.status = 'Negotiating';
+        DB.saveQuote(q);
+      }
+    }
     closeModal('tours-modal');
     this.render();
+    if (typeof CRM !== 'undefined') CRM.render();
     Dashboard.render();
   },
 

@@ -489,6 +489,17 @@ const CRM = {
   convertToTour(id) {
     const q = DB.getQuotes().find(x => x.id === id);
     if (!q) return;
+    // Prevent duplicate: check if a tour already exists for this quote
+    const existingTour = DB.getTours().find(t => t.quoteId === id);
+    if (existingTour) {
+      alert('A confirmed tour already exists for this quote: "' + existingTour.tourName + '". Go to Confirmed Tours to view it.');
+      return;
+    }
+    // Prevent duplicate: check for tour with same name, client and dates
+    const dupTour = DB.getTours().find(t => t.tourName === q.tourName && t.clientName === q.clientName && t.startDate === q.startDate);
+    if (dupTour) {
+      if (!confirm('A tour with the same name, client and start date already exists ("' + dupTour.tourName + '"). Create anyway?')) return;
+    }
     const tour = {
       quoteId: q.id,
       tourName: q.tourName,
