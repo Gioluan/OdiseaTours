@@ -948,6 +948,60 @@ body {
   color: var(--navy);
 }
 
+/* ── MESSAGE TABS ── */
+.msg-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0;
+  background: white;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.msg-tab {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  background: var(--gray-50);
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--gray-400);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.msg-tab:hover {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
+.msg-tab.active {
+  background: white;
+  color: var(--amber);
+  border-bottom-color: var(--amber);
+}
+
+.msg-badge-announce {
+  display: inline-block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--amber);
+  background: rgba(232,145,58,0.1);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  margin-bottom: 0.2rem;
+}
+
+.msg-tabs + .chat-container {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
 /* ── CHAT / MESSAGES ── */
 .chat-container {
   background: white;

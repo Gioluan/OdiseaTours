@@ -900,11 +900,14 @@ const Tours = {
         <span><strong>Outstanding:</strong> <span style="color:${totalDue - totalPaidIC > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(totalDue - totalPaidIC, t.currency)}</span></span>
       </div>
       <table class="data-table" style="font-size:0.82rem;margin-bottom:0.8rem">
-        <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Students</th><th>Siblings</th><th>Adults</th><th>Amount Due</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Students</th><th>Siblings</th><th>Adults</th><th>Amount Due</th><th>Status</th><th>Portal</th><th>Actions</th></tr></thead>
         <tbody>${clients.map((ic, i) => {
           const inv = invoices.find(iv => iv.individualClientRef === ic.id && iv.tourId === t.id);
           const paid = inv ? (inv.payments || []).reduce((s, p) => s + Number(p.amount), 0) : 0;
           const status = !inv ? 'No Invoice' : paid >= Number(inv.amount) ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
+          const famCodes = t.familyAccessCodes || {};
+          const famEntry = famCodes[ic.id];
+          const famCode = famEntry ? famEntry.code : null;
           return `<tr>
             <td><strong>${ic.name || '—'}</strong></td>
             <td>${ic.email || '—'}</td>
@@ -914,6 +917,12 @@ const Tours = {
             <td>${ic.numAdults || 0}</td>
             <td style="font-weight:600">${fmt(ic.amountDue || 0, t.currency)}</td>
             <td><span class="badge ${status === 'Paid' ? 'badge-confirmed' : status === 'Partial' ? 'badge-sent' : status === 'Unpaid' ? 'badge-unpaid' : 'badge-draft'}">${status}</span></td>
+            <td style="white-space:nowrap">${famCode
+              ? `<code style="font-size:0.72rem;background:var(--gray-50);padding:0.1rem 0.3rem;border-radius:3px">${famCode}</code>
+                 <button class="btn btn-sm btn-outline" style="padding:0.1rem 0.3rem;font-size:0.68rem" onclick="event.stopPropagation();Tours.copyFamilyPortalLink(${t.id},'${famCode}')" title="Copy link">Copy</button>
+                 ${famEntry && famEntry.lastAccess ? '<span style="color:var(--green);font-size:0.7rem" title="Last: '+famEntry.lastAccess+'">Active</span>' : '<span style="color:var(--gray-300);font-size:0.7rem">Not used</span>'}`
+              : `<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--blue);color:var(--blue)" onclick="event.stopPropagation();Tours.generateFamilyCode(${t.id},'${ic.id}')">Generate</button>`
+            }</td>
             <td style="white-space:nowrap">
               <button class="btn btn-sm btn-outline" onclick="Tours.editIndividualClient(${t.id},${i})" title="Edit">Edit</button>
               ${!inv ? `<button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.createIndividualInvoice(${t.id},${i})" title="Create invoice">Invoice</button>` : `<button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="PDFQuote.generateInvoice(${inv.id})" title="View PDF">PDF</button>`}
@@ -933,7 +942,9 @@ const Tours = {
         <button class="btn btn-sm btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.importFamiliesFromPortal(${t.id})">Import from Portal</button>
         ` : ''}
         ${clients.length > 0 ? `<button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.autoCalcIndividualAmounts(${t.id})">Auto-Calculate Amounts</button>
-        <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="Tours.createAllIndividualInvoices(${t.id})">Create All Invoices</button>` : ''}
+        <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="Tours.createAllIndividualInvoices(${t.id})">Create All Invoices</button>
+        <button class="btn btn-sm btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.generateAllFamilyCodes(${t.id})">Generate All Portal Codes</button>
+        <button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="Tours.sendAllFamilyInvites(${t.id})">Email All Invites</button>` : ''}
       </div>`;
   },
 
@@ -1550,6 +1561,33 @@ const Tours = {
           <div class="form-group"><label>Wise Payment URL</label><input value="${t.portalPaymentWise || ''}" onchange="Tours.saveOrgField(${t.id},'portalPaymentWise',this.value)" placeholder="https://wise.com/pay/..."></div>
         </div>
       </div>
+      ${(t.individualClients && t.individualClients.length) ? (() => {
+        const famCodes = t.familyAccessCodes || {};
+        const codesGenerated = Object.keys(famCodes).length;
+        const totalFamilies = t.individualClients.length;
+        return `
+        <h4 style="margin-top:1.5rem;margin-bottom:0.5rem;font-size:0.92rem">Family Portal Access <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— ${codesGenerated} of ${totalFamilies} codes generated</span></h4>
+        <table class="data-table" style="font-size:0.82rem;margin-bottom:0.8rem">
+          <thead><tr><th>Family</th><th>Code</th><th>Last Access</th><th>Actions</th></tr></thead>
+          <tbody>${t.individualClients.map(ic => {
+            const entry = famCodes[ic.id];
+            const code = entry ? entry.code : null;
+            return `<tr>
+              <td><strong>${ic.name || '—'}</strong></td>
+              <td>${code ? '<code style="font-family:monospace;font-size:0.85rem;letter-spacing:0.05em">' + code + '</code>' : '<span style="color:var(--gray-300)">Not generated</span>'}</td>
+              <td>${entry && entry.lastAccess ? new Date(entry.lastAccess).toLocaleDateString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--gray-300)">Never</span>'}</td>
+              <td style="white-space:nowrap">${code
+                ? '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.copyFamilyPortalLink(' + t.id + ',\\'' + code + '\\')">Copy Link</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:#25D366;color:#25D366" onclick="Tours.sendFamilyInvite(' + t.id + ',\\'' + ic.id + '\\')">Email</button>'
+                : '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--blue);color:var(--blue)" onclick="Tours.generateFamilyCode(' + t.id + ',\\'' + ic.id + '\\')">Generate</button>'
+              }</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="btn btn-sm btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.generateAllFamilyCodes(${t.id})">Generate All Codes</button>
+          <button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="Tours.sendAllFamilyInvites(${t.id})">Email All Invites</button>
+        </div>`;
+      })() : ''}
       <div id="portal-detail-${t.id}"></div>`;
   },
 
@@ -1558,11 +1596,96 @@ const Tours = {
     if (!t) return;
     t.accessCode = DB.generateAccessCode(t.tourName);
     DB.saveTour(t);
-    // Also sync to Firestore
     if (DB._firebaseReady) {
       DB.syncToFirestore('tours', [t]);
     }
     this.viewTour(tourId);
+  },
+
+  // Generate a family-specific portal code for one individual client
+  generateFamilyCode(tourId, familyId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const ic = (t.individualClients || []).find(c => String(c.id) === String(familyId));
+    if (!ic) return;
+    if (!t.familyAccessCodes) t.familyAccessCodes = {};
+    if (!t.familyAccessCodesList) t.familyAccessCodesList = [];
+    const code = DB.generateFamilyAccessCode(ic.name);
+    t.familyAccessCodes[familyId] = {
+      code: code,
+      generatedAt: new Date().toISOString(),
+      lastAccess: null,
+      accessCount: 0
+    };
+    // Rebuild flat list
+    t.familyAccessCodesList = Object.values(t.familyAccessCodes).map(e => e.code);
+    DB.saveTour(t);
+    if (DB._firebaseReady) DB.syncToFirestore('tours', [t]);
+    this.viewTour(tourId);
+  },
+
+  // Bulk generate family codes for all families that don't have one
+  generateAllFamilyCodes(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.individualClients || !t.individualClients.length) return;
+    if (!t.familyAccessCodes) t.familyAccessCodes = {};
+    if (!t.familyAccessCodesList) t.familyAccessCodesList = [];
+    let generated = 0;
+    t.individualClients.forEach(ic => {
+      if (!t.familyAccessCodes[ic.id]) {
+        const code = DB.generateFamilyAccessCode(ic.name);
+        t.familyAccessCodes[ic.id] = {
+          code: code,
+          generatedAt: new Date().toISOString(),
+          lastAccess: null,
+          accessCount: 0
+        };
+        generated++;
+      }
+    });
+    t.familyAccessCodesList = Object.values(t.familyAccessCodes).map(e => e.code);
+    DB.saveTour(t);
+    if (DB._firebaseReady) DB.syncToFirestore('tours', [t]);
+    if (generated > 0) alert(generated + ' family code(s) generated.');
+    this.viewTour(tourId);
+  },
+
+  // Copy a family portal link to clipboard
+  copyFamilyPortalLink(tourId, code) {
+    const url = `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=${code}`;
+    navigator.clipboard.writeText(url).then(() => {
+      alert('Family portal link copied!');
+    }).catch(() => {
+      prompt('Copy this link:', url);
+    });
+  },
+
+  // Open mailto with family portal invite
+  sendFamilyInvite(tourId, familyId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const ic = (t.individualClients || []).find(c => String(c.id) === String(familyId));
+    if (!ic) return;
+    const entry = (t.familyAccessCodes || {})[familyId];
+    if (!entry) { alert('Generate a code first.'); return; }
+    const url = `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=${entry.code}`;
+    const subject = encodeURIComponent(`Your Portal Access — ${t.tourName}`);
+    const body = encodeURIComponent(
+      `Hi ${ic.name},\n\nHere is your private portal link for the tour "${t.tourName}":\n\n${url}\n\nYou can use this link to:\n- View tour details and itinerary\n- Register your travelers\n- View your payment status\n- Send us private messages\n\nBest regards,\nOdisea Tours`
+    );
+    const email = ic.email || '';
+    window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_self');
+  },
+
+  // Batch email all families
+  sendAllFamilyInvites(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.individualClients) return;
+    const codes = t.familyAccessCodes || {};
+    const withCodes = t.individualClients.filter(ic => codes[ic.id]);
+    if (!withCodes.length) { alert('Generate codes first.'); return; }
+    if (!confirm(`Send invite emails to ${withCodes.length} families?`)) return;
+    withCodes.forEach(ic => this.sendFamilyInvite(tourId, String(ic.id)));
   },
 
   /* ============================================================
@@ -1889,40 +2012,69 @@ const Tours = {
     });
   },
 
+  _adminMsgTab: {}, // tourId -> 'group' | familyId
+
+  _switchAdminMsgTab(tourId, tab) {
+    this._adminMsgTab[tourId] = tab;
+    this.viewMessages(tourId);
+  },
+
   async viewMessages(tourId) {
     const container = document.getElementById('portal-detail-' + tourId);
     if (!container) return;
     container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
 
-    // Reset unread count
     await DB.resetUnreadCount(String(tourId), 'unreadMessagesCount');
 
-    const messages = await DB.getTourMessages(String(tourId));
+    const allMessages = await DB.getTourMessages(String(tourId));
+    const t = DB.getTours().find(x => x.id === tourId);
+    const families = (t && t.individualClients) || [];
+    const activeTab = this._adminMsgTab[tourId] || 'group';
+
+    // Filter messages for active tab
+    let filtered;
+    if (activeTab === 'group') {
+      filtered = allMessages.filter(m => !m.type || m.type === 'group');
+    } else {
+      filtered = allMessages.filter(m => m.type === 'family' && String(m.familyId) === String(activeTab));
+    }
+
+    // Count unread per family thread
+    const familyMsgCounts = {};
+    families.forEach(ic => {
+      familyMsgCounts[ic.id] = allMessages.filter(m => m.type === 'family' && String(m.familyId) === String(ic.id)).length;
+    });
+
     container.innerHTML = `
       <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
         <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
-          <span>Client Messages (${messages.length})</span>
+          <span>Messages</span>
           <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">&times; Close</button>
         </div>
+        ${families.length ? `
+        <div style="display:flex;gap:0;border-bottom:1px solid var(--gray-100);overflow-x:auto">
+          <button class="admin-msg-tab${activeTab === 'group' ? ' active' : ''}" onclick="Tours._switchAdminMsgTab(${tourId},'group')">Group Announcements (${allMessages.filter(m => !m.type || m.type === 'group').length})</button>
+          ${families.map(ic => `<button class="admin-msg-tab${activeTab === String(ic.id) ? ' active' : ''}" onclick="Tours._switchAdminMsgTab(${tourId},'${ic.id}')">${(ic.name||'Family').replace(/'/g,"\\'")} (${familyMsgCounts[ic.id]||0})</button>`).join('')}
+        </div>` : ''}
         <div style="max-height:350px;overflow-y:auto;padding:1rem;background:var(--gray-50)" id="admin-chat-${tourId}">
-          ${messages.length ? messages.map(m => `
+          ${filtered.length ? filtered.map(m => `
             <div style="max-width:85%;padding:0.6rem 0.8rem;border-radius:10px;margin-bottom:0.5rem;font-size:0.85rem;line-height:1.5;${
               m.sender === 'admin'
                 ? 'background:var(--navy);color:white;margin-left:auto;border-bottom-right-radius:3px'
                 : 'background:white;border:1px solid var(--gray-100);border-bottom-left-radius:3px'
             }">
+              ${m.type === 'group' || !m.type ? '<div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.05em;opacity:0.5;margin-bottom:0.2rem">Announcement</div>' : ''}
               <div>${(m.text||'').replace(/</g,'&lt;')}</div>
               <div style="font-size:0.7rem;opacity:0.6;margin-top:0.2rem">${m.sender === 'admin' ? 'You' : (m.senderName || 'Client')} &bull; ${m.timestamp ? new Date(m.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
             </div>
           `).join('') : '<div style="text-align:center;color:var(--gray-400);padding:1rem;font-size:0.85rem">No messages yet.</div>'}
         </div>
         <form style="display:flex;gap:0.5rem;padding:0.8rem 1rem;border-top:1px solid var(--gray-100)" onsubmit="Tours.sendAdminMessage(${tourId},event)">
-          <input type="text" id="admin-msg-input-${tourId}" placeholder="Reply to client..." style="flex:1;padding:0.5rem 0.8rem;border:1.5px solid var(--gray-200);border-radius:20px;font-size:0.85rem">
+          <input type="text" id="admin-msg-input-${tourId}" placeholder="${activeTab === 'group' ? 'Send group announcement...' : 'Reply to family...'}" style="flex:1;padding:0.5rem 0.8rem;border:1.5px solid var(--gray-200);border-radius:20px;font-size:0.85rem">
           <button type="submit" class="btn btn-sm btn-primary" style="border-radius:20px;padding:0.5rem 1rem">Send</button>
         </form>
       </div>`;
 
-    // Scroll to bottom
     const chatEl = document.getElementById('admin-chat-' + tourId);
     if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
   },
@@ -1933,11 +2085,19 @@ const Tours = {
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
-    await DB.sendTourMessage(String(tourId), {
+    const activeTab = this._adminMsgTab[tourId] || 'group';
+    const msg = {
       text: text,
       sender: 'admin',
       senderName: 'Odisea Tours'
-    });
+    };
+    if (activeTab === 'group') {
+      msg.type = 'group';
+    } else {
+      msg.type = 'family';
+      msg.familyId = activeTab;
+    }
+    await DB.sendTourMessage(String(tourId), msg);
     this.viewMessages(tourId);
   },
 

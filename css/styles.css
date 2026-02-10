@@ -1003,6 +1003,32 @@ body {
   flex-shrink: 0;
 }
 
+/* === ADMIN MESSAGE TABS === */
+.admin-msg-tab {
+  padding: 0.5rem 0.8rem;
+  background: var(--gray-50);
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gray-400);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.admin-msg-tab:hover {
+  background: var(--gray-100);
+  color: var(--gray-600);
+}
+
+.admin-msg-tab.active {
+  background: white;
+  color: var(--amber);
+  border-bottom-color: var(--amber);
+}
+
 @media (max-width: 768px) {
   .briefing-header { padding: 1.2rem; }
   .briefing-greeting { font-size: 1.4rem; }

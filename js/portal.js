@@ -5,6 +5,11 @@ const Portal = {
   currentSection: 'overview',
   _messageListener: null,
   _lang: sessionStorage.getItem('portal_lang') || 'en',
+  _portalMode: 'tour',  // 'tour' (full access) or 'family' (scoped)
+  _familyId: null,
+  _familyData: null,
+  _messageTab: 'announcements', // 'announcements' or 'private'
+  _allMessages: [],
   _translations: {
     en: {
       overview: 'Overview', itinerary: 'Itinerary', documents: 'Documents',
@@ -37,7 +42,13 @@ const Portal = {
       submitFeedback: 'Submit Feedback', feedbackThanks: 'Thank you for your feedback!',
       overallExperience: 'Overall Experience', comments: 'Comments',
       roomAssignments: 'Room assignments for your tour', noRoomPlan: 'Room plan is being prepared.',
-      unassigned: 'Unassigned'
+      unassigned: 'Unassigned',
+      familyTravelers: 'Your Travelers', registerFamilyTravelers: 'Register your family travelers',
+      announcements: 'Announcements', privateChat: 'Private Chat',
+      familyMessagesDesc: 'Group announcements and private messages',
+      chatWithOperator: 'Chat with your tour operator',
+      announcementsReadOnly: 'Announcements are read-only. Switch to Private Chat to send a message.',
+      announcement: 'Announcement'
     },
     es: {
       overview: 'Resumen', itinerary: 'Itinerario', documents: 'Documentos',
@@ -70,7 +81,13 @@ const Portal = {
       submitFeedback: 'Enviar Opinion', feedbackThanks: 'Gracias por tu opinion!',
       overallExperience: 'Experiencia General', comments: 'Comentarios',
       roomAssignments: 'Asignacion de habitaciones', noRoomPlan: 'El plan de habitaciones se esta preparando.',
-      unassigned: 'Sin asignar'
+      unassigned: 'Sin asignar',
+      familyTravelers: 'Tus Viajeros', registerFamilyTravelers: 'Registra los viajeros de tu familia',
+      announcements: 'Anuncios', privateChat: 'Chat Privado',
+      familyMessagesDesc: 'Anuncios del grupo y mensajes privados',
+      chatWithOperator: 'Chatea con tu operador turistico',
+      announcementsReadOnly: 'Los anuncios son de solo lectura. Cambia a Chat Privado para enviar un mensaje.',
+      announcement: 'Anuncio'
     }
   },
 
@@ -153,6 +170,9 @@ const Portal = {
     const savedTourId = sessionStorage.getItem('portal_tourId');
 
     if (savedCode && savedTourId) {
+      // Restore family mode from session
+      this._portalMode = sessionStorage.getItem('portal_mode') || 'tour';
+      this._familyId = sessionStorage.getItem('portal_familyId') || null;
       await this.loadTour(savedCode, savedTourId);
     } else if (code) {
       document.getElementById('portal-code-input').value = code;
@@ -186,6 +206,12 @@ const Portal = {
       return;
     }
 
+    // Store portal mode info
+    this._portalMode = tour._portalMode || 'tour';
+    this._familyId = tour._familyId || null;
+    sessionStorage.setItem('portal_mode', this._portalMode);
+    if (this._familyId) sessionStorage.setItem('portal_familyId', this._familyId);
+
     await this.loadTour(code, tour.id);
   },
 
@@ -208,13 +234,38 @@ const Portal = {
       return;
     }
 
+    // Resolve family data if in family mode
+    if (this._portalMode === 'family' && this._familyId) {
+      const ics = this.tourData.individualClients || [];
+      this._familyData = ics.find(ic => String(ic.id) === String(this._familyId)) || null;
+
+      // Track family access
+      try {
+        const famCodes = this.tourData.familyAccessCodes || {};
+        if (famCodes[this._familyId]) {
+          await DB.firestore.collection('tours').doc(this.tourId).update({
+            [`familyAccessCodes.${this._familyId}.lastAccess`]: new Date().toISOString(),
+            [`familyAccessCodes.${this._familyId}.accessCount`]: firebase.firestore.FieldValue.increment(1)
+          });
+        }
+      } catch (_) { /* portal users may lack write access */ }
+    }
+
     // Switch from login to main portal
     document.getElementById('portal-login').style.display = 'none';
     document.getElementById('portal-main').style.display = 'block';
 
     // Update drawer header
-    document.getElementById('drawer-tour-name').textContent = this.tourData.tourName || 'Tour';
-    document.getElementById('drawer-tour-dest').textContent = this.tourData.destination || '';
+    if (this._portalMode === 'family' && this._familyData) {
+      document.getElementById('drawer-tour-name').textContent = this._familyData.name || 'Your Portal';
+      document.getElementById('drawer-tour-dest').textContent = (this.tourData.tourName || '') + ' — ' + (this.tourData.destination || '');
+    } else {
+      document.getElementById('drawer-tour-name').textContent = this.tourData.tourName || 'Tour';
+      document.getElementById('drawer-tour-dest').textContent = this.tourData.destination || '';
+    }
+
+    // Update nav visibility for family mode
+    this._updateNavForMode();
 
     this.showSection('overview');
   },
@@ -222,9 +273,16 @@ const Portal = {
   logout() {
     sessionStorage.removeItem('portal_code');
     sessionStorage.removeItem('portal_tourId');
+    sessionStorage.removeItem('portal_mode');
+    sessionStorage.removeItem('portal_familyId');
     if (this._messageListener) this._messageListener();
     this.tourId = null;
     this.tourData = null;
+    this._portalMode = 'tour';
+    this._familyId = null;
+    this._familyData = null;
+    this._messageTab = 'announcements';
+    this._allMessages = [];
     document.getElementById('portal-login').style.display = 'flex';
     document.getElementById('portal-main').style.display = 'none';
   },
@@ -232,6 +290,15 @@ const Portal = {
   toggleDrawer() {
     document.getElementById('nav-drawer').classList.toggle('open');
     document.getElementById('nav-drawer-overlay').classList.toggle('open');
+  },
+
+  _updateNavForMode() {
+    // In family mode, hide Room Plan (group-level feature)
+    document.querySelectorAll('.nav-drawer-links li').forEach(li => {
+      if (li.dataset.section === 'roomplan') {
+        li.style.display = this._portalMode === 'family' ? 'none' : '';
+      }
+    });
   },
 
   showSection(name) {
@@ -266,6 +333,7 @@ const Portal = {
     const t = this.tourData;
     if (!t) return;
     const container = document.getElementById('section-overview');
+    const isFamily = this._portalMode === 'family' && this._familyData;
 
     // Calculate countdown
     const start = new Date(t.startDate);
@@ -277,11 +345,13 @@ const Portal = {
     else countdownText = Portal._t('tourInProgress');
 
     const groupSize = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
+    const familyTravelers = isFamily ? ((this._familyData.numStudents||0) + (this._familyData.numSiblings||0) + (this._familyData.numAdults||0)) : 0;
 
     container.innerHTML = `
       <div class="hero-card">
-        <h1>${t.tourName || 'Your Tour'}</h1>
-        <div class="hero-dest">${t.destination || ''}</div>
+        ${isFamily ? `<h1>${this._familyData.name || 'Your Portal'}</h1>
+        <div class="hero-dest">${t.tourName || ''} — ${t.destination || ''}</div>` : `<h1>${t.tourName || 'Your Tour'}</h1>
+        <div class="hero-dest">${t.destination || ''}</div>`}
         <div class="countdown-badge">${countdownText}</div>
       </div>
 
@@ -294,6 +364,15 @@ const Portal = {
           <div class="ic-label">${Portal._t('duration')}</div>
           <div class="ic-value">${t.nights || 0} ${Portal._t('nights')}</div>
         </div>
+        ${isFamily ? `
+        <div class="info-card">
+          <div class="ic-label">${Portal._t('familyTravelers')}</div>
+          <div class="ic-value">${familyTravelers} ${Portal._t('travelers')}</div>
+        </div>
+        <div class="info-card">
+          <div class="ic-label">${Portal._t('group')}</div>
+          <div class="ic-value">${t.groupName || t.tourName || '—'}</div>
+        </div>` : `
         <div class="info-card">
           <div class="ic-label">${Portal._t('group')}</div>
           <div class="ic-value">${t.groupName || '—'}</div>
@@ -301,7 +380,7 @@ const Portal = {
         <div class="info-card">
           <div class="ic-label">${Portal._t('groupSize')}</div>
           <div class="ic-value">${groupSize} ${Portal._t('travelers')}</div>
-        </div>
+        </div>`}
       </div>
 
       <div class="action-grid">
@@ -317,10 +396,10 @@ const Portal = {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/></svg>
           <span>${Portal._t('passengers')}</span>
         </button>
-        <button class="action-btn" onclick="Portal.showSection('roomplan')">
+        ${isFamily ? '' : `<button class="action-btn" onclick="Portal.showSection('roomplan')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
           <span>${Portal._t('roomPlan')}</span>
-        </button>
+        </button>`}
         <button class="action-btn" onclick="Portal.showSection('messages')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           <span>${Portal._t('messages')}</span>
@@ -451,28 +530,42 @@ const Portal = {
 
   async renderPassengers() {
     const container = document.getElementById('section-passengers');
+    const isFamily = this._portalMode === 'family' && this._familyData;
     container.innerHTML = `
       <div class="section-header">
-        <h2>Passengers</h2>
-        <p>Register travelers for this tour</p>
+        <h2>${Portal._t('passengers')}</h2>
+        <p>${isFamily ? Portal._t('registerFamilyTravelers') : Portal._t('registerTravelers')}</p>
       </div>
       <div style="text-align:center;padding:2rem"><div class="spinner"></div></div>`;
 
     // Load passengers and invoices in parallel
-    const [passengers, invoices] = await Promise.all([
+    const [allPassengers, invoices] = await Promise.all([
       DB.getTourPassengers(this.tourId),
-      DB.getTourInvoices(this.tourId)
+      isFamily ? DB.getTourInvoicesForFamily(this.tourId, this._familyId) : DB.getTourInvoices(this.tourId)
     ]);
-    this._passengers = passengers;
+    this._passengers = allPassengers;
     this._invoices = invoices;
 
+    // Filter passengers for family mode
+    let passengers = allPassengers;
+    if (isFamily) {
+      const familyName = (this._familyData.name || '').toLowerCase().trim();
+      passengers = allPassengers.filter(p => {
+        if (p.familyId && String(p.familyId) === String(this._familyId)) return true;
+        if (p.family && familyName && p.family.toLowerCase().trim() === familyName) return true;
+        return false;
+      });
+    }
+
     const t = this.tourData;
-    const totalExpected = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
+    const totalExpected = isFamily
+      ? ((this._familyData.numStudents || 0) + (this._familyData.numSiblings || 0) + (this._familyData.numAdults || 0))
+      : ((t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0));
 
     let html = `
       <div class="section-header">
-        <h2>Passengers</h2>
-        <p>${passengers.length} registered${totalExpected ? ' of ' + totalExpected + ' expected' : ''}</p>
+        <h2>${Portal._t('passengers')}</h2>
+        <p>${passengers.length} ${Portal._t('registered')}${totalExpected ? ' ' + Portal._t('ofExpected') + ' ' + totalExpected + ' ' + Portal._t('expected') : ''}</p>
       </div>
 
       ${totalExpected ? `<div class="pax-progress-bar">
@@ -482,7 +575,7 @@ const Portal = {
 
       <button class="add-pax-btn" onclick="Portal.showPassengerForm()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom:2px"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-        Add Passenger
+        ${Portal._t('addPassenger')}
       </button>
       <div id="pax-form-container"></div>`;
 
@@ -633,9 +726,11 @@ const Portal = {
             </select>
           </div>
           <div class="form-group">
-            <label>Family / Group</label>
-            <input id="pf-family" list="family-list" placeholder="e.g. Smith Family" value="${Portal._escapeAttr(p.family || '')}">
-            <datalist id="family-list">${families.map(f => '<option value="' + Portal._escapeAttr(f) + '">').join('')}</datalist>
+            <label>${Portal._t('familyGroup')}</label>
+            ${(this._portalMode === 'family' && this._familyData)
+              ? `<input id="pf-family" value="${Portal._escapeAttr(this._familyData.name || p.family || '')}" readonly style="background:var(--gray-50);color:var(--gray-400)">`
+              : `<input id="pf-family" list="family-list" placeholder="e.g. Smith Family" value="${Portal._escapeAttr(p.family || '')}">
+            <datalist id="family-list">${families.map(f => '<option value="' + Portal._escapeAttr(f) + '">').join('')}</datalist>`}
           </div>
         </div>
         <div class="form-row form-row-2">
@@ -673,6 +768,11 @@ const Portal = {
       emergencyContact: document.getElementById('pf-emergency').value.trim(),
       source: 'portal'
     };
+
+    // Auto-attach familyId when saving in family mode
+    if (this._portalMode === 'family' && this._familyId) {
+      passenger.familyId = this._familyId;
+    }
 
     if (!passenger.firstName || !passenger.lastName) {
       alert('First and last name are required.');
@@ -1090,24 +1190,88 @@ const Portal = {
 
   async renderMessages() {
     const container = document.getElementById('section-messages');
-    container.innerHTML = `
-      <div class="section-header">
-        <h2>Messages</h2>
-        <p>Chat with your tour operator</p>
-      </div>
-      <div class="chat-container">
-        <div class="chat-messages" id="chat-messages">
-          <div style="text-align:center;padding:2rem"><div class="spinner"></div></div>
+    const isFamily = this._portalMode === 'family' && this._familyId;
+
+    if (isFamily) {
+      // Two-tab UI: Announcements (read-only) + Private Chat (2-way)
+      container.innerHTML = `
+        <div class="section-header">
+          <h2>${Portal._t('messages')}</h2>
+          <p>${Portal._t('familyMessagesDesc')}</p>
         </div>
-        <form class="chat-input" onsubmit="Portal.sendMessage(event)">
-          <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off">
-          <button type="submit" class="chat-send-btn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          </button>
-        </form>
-      </div>`;
+        <div class="msg-tabs">
+          <button class="msg-tab${this._messageTab === 'announcements' ? ' active' : ''}" onclick="Portal.switchMessageTab('announcements')">${Portal._t('announcements')}</button>
+          <button class="msg-tab${this._messageTab === 'private' ? ' active' : ''}" onclick="Portal.switchMessageTab('private')">${Portal._t('privateChat')}</button>
+        </div>
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-messages">
+            <div style="text-align:center;padding:2rem"><div class="spinner"></div></div>
+          </div>
+          ${this._messageTab === 'private' ? `
+          <form class="chat-input" onsubmit="Portal.sendMessage(event)">
+            <input type="text" id="chat-input" placeholder="${Portal._t('typeMessage')}" autocomplete="off">
+            <button type="submit" class="chat-send-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </form>` : `
+          <div style="padding:0.8rem 1rem;border-top:1px solid var(--gray-100);text-align:center;color:var(--gray-400);font-size:0.82rem">${Portal._t('announcementsReadOnly')}</div>`}
+        </div>`;
+    } else {
+      // Tour mode: single chat (original)
+      container.innerHTML = `
+        <div class="section-header">
+          <h2>${Portal._t('messages')}</h2>
+          <p>${Portal._t('chatWithOperator')}</p>
+        </div>
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-messages">
+            <div style="text-align:center;padding:2rem"><div class="spinner"></div></div>
+          </div>
+          <form class="chat-input" onsubmit="Portal.sendMessage(event)">
+            <input type="text" id="chat-input" placeholder="${Portal._t('typeMessage')}" autocomplete="off">
+            <button type="submit" class="chat-send-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </form>
+        </div>`;
+    }
 
     this.listenToMessages();
+  },
+
+  switchMessageTab(tab) {
+    this._messageTab = tab;
+    this.renderMessages();
+  },
+
+  _renderFilteredMessages(messages) {
+    const messagesEl = document.getElementById('chat-messages');
+    if (!messagesEl) return;
+    const isFamily = this._portalMode === 'family' && this._familyId;
+
+    let filtered;
+    if (!isFamily) {
+      filtered = messages;
+    } else if (this._messageTab === 'announcements') {
+      filtered = messages.filter(m => !m.type || m.type === 'group');
+    } else {
+      filtered = messages.filter(m => m.type === 'family' && String(m.familyId) === String(this._familyId));
+    }
+
+    if (!filtered.length) {
+      messagesEl.innerHTML = `<div class="empty-state"><p>${Portal._t('noMessages')}</p></div>`;
+      return;
+    }
+
+    messagesEl.innerHTML = filtered.map(m => `
+      <div class="chat-bubble ${m.sender === 'admin' ? 'admin' : 'client'}">
+        ${(m.type === 'group' || !m.type) && isFamily ? '<div class="msg-badge-announce">' + Portal._t('announcement') + '</div>' : ''}
+        <div>${Portal._escapeHtml(m.text || '')}</div>
+        <div class="bubble-meta">${m.sender === 'admin' ? 'Odisea Tours' : (m.senderName || 'You')} \u2022 ${Portal._fmtTime(m.timestamp)}</div>
+      </div>
+    `).join('');
+
+    messagesEl.scrollTop = messagesEl.scrollHeight;
   },
 
   listenToMessages() {
@@ -1115,21 +1279,19 @@ const Portal = {
     const messagesEl = document.getElementById('chat-messages');
     if (!messagesEl) return;
 
-    this._messageListener = DB.listenToTourMessages(this.tourId, messages => {
-      if (!messages.length) {
-        messagesEl.innerHTML = '<div class="empty-state"><p>No messages yet. Start the conversation!</p></div>';
-        return;
-      }
+    const isFamily = this._portalMode === 'family' && this._familyId;
 
-      messagesEl.innerHTML = messages.map(m => `
-        <div class="chat-bubble ${m.sender === 'admin' ? 'admin' : 'client'}">
-          <div>${Portal._escapeHtml(m.text || '')}</div>
-          <div class="bubble-meta">${m.sender === 'admin' ? 'Odisea Tours' : (m.senderName || 'You')} \u2022 ${Portal._fmtTime(m.timestamp)}</div>
-        </div>
-      `).join('');
-
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    });
+    if (isFamily) {
+      this._messageListener = DB.listenToFamilyMessages(this.tourId, this._familyId, (filtered, all) => {
+        this._allMessages = all;
+        this._renderFilteredMessages(filtered);
+      });
+    } else {
+      this._messageListener = DB.listenToTourMessages(this.tourId, messages => {
+        this._allMessages = messages;
+        this._renderFilteredMessages(messages);
+      });
+    }
   },
 
   async sendMessage(event) {
@@ -1139,11 +1301,19 @@ const Portal = {
     if (!text) return;
 
     input.value = '';
-    await DB.sendTourMessage(this.tourId, {
+    const isFamily = this._portalMode === 'family' && this._familyId;
+    const msg = {
       text: text,
       sender: 'client',
-      senderName: this.tourData.groupName || 'Client'
-    });
+      senderName: isFamily ? (this._familyData ? this._familyData.name : 'Family') : (this.tourData.groupName || 'Client')
+    };
+
+    if (isFamily) {
+      msg.type = 'family';
+      msg.familyId = this._familyId;
+    }
+
+    await DB.sendTourMessage(this.tourId, msg);
   },
 
   // ── Forms & Consent ──
@@ -1386,10 +1556,16 @@ const Portal = {
     const t = this.tourData;
     if (!t) return;
 
-    // Load invoices for this tour
+    const isFamily = this._portalMode === 'family' && this._familyId;
+
+    // Load invoices: family-scoped or all
     let invoices = [];
     try {
-      invoices = await DB.getTourInvoices(this.tourId);
+      if (isFamily) {
+        invoices = await DB.getTourInvoicesForFamily(this.tourId, this._familyId);
+      } else {
+        invoices = await DB.getTourInvoices(this.tourId);
+      }
     } catch (e) {}
 
     if (!invoices.length) {

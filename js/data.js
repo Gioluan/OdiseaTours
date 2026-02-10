@@ -378,19 +378,78 @@ const DB = {
     return base + '-' + rand;
   },
 
-  // Query Firestore for a tour by access code
+  // Generate a unique family access code (F-prefix distinguishes from tour codes)
+  generateFamilyAccessCode(familyName) {
+    const base = (familyName || 'FMLY').replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase();
+    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return 'F' + base + '-' + rand;
+  },
+
+  // Query Firestore for a tour by access code (tour code or family code)
   async getTourByAccessCode(code) {
     if (!this._firebaseReady) return null;
     try {
+      // First try tour-level access code
       const snapshot = await this.firestore.collection('tours')
         .where('accessCode', '==', code).limit(1).get();
-      if (snapshot.empty) return null;
-      const doc = snapshot.docs[0];
-      return { id: doc.id, ...doc.data() };
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
+        return { id: doc.id, ...doc.data(), _portalMode: 'tour', _familyId: null };
+      }
+      // Fallback: try family access code
+      const famSnapshot = await this.firestore.collection('tours')
+        .where('familyAccessCodesList', 'array-contains', code).limit(1).get();
+      if (!famSnapshot.empty) {
+        const doc = famSnapshot.docs[0];
+        const tourData = doc.data();
+        // Find which family this code belongs to
+        let familyId = null;
+        const codes = tourData.familyAccessCodes || {};
+        for (const [icId, entry] of Object.entries(codes)) {
+          if (entry.code === code) { familyId = icId; break; }
+        }
+        return { id: doc.id, ...tourData, _portalMode: 'family', _familyId: familyId };
+      }
+      return null;
     } catch (e) {
       console.warn('getTourByAccessCode failed:', e.message);
       return null;
     }
+  },
+
+  // Get invoices for a specific family in a tour
+  async getTourInvoicesForFamily(tourId, familyId) {
+    if (!this._firebaseReady) return [];
+    try {
+      const snapshot = await this.firestore.collection('invoices')
+        .where('tourId', '==', Number(tourId)).get();
+      const items = [];
+      snapshot.forEach(doc => {
+        const inv = { id: doc.id, ...doc.data() };
+        if (String(inv.individualClientRef) === String(familyId)) items.push(inv);
+      });
+      return items;
+    } catch (e) {
+      console.warn('getTourInvoicesForFamily failed:', e.message);
+      return [];
+    }
+  },
+
+  // Real-time listener for family messages (group + this family's private)
+  listenToFamilyMessages(tourId, familyId, callback) {
+    if (!this._firebaseReady) return () => {};
+    return this.firestore.collection('tours').doc(String(tourId))
+      .collection('messages').orderBy('timestamp', 'asc')
+      .onSnapshot(snapshot => {
+        const all = [];
+        snapshot.forEach(doc => all.push({ id: doc.id, ...doc.data() }));
+        // Filter: include group messages + this family's private messages
+        const filtered = all.filter(m =>
+          !m.type || m.type === 'group' ||
+          (m.type === 'family' && String(m.familyId) === String(familyId))
+        );
+        callback(filtered, all);
+      }, err => console.warn('Family message listener error:', err.message));
   },
 
   // Save a passenger to tour's subcollection (portal use)
