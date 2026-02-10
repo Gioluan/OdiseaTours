@@ -1588,7 +1588,7 @@ const Tours = {
               <td>${code ? '<code style="font-family:monospace;font-size:0.85rem;letter-spacing:0.05em">' + code + '</code>' : '<span style="color:var(--gray-300)">Not generated</span>'}</td>
               <td>${entry && entry.lastAccess ? new Date(entry.lastAccess).toLocaleDateString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--gray-300)">Never</span>'}</td>
               <td style="white-space:nowrap">${code
-                ? '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.copyFamilyPortalLink(' + t.id + ',&#39;' + code + '&#39;)">Copy Link</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:#25D366;color:#25D366" onclick="Tours.sendFamilyInvite(' + t.id + ',&#39;' + ic.id + '&#39;)">Email</button>'
+                ? '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.copyFamilyPortalLink(' + t.id + ',&#39;' + code + '&#39;)">Copy Link</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:#25D366;color:#25D366" onclick="Tours.sendFamilyInvite(' + t.id + ',&#39;' + ic.id + '&#39;)">Invite</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--amber);color:var(--amber)" onclick="Tours.sendFamilyWelcome(' + t.id + ',&#39;' + ic.id + '&#39;)">Welcome</button>'
                 : '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--blue);color:var(--blue)" onclick="Tours.generateFamilyCode(' + t.id + ',&#39;' + ic.id + '&#39;)">Generate</button>'
               }</td>
             </tr>`;
@@ -1597,6 +1597,7 @@ const Tours = {
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
           <button class="btn btn-sm btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.generateAllFamilyCodes(${t.id})">Generate All Codes</button>
           <button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="Tours.sendAllFamilyInvites(${t.id})">Email All Invites</button>
+          <button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.sendAllFamilyWelcomes(${t.id})">Welcome All</button>
         </div>`;
       })() : ''}
       <div id="portal-detail-${t.id}"></div>`;
@@ -1707,6 +1708,136 @@ Kind regards,
 Juan
 Odisea Tours
 juan@odisea-tours.com`;
+  },
+
+  // Build family welcome email body (post-registration, with cost + payment schedule + portal link)
+  _familyWelcomeBody(t, ic, url) {
+    const dest = t.destination || 'the destination';
+    const dates = fmtDate(t.startDate) + ' — ' + fmtDate(t.endDate);
+    const nights = t.nights ? ` (${t.nights} nights)` : '';
+    const inv = DB.getInvoices().find(i => i.individualClientRef === ic.id && i.tourId === t.id);
+    const amount = inv ? fmt(inv.amount, t.currency) : (ic.amountDue ? fmt(ic.amountDue, t.currency) : '[amount to be confirmed]');
+
+    // Build payment schedule from invoice milestones or default
+    let paymentSchedule = '';
+    if (inv && inv.milestones && inv.milestones.length) {
+      paymentSchedule = inv.milestones.map(ms =>
+        `- ${fmtDate(ms.dueDate)} — ${ms.label || ms.percent + '%'}: ${fmt(ms.amount || (Number(inv.amount) * ms.percent / 100), t.currency)}`
+      ).join('\n');
+    } else {
+      paymentSchedule = `- March 1st — 20% deposit: ${fmt(Number(inv ? inv.amount : ic.amountDue || 0) * 0.2, t.currency)}
+- May 1st — 30%: ${fmt(Number(inv ? inv.amount : ic.amountDue || 0) * 0.3, t.currency)}
+- June 1st — 30%: ${fmt(Number(inv ? inv.amount : ic.amountDue || 0) * 0.3, t.currency)}
+- Remaining 20%: ${fmt(Number(inv ? inv.amount : ic.amountDue || 0) * 0.2, t.currency)}`;
+    }
+
+    return `Dear ${ic.name},
+
+Thank you for registering for "${t.tourName}" to ${dest}! We're excited to have your family joining the group.
+
+TRIP DETAILS
+Destination: ${dest}
+Dates: ${dates}${nights}
+${t.hotelName ? 'Hotel: ' + t.hotelName + '\n' : ''}${t.mealPlan ? 'Meal Plan: ' + t.mealPlan + '\n' : ''}
+YOUR FAMILY PORTAL
+We've set up a dedicated portal for your family where you can:
+- Register all your travelers (passport details, dietary requirements, etc.)
+- View the full itinerary
+- Add your flight details
+- Access your invoice and track payments
+- Send us private messages with any questions
+
+Access your portal here:
+${url}
+
+COST & PAYMENT SCHEDULE
+Your total: ${amount}
+
+Payment schedule:
+${paymentSchedule}
+
+Payment links are available directly on your portal.
+
+NEXT STEPS
+1. Click the portal link above
+2. Register each family member traveling
+3. Make your first payment by the date shown above
+
+IMPORTANT: This link is unique to your family. Please do not share it with other families as it gives access to your private information.
+
+If you have any questions, reply to this email or use the Messages section in your portal to reach us directly.
+
+We look forward to a fantastic trip!
+
+Kind regards,
+Juan
+Odisea Tours
+juan@odisea-tours.com`;
+  },
+
+  // Open editable email preview for family welcome
+  sendFamilyWelcome(tourId, familyId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const ic = (t.individualClients || []).find(c => String(c.id) === String(familyId));
+    if (!ic) return;
+    const entry = (t.familyAccessCodes || {})[familyId];
+    if (!entry) { alert('Generate a portal code first.'); return; }
+    const url = `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=${entry.code}`;
+    const subject = `Welcome to ${t.tourName} — Your Family Portal is Ready!`;
+    const body = this._familyWelcomeBody(t, ic, url);
+
+    const container = document.getElementById('portal-detail-' + t.id);
+    if (!container) return;
+    container.innerHTML = `
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-top:1rem;border:1.5px solid var(--gray-200)">
+        <h4 style="margin-bottom:0.7rem;font-size:0.92rem">Welcome Email — ${ic.name} <span style="font-weight:400;color:var(--gray-400);font-size:0.8rem">${ic.email || 'no email set'}</span></h4>
+        <div class="form-group" style="margin-bottom:0.5rem">
+          <label style="font-size:0.8rem">To</label>
+          <input id="fam-email-to" value="${(ic.email || '').replace(/"/g, '&quot;')}" placeholder="family@email.com" style="font-size:0.85rem">
+        </div>
+        <div class="form-group" style="margin-bottom:0.5rem">
+          <label style="font-size:0.8rem">Subject</label>
+          <input id="fam-email-subject" value="${subject.replace(/"/g, '&quot;')}" style="font-size:0.85rem">
+        </div>
+        <div class="form-group" style="margin-bottom:0.7rem">
+          <label style="font-size:0.8rem">Body <span style="font-weight:400;color:var(--gray-400)">(edit before sending — customize payment dates & amounts as needed)</span></label>
+          <textarea id="fam-email-body" rows="22" style="font-size:0.82rem;font-family:inherit;line-height:1.5;white-space:pre-wrap">${body.replace(/</g, '&lt;')}</textarea>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="btn btn-primary" style="font-size:0.85rem" onclick="Tours._sendFamilyEmail()">Open in Email Client</button>
+          <button class="btn btn-outline" style="font-size:0.85rem" onclick="Tours._copyFamilyEmail()">Copy to Clipboard</button>
+          <button class="btn btn-outline" style="font-size:0.85rem" onclick="document.getElementById('portal-detail-${t.id}').innerHTML=''">Cancel</button>
+        </div>
+      </div>`;
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  },
+
+  // Batch welcome email all families
+  sendAllFamilyWelcomes(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.individualClients) return;
+    const codes = t.familyAccessCodes || {};
+    const ready = t.individualClients.filter(ic => codes[ic.id] && ic.email);
+    const noCodes = t.individualClients.filter(ic => !codes[ic.id]).length;
+    const noEmail = t.individualClients.filter(ic => codes[ic.id] && !ic.email).length;
+    if (!ready.length) {
+      let msg = 'No families ready to email.';
+      if (noCodes > 0) msg += ` ${noCodes} missing codes.`;
+      if (noEmail > 0) msg += ` ${noEmail} missing email addresses.`;
+      alert(msg);
+      return;
+    }
+    let msg = `Send welcome emails to ${ready.length} families?`;
+    if (noEmail > 0) msg += `\n(${noEmail} families skipped — no email address)`;
+    if (!confirm(msg)) return;
+    ready.forEach(ic => {
+      const entry = codes[ic.id];
+      const url = `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=${entry.code}`;
+      const subject = encodeURIComponent(`Welcome to ${t.tourName} — Your Family Portal is Ready!`);
+      const body = encodeURIComponent(Tours._familyWelcomeBody(t, ic, url));
+      window.open(`mailto:${ic.email}?subject=${subject}&body=${body}`, '_blank');
+    });
   },
 
   // Open editable email preview for family invite
