@@ -18,6 +18,7 @@ const Quote = {
       noGuide: false, numGuides: 1, guideDailyRate: 0, guideFlights: 0, guideAccommodation: 0, guideMeals: 0,
       itinerary: [],
       priceStudent: 0, priceSibling: 0, priceAdult: 0,
+      agentCommission: false, agentName: '', agentCommissionType: 'per_person', agentCommissionAmount: 0,
       clientId: null, clientName: '', clientEmail: '', clientPhone: '', followUpDate: ''
     };
     this.currentStep = 0;
@@ -54,6 +55,10 @@ const Quote = {
       priceStudent: q.priceStudent || 0,
       priceSibling: q.priceSibling || 0,
       priceAdult: q.priceAdult || 0,
+      agentCommission: q.agentCommission || false,
+      agentName: q.agentName || '',
+      agentCommissionType: q.agentCommissionType || 'per_person',
+      agentCommissionAmount: q.agentCommissionAmount || 0,
       clientId: q.clientId || null,
       clientName: q.clientName || '',
       clientEmail: q.clientEmail || '',
@@ -506,6 +511,10 @@ const Quote = {
         d.priceStudent = Number(this.val('q-priceStudent')) || 0;
         d.priceSibling = Number(this.val('q-priceSibling')) || 0;
         d.priceAdult = Number(this.val('q-priceAdult')) || 0;
+        d.agentCommission = document.getElementById('q-agentCommission') ? document.getElementById('q-agentCommission').checked : d.agentCommission;
+        d.agentName = this.val('q-agentName') || '';
+        d.agentCommissionType = this.val('q-agentCommType') || 'per_person';
+        d.agentCommissionAmount = Number(this.val('q-agentCommAmt')) || 0;
         d.followUpDate = this.val('q-followUp');
         break;
     }
@@ -747,9 +756,22 @@ const Quote = {
       return s + a.costPerPerson * pax;
     }, 0);
     const guide = d.noGuide ? 0 : (d.numGuides * d.guideDailyRate * days) + d.guideFlights + d.guideAccommodation + d.guideMeals;
-    const grand = accommodation + meals + transport + activities + guide;
+
+    // Agent commission
+    let agentComm = 0;
+    if (d.agentCommission && d.agentCommissionAmount > 0) {
+      if (d.agentCommissionType === 'per_person') {
+        agentComm = d.agentCommissionAmount * tp;
+      } else {
+        // percent — calculated on subtotal before commission
+        const subtotal = accommodation + meals + transport + activities + guide;
+        agentComm = subtotal * (d.agentCommissionAmount / 100);
+      }
+    }
+
+    const grand = accommodation + meals + transport + activities + guide + agentComm;
     const costPerPerson = paying > 0 ? grand / paying : 0;
-    return { accommodation, meals, flights, transport, activities, guide, grand, totalParticipants: tp, payingParticipants: paying, costPerPerson, days, hotelDetails };
+    return { accommodation, meals, flights, transport, activities, guide, agentComm, grand, totalParticipants: tp, payingParticipants: paying, costPerPerson, days, hotelDetails };
   },
 
   /* --- Summary step --- */
@@ -836,6 +858,7 @@ const Quote = {
         <div class="cost-line"><span>Internal Transport</span><span>${fmt(d.internalTransport, d.currency)}</span></div>
         <div class="cost-line"><span>Activities</span><span>${fmt(c.activities, d.currency)}</span></div>
         ${d.noGuide ? '' : `<div class="cost-line"><span>Guide Costs</span><span>${fmt(c.guide, d.currency)}</span></div>`}
+        ${c.agentComm > 0 ? `<div class="cost-line"><span>Agent Commission${d.agentName ? ' (' + d.agentName + ')' : ''} ${d.agentCommissionType === 'per_person' ? fmt(d.agentCommissionAmount, d.currency) + '/person x ' + c.totalParticipants : d.agentCommissionAmount + '%'}</span><span>${fmt(c.agentComm, d.currency)}</span></div>` : ''}
         <div class="cost-line total"><span>TOTAL COST</span><span class="cost-val">${fmt(c.grand, d.currency)}</span></div>
         <div class="cost-line"><span>Suggested Min. Per Person</span><span>${fmt(c.costPerPerson, d.currency)}</span></div>
       </div>
@@ -858,6 +881,27 @@ const Quote = {
           <div class="pc-currency">${d.currency}</div>
         </div>
       </div>
+      <h3 style="margin-top:1.5rem">Agent Commission</h3>
+      <p style="font-size:0.85rem;color:var(--gray-400);margin-bottom:1rem">If an agent/referrer earns commission on this tour, enable it here.</p>
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem;border:1.5px solid var(--gray-100)">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-weight:600;font-size:0.92rem;margin-bottom:0.8rem">
+          <input type="checkbox" id="q-agentCommission" ${d.agentCommission ? 'checked' : ''} onchange="Quote.toggleAgentCommission(this.checked)">
+          Pay agent commission
+        </label>
+        <div id="agent-commission-fields" style="display:${d.agentCommission ? 'block' : 'none'}">
+          <div class="form-row form-row-3">
+            <div class="form-group"><label>Agent Name</label><input id="q-agentName" placeholder="e.g. John Smith" value="${d.agentName || ''}"></div>
+            <div class="form-group">
+              <label>Commission Type</label>
+              <select id="q-agentCommType" onchange="Quote.updateCommissionLabel()">
+                <option value="per_person" ${d.agentCommissionType === 'per_person' ? 'selected' : ''}>Set Amount per Person</option>
+                <option value="percent" ${d.agentCommissionType === 'percent' ? 'selected' : ''}>Percentage of Costs</option>
+              </select>
+            </div>
+            <div class="form-group"><label id="agent-comm-label">${d.agentCommissionType === 'percent' ? 'Commission %' : 'Amount per Person (' + d.currency + ')'}</label><input id="q-agentCommAmt" type="number" step="0.01" value="${d.agentCommissionAmount || ''}" placeholder="0.00"></div>
+          </div>
+        </div>
+      </div>
       <div style="text-align:center;margin-top:1.2rem">
         <button class="btn btn-primary" style="font-size:1rem;padding:0.7rem 2rem" onclick="Quote.calculateProfit()">Calculate Profit</button>
       </div>
@@ -872,6 +916,13 @@ const Quote = {
     const pb = Number(document.getElementById('q-priceSibling').value) || 0;
     const pa = Number(document.getElementById('q-priceAdult').value) || 0;
     const d = this.data;
+
+    // Sync commission fields before calculating
+    d.agentCommission = document.getElementById('q-agentCommission') ? document.getElementById('q-agentCommission').checked : d.agentCommission;
+    d.agentName = this.val('q-agentName') || '';
+    d.agentCommissionType = this.val('q-agentCommType') || 'per_person';
+    d.agentCommissionAmount = Number(this.val('q-agentCommAmt')) || 0;
+
     const c = this.calculateCosts();
 
     const revenueStudents = ps * d.numStudents;
@@ -886,7 +937,7 @@ const Quote = {
     el.innerHTML = `
       <div style="margin-top:1.2rem;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg)">
         <div style="background:${profit >= 0 ? 'var(--green)' : 'var(--red)'};color:white;padding:1.2rem 1.5rem;text-align:center">
-          <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.08em;opacity:0.85;font-weight:600">Profit</div>
+          <div style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.08em;opacity:0.85;font-weight:600">${c.agentComm > 0 ? 'Net Profit (after commission)' : 'Profit'}</div>
           <div style="font-size:2.2rem;font-weight:700;margin:0.3rem 0">${fmt(profit, d.currency)}</div>
           <div style="font-size:0.9rem;opacity:0.9">Margin: ${margin}% | Per paying person: ${fmt(profitPerPerson, d.currency)}</div>
         </div>
@@ -913,8 +964,14 @@ const Quote = {
               <div style="font-size:0.78rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Cost vs Revenue</div>
               <div style="margin-top:0.5rem">
                 <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid var(--gray-100)">
-                  <span>Total Costs</span><strong style="color:var(--red)">${fmt(c.grand, d.currency)}</strong>
+                  <span>Total Costs (excl. commission)</span><strong style="color:var(--red)">${fmt(c.grand - c.agentComm, d.currency)}</strong>
                 </div>
+                ${c.agentComm > 0 ? `<div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid var(--gray-100)">
+                  <span>Agent Commission${d.agentName ? ' (' + d.agentName + ')' : ''}</span><strong style="color:var(--amber)">${fmt(c.agentComm, d.currency)}</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid var(--gray-100)">
+                  <span>Total Costs (incl. commission)</span><strong style="color:var(--red)">${fmt(c.grand, d.currency)}</strong>
+                </div>` : ''}
                 <div style="display:flex;justify-content:space-between;padding:0.3rem 0;border-bottom:1px solid var(--gray-100)">
                   <span>Total Revenue</span><strong style="color:var(--green)">${fmt(totalRevenue, d.currency)}</strong>
                 </div>
@@ -946,6 +1003,18 @@ const Quote = {
       this.data.guideMeals = 0;
     }
     this.renderStep();
+  },
+
+  toggleAgentCommission(checked) {
+    this.data.agentCommission = checked;
+    const fields = document.getElementById('agent-commission-fields');
+    if (fields) fields.style.display = checked ? 'block' : 'none';
+  },
+
+  updateCommissionLabel() {
+    const type = (document.getElementById('q-agentCommType') || {}).value || 'per_person';
+    const label = document.getElementById('agent-comm-label');
+    if (label) label.textContent = type === 'percent' ? 'Commission %' : 'Amount per Person (' + this.data.currency + ')';
   },
 
   onClientSelect() {
