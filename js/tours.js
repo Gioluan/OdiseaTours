@@ -1660,7 +1660,45 @@ const Tours = {
     });
   },
 
-  // Open mailto with family portal invite
+  // Build family invite email body
+  _familyInviteBody(t, ic, url) {
+    const dest = t.destination || 'the destination';
+    const dates = fmtDate(t.startDate) + ' — ' + fmtDate(t.endDate);
+    const nights = t.nights ? ` (${t.nights} nights)` : '';
+    const inv = DB.getInvoices().find(i => i.individualClientRef === ic.id && i.tourId === t.id);
+    const amountLine = inv ? `\nYour total: ${fmt(inv.amount, t.currency)}` : (ic.amountDue ? `\nYour total: ${fmt(ic.amountDue, t.currency)}` : '');
+    const paymentLines = (t.portalPaymentCard || t.portalPaymentWise) ? '\nPayment options are available directly on your portal.' : '';
+
+    return `Dear ${ic.name},
+
+We are pleased to share your private portal for the upcoming trip "${t.tourName}" to ${dest}.
+
+TRIP DETAILS
+Destination: ${dest}
+Dates: ${dates}${nights}
+${t.hotelName ? 'Hotel: ' + t.hotelName + '\n' : ''}${t.mealPlan ? 'Meal Plan: ' + t.mealPlan + '\n' : ''}
+YOUR PRIVATE PORTAL
+${url}
+
+Through your portal you can:
+- View the full tour details and itinerary
+- Register all travelers in your family (names, passport details, dietary requirements, etc.)
+- Check your payment schedule and make payments online${amountLine}${paymentLines}
+- Send us private messages with any questions
+
+IMPORTANT: This link is unique to your family. Please do not share it with other families as it gives access to your private information.
+
+If you have any questions, you can message us directly through the portal or reply to this email.
+
+We look forward to an amazing trip!
+
+Kind regards,
+Juan
+Odisea Tours
+juan@odisea-tours.com`;
+  },
+
+  // Open editable email preview for family invite
   sendFamilyInvite(tourId, familyId) {
     const t = DB.getTours().find(x => x.id === tourId);
     if (!t) return;
@@ -1669,23 +1707,78 @@ const Tours = {
     const entry = (t.familyAccessCodes || {})[familyId];
     if (!entry) { alert('Generate a code first.'); return; }
     const url = `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=${entry.code}`;
-    const subject = encodeURIComponent(`Your Portal Access — ${t.tourName}`);
-    const body = encodeURIComponent(
-      `Hi ${ic.name},\n\nHere is your private portal link for the tour "${t.tourName}":\n\n${url}\n\nYou can use this link to:\n- View tour details and itinerary\n- Register your travelers\n- View your payment status\n- Send us private messages\n\nBest regards,\nOdisea Tours`
-    );
-    const email = ic.email || '';
-    window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_self');
+    const subject = `Your Portal Access — ${t.tourName}`;
+    const body = this._familyInviteBody(t, ic, url);
+
+    const container = document.getElementById('portal-detail-' + t.id);
+    if (!container) return;
+    container.innerHTML = `
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-top:1rem;border:1.5px solid var(--gray-200)">
+        <h4 style="margin-bottom:0.7rem;font-size:0.92rem">Email Invite — ${ic.name} <span style="font-weight:400;color:var(--gray-400);font-size:0.8rem">${ic.email || 'no email set'}</span></h4>
+        <div class="form-group" style="margin-bottom:0.5rem">
+          <label style="font-size:0.8rem">To</label>
+          <input id="fam-email-to" value="${(ic.email || '').replace(/"/g, '&quot;')}" placeholder="family@email.com" style="font-size:0.85rem">
+        </div>
+        <div class="form-group" style="margin-bottom:0.5rem">
+          <label style="font-size:0.8rem">Subject</label>
+          <input id="fam-email-subject" value="${subject.replace(/"/g, '&quot;')}" style="font-size:0.85rem">
+        </div>
+        <div class="form-group" style="margin-bottom:0.7rem">
+          <label style="font-size:0.8rem">Body <span style="font-weight:400;color:var(--gray-400)">(edit before sending)</span></label>
+          <textarea id="fam-email-body" rows="16" style="font-size:0.82rem;font-family:inherit;line-height:1.5;white-space:pre-wrap">${body.replace(/</g, '&lt;')}</textarea>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="btn btn-primary" style="font-size:0.85rem" onclick="Tours._sendFamilyEmail()">Open in Email Client</button>
+          <button class="btn btn-outline" style="font-size:0.85rem" onclick="Tours._copyFamilyEmail()">Copy to Clipboard</button>
+          <button class="btn btn-outline" style="font-size:0.85rem" onclick="document.getElementById('portal-detail-${t.id}').innerHTML=''">Cancel</button>
+        </div>
+      </div>`;
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   },
 
-  // Batch email all families
+  _sendFamilyEmail() {
+    const to = document.getElementById('fam-email-to').value;
+    const subject = encodeURIComponent(document.getElementById('fam-email-subject').value);
+    const body = encodeURIComponent(document.getElementById('fam-email-body').value);
+    window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_self');
+  },
+
+  _copyFamilyEmail() {
+    const subject = document.getElementById('fam-email-subject').value;
+    const body = document.getElementById('fam-email-body').value;
+    const full = `Subject: ${subject}\n\n${body}`;
+    navigator.clipboard.writeText(full).then(() => {
+      alert('Email copied to clipboard!');
+    }).catch(() => {
+      prompt('Copy this email:', full);
+    });
+  },
+
+  // Batch email all families (opens one at a time)
   sendAllFamilyInvites(tourId) {
     const t = DB.getTours().find(x => x.id === tourId);
     if (!t || !t.individualClients) return;
     const codes = t.familyAccessCodes || {};
-    const withCodes = t.individualClients.filter(ic => codes[ic.id]);
-    if (!withCodes.length) { alert('Generate codes first.'); return; }
-    if (!confirm(`Send invite emails to ${withCodes.length} families?`)) return;
-    withCodes.forEach(ic => this.sendFamilyInvite(tourId, String(ic.id)));
+    const withCodes = t.individualClients.filter(ic => codes[ic.id] && ic.email);
+    const noCodes = t.individualClients.filter(ic => !codes[ic.id]).length;
+    const noEmail = t.individualClients.filter(ic => codes[ic.id] && !ic.email).length;
+    if (!withCodes.length) {
+      let msg = 'No families ready to email.';
+      if (noCodes > 0) msg += ` ${noCodes} missing codes.`;
+      if (noEmail > 0) msg += ` ${noEmail} missing email addresses.`;
+      alert(msg);
+      return;
+    }
+    let msg = `Send invite emails to ${withCodes.length} families?`;
+    if (noEmail > 0) msg += `\n(${noEmail} families skipped — no email address)`;
+    if (!confirm(msg)) return;
+    withCodes.forEach(ic => {
+      const entry = codes[ic.id];
+      const url = `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=${entry.code}`;
+      const subject = encodeURIComponent(`Your Portal Access — ${t.tourName}`);
+      const body = encodeURIComponent(Tours._familyInviteBody(t, ic, url));
+      window.open(`mailto:${ic.email}?subject=${subject}&body=${body}`, '_blank');
+    });
   },
 
   /* ============================================================
