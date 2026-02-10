@@ -1577,8 +1577,8 @@ const Tours = {
               <td>${code ? '<code style="font-family:monospace;font-size:0.85rem;letter-spacing:0.05em">' + code + '</code>' : '<span style="color:var(--gray-300)">Not generated</span>'}</td>
               <td>${entry && entry.lastAccess ? new Date(entry.lastAccess).toLocaleDateString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--gray-300)">Never</span>'}</td>
               <td style="white-space:nowrap">${code
-                ? '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.copyFamilyPortalLink(' + t.id + ',\\'' + code + '\\')">Copy Link</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:#25D366;color:#25D366" onclick="Tours.sendFamilyInvite(' + t.id + ',\\'' + ic.id + '\\')">Email</button>'
-                : '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--blue);color:var(--blue)" onclick="Tours.generateFamilyCode(' + t.id + ',\\'' + ic.id + '\\')">Generate</button>'
+                ? '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.copyFamilyPortalLink(' + t.id + ',&#39;' + code + '&#39;)">Copy Link</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:#25D366;color:#25D366" onclick="Tours.sendFamilyInvite(' + t.id + ',&#39;' + ic.id + '&#39;)">Email</button>'
+                : '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--blue);color:var(--blue)" onclick="Tours.generateFamilyCode(' + t.id + ',&#39;' + ic.id + '&#39;)">Generate</button>'
               }</td>
             </tr>`;
           }).join('')}</tbody>
