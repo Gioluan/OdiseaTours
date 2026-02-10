@@ -194,8 +194,16 @@ const Portal = {
     const savedCode = sessionStorage.getItem('portal_code');
     const savedTourId = sessionStorage.getItem('portal_tourId');
 
-    if (savedCode && savedTourId) {
-      // Restore family mode from session
+    if (code && code.toUpperCase() !== (savedCode || '').toUpperCase()) {
+      // URL code differs from saved session — force fresh login
+      sessionStorage.removeItem('portal_code');
+      sessionStorage.removeItem('portal_tourId');
+      sessionStorage.removeItem('portal_mode');
+      sessionStorage.removeItem('portal_familyId');
+      document.getElementById('portal-code-input').value = code;
+      await this.handleLogin();
+    } else if (savedCode && savedTourId) {
+      // Restore from session
       this._portalMode = sessionStorage.getItem('portal_mode') || 'tour';
       this._familyId = sessionStorage.getItem('portal_familyId') || null;
       await this.loadTour(savedCode, savedTourId);
@@ -308,6 +316,7 @@ const Portal = {
     this._familyData = null;
     this._messageTab = 'announcements';
     this._allMessages = [];
+    this._flightData = null;
     document.getElementById('portal-login').style.display = 'flex';
     document.getElementById('portal-main').style.display = 'none';
   },
