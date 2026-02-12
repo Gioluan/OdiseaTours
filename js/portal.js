@@ -701,7 +701,20 @@ const Portal = {
       </button>
       <div id="pax-form-container"></div>`;
 
+    this._selectedPax = new Set();
+
     if (passengers.length) {
+      html += `
+        <div id="pax-select-toolbar" style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.8rem;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.82rem;font-weight:600;color:var(--gray-500)">
+            <input type="checkbox" id="pax-select-all" onchange="Portal.toggleSelectAll(this.checked)" style="width:16px;height:16px;accent-color:var(--navy)">
+            Select All (${passengers.length})
+          </label>
+          <button id="pax-delete-selected-btn" class="btn-outline btn-sm" style="border-color:var(--red);color:var(--red);display:none;margin-left:auto" onclick="Portal.showDeleteSelectedWarning()">
+            Delete Selected (<span id="pax-selected-count">0</span>)
+          </button>
+        </div>
+        <div id="pax-delete-warning" style="display:none"></div>`;
       html += `<div class="pax-list">`;
       html += passengers.map(p => {
         const initials = ((p.firstName || '')[0] || '') + ((p.lastName || '')[0] || '');
@@ -729,6 +742,7 @@ const Portal = {
         return `
           <div class="pax-card-detail" onclick="Portal.togglePaxDetail('pax-${p.id}')">
             <div class="pax-card-main">
+              <input type="checkbox" class="pax-select-cb" data-pax-id="${p.id}" onclick="event.stopPropagation();Portal.togglePaxSelect('${p.id}',this.checked)" style="width:16px;height:16px;accent-color:var(--navy);flex-shrink:0;cursor:pointer">
               <div class="pax-avatar">${initials.toUpperCase() || '?'}</div>
               <div class="pax-info">
                 <div class="pax-name">${fullName}</div>
@@ -973,6 +987,95 @@ const Portal = {
       alert('Error removing passenger: ' + (err.message || 'Unknown error'));
       if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
     }
+  },
+
+  _selectedPax: new Set(),
+
+  toggleSelectAll(checked) {
+    document.querySelectorAll('.pax-select-cb').forEach(cb => { cb.checked = checked; });
+    this._selectedPax.clear();
+    if (checked) {
+      const isFamily = this._portalMode === 'family' && this._familyData;
+      let passengers = this._passengers;
+      if (isFamily) {
+        const familyName = (this._familyData.name || '').toLowerCase().trim();
+        passengers = passengers.filter(p =>
+          (p.familyId && String(p.familyId) === String(this._familyId)) ||
+          (p.family && familyName && p.family.toLowerCase().trim() === familyName)
+        );
+      }
+      passengers.forEach(p => this._selectedPax.add(p.id));
+    }
+    this._updateSelectUI();
+  },
+
+  togglePaxSelect(id, checked) {
+    if (checked) this._selectedPax.add(id);
+    else this._selectedPax.delete(id);
+    // Update "Select All" checkbox state
+    const allCbs = document.querySelectorAll('.pax-select-cb');
+    const selectAllCb = document.getElementById('pax-select-all');
+    if (selectAllCb) selectAllCb.checked = allCbs.length > 0 && [...allCbs].every(cb => cb.checked);
+    this._updateSelectUI();
+  },
+
+  _updateSelectUI() {
+    const count = this._selectedPax.size;
+    const btn = document.getElementById('pax-delete-selected-btn');
+    const countEl = document.getElementById('pax-selected-count');
+    if (btn) btn.style.display = count > 0 ? '' : 'none';
+    if (countEl) countEl.textContent = count;
+    // Hide warning if deselected everything
+    if (count === 0) {
+      const warning = document.getElementById('pax-delete-warning');
+      if (warning) warning.style.display = 'none';
+    }
+  },
+
+  showDeleteSelectedWarning() {
+    const count = this._selectedPax.size;
+    if (!count) return;
+    const warning = document.getElementById('pax-delete-warning');
+    if (!warning) return;
+    warning.style.display = 'block';
+    warning.innerHTML = `
+      <div style="background:#FEF2F2;border:2px solid var(--red);border-radius:var(--radius-lg);padding:1.2rem;margin-bottom:1rem">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.8rem">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <strong style="color:var(--red);font-size:1rem">Delete ${count} passenger${count !== 1 ? 's' : ''}?</strong>
+        </div>
+        <p style="font-size:0.85rem;color:var(--gray-600);margin-bottom:1rem">This action <strong>cannot be undone</strong>. All selected passenger records will be permanently removed.</p>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn-outline btn-sm" style="border-color:var(--gray-300);color:var(--gray-500)" onclick="document.getElementById('pax-delete-warning').style.display='none'">Cancel</button>
+          <button id="pax-confirm-delete-btn" class="btn-sm" style="background:var(--red);color:white;border:none;padding:0.4rem 1rem;border-radius:var(--radius);font-weight:600;cursor:pointer" onclick="Portal.deleteSelectedPassengers()">Yes, delete ${count} passenger${count !== 1 ? 's' : ''}</button>
+        </div>
+      </div>`;
+    warning.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  },
+
+  async deleteSelectedPassengers() {
+    const ids = [...this._selectedPax];
+    if (!ids.length) return;
+
+    const btn = document.getElementById('pax-confirm-delete-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting... (0/' + ids.length + ')'; }
+
+    let deleted = 0;
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        const result = await DB.deleteTourPassenger(this.tourId, id);
+        if (result) deleted++;
+        else failed++;
+      } catch (e) {
+        failed++;
+      }
+      if (btn) btn.textContent = 'Deleting... (' + (deleted + failed) + '/' + ids.length + ')';
+    }
+
+    this._selectedPax.clear();
+    this._showToast(deleted + ' passenger' + (deleted !== 1 ? 's' : '') + ' deleted' + (failed ? ' (' + failed + ' failed)' : ''));
+    this.renderPassengers();
   },
 
   _showToast(message) {
