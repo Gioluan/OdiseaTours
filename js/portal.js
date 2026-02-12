@@ -1614,6 +1614,8 @@ const Portal = {
       }
     } catch (e) {}
 
+    this._paymentInvoices = invoices;
+
     if (!invoices.length) {
       container.innerHTML = `
         <div class="section-header"><h2>Payments</h2><p>Your payment status</p></div>
@@ -1657,7 +1659,13 @@ const Portal = {
         return `
           <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-bottom:1rem;box-shadow:var(--shadow)">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem">
-              <h3 style="font-size:0.95rem;color:var(--navy)">${inv.number || 'Invoice'}</h3>
+              <div style="display:flex;align-items:center;gap:0.5rem">
+                <h3 style="font-size:0.95rem;color:var(--navy)">${inv.number || 'Invoice'}</h3>
+                <button onclick="Portal.downloadInvoice(${inv.id})" style="background:none;border:1.5px solid var(--navy);color:var(--navy);border-radius:var(--radius);padding:0.2rem 0.5rem;font-size:0.72rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:0.3rem">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  PDF
+                </button>
+              </div>
               <span style="font-weight:700;color:${invBalance <= 0 ? 'var(--green)' : 'var(--red)'}">${Portal._fmtCurrency(invBalance, inv.currency || cur)} ${invBalance <= 0 ? 'PAID' : 'due'}</span>
             </div>
             ${schedule.length ? `
@@ -1692,6 +1700,18 @@ const Portal = {
           ${t.portalPaymentCard ? '<a href="' + Portal._escapeAttr(t.portalPaymentCard) + '" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600">Pay by Card</a>' : ''}
           ${t.portalPaymentWise ? '<a href="' + Portal._escapeAttr(t.portalPaymentWise) + '" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600">Pay via Wise</a>' : ''}
         </div>` : ''}`;
+  },
+
+  downloadInvoice(invoiceId) {
+    const allInv = (this._paymentInvoices || []).concat(this._invoices || []);
+    const inv = allInv.find(x => x.id === invoiceId);
+    if (!inv) { alert('Invoice not found.'); return; }
+    const source = this.tourData || {};
+    if (typeof PDFQuote !== 'undefined' && PDFQuote._openInvoiceWindow) {
+      PDFQuote._openInvoiceWindow(inv, source, PDFQuote.LOGO_URI);
+    } else {
+      alert('PDF generator not available. Please try again.');
+    }
   },
 
   // ── Flights Section ──
