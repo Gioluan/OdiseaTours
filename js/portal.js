@@ -1718,7 +1718,7 @@ const Portal = {
     const mySignatures = signatures[sessionCode] || {};
 
     const formDefs = {
-      terms: { title: 'Terms & Conditions', desc: 'I accept the tour terms and conditions, including cancellation policy and travel insurance requirements.' },
+      terms: { title: 'Terms & Conditions', desc: 'I accept the tour terms and conditions, including <a href="#" onclick="event.preventDefault();Portal.showSection(\'terms\')" style="color:var(--navy);font-weight:600;text-decoration:underline">cancellation policy</a> and <a href="#" onclick="event.preventDefault();Portal.showSection(\'terms\')" style="color:var(--navy);font-weight:600;text-decoration:underline">travel insurance requirements</a>.' },
       medical: { title: 'Medical Declaration', descTour: 'I acknowledge that each family/traveler is solely responsible for disclosing any medical conditions in their passenger registration forms and for confirming that all members of their party are fit to travel. Odisea Tours and the group organizer accept no liability for undisclosed medical conditions.', descFamily: 'I confirm that all medical conditions have been disclosed in the passenger registration forms and that all travelers in my party are fit to travel.' },
       photo: { title: 'Photo Consent', desc: 'I consent to photographs and videos being taken during the tour for promotional and record-keeping purposes.' }
     };
