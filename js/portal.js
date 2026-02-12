@@ -876,42 +876,56 @@ const Portal = {
 
   async savePassenger(event, editId) {
     event.preventDefault();
-    const passenger = {
-      firstName: document.getElementById('pf-first').value.trim(),
-      lastName: document.getElementById('pf-last').value.trim(),
-      role: document.getElementById('pf-role').value,
-      family: document.getElementById('pf-family').value.trim(),
-      dateOfBirth: document.getElementById('pf-dob').value,
-      nationality: document.getElementById('pf-nationality').value.trim(),
-      passportNumber: document.getElementById('pf-passport').value.trim(),
-      passportExpiry: document.getElementById('pf-passport-exp').value,
-      dietary: document.getElementById('pf-dietary').value.trim(),
-      medical: document.getElementById('pf-medical').value.trim(),
-      emergencyContact: document.getElementById('pf-emergency').value.trim(),
-      source: 'portal'
-    };
 
-    // Auto-attach familyId when saving in family mode
-    if (this._portalMode === 'family' && this._familyId) {
-      passenger.familyId = this._familyId;
-    }
+    // Show loading state on submit button
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving...'; }
 
-    if (!passenger.firstName || !passenger.lastName) {
-      alert('First and last name are required.');
-      return;
-    }
+    try {
+      const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+      const passenger = {
+        firstName: val('pf-first').trim(),
+        lastName: val('pf-last').trim(),
+        role: val('pf-role'),
+        family: val('pf-family').trim(),
+        dateOfBirth: val('pf-dob'),
+        nationality: val('pf-nationality').trim(),
+        passportNumber: val('pf-passport').trim(),
+        passportExpiry: val('pf-passport-exp'),
+        dietary: val('pf-dietary').trim(),
+        medical: val('pf-medical').trim(),
+        emergencyContact: val('pf-emergency').trim(),
+        source: 'portal'
+      };
 
-    let result;
-    if (editId) {
-      result = await DB.updateTourPassenger(this.tourId, editId, passenger);
-    } else {
-      result = await DB.saveTourPassenger(this.tourId, passenger);
-    }
+      // Auto-attach familyId when saving in family mode
+      if (this._portalMode === 'family' && this._familyId) {
+        passenger.familyId = this._familyId;
+      }
 
-    if (result) {
-      this.renderPassengers();
-    } else {
-      alert('Failed to save passenger. Please try again.');
+      if (!passenger.firstName || !passenger.lastName) {
+        alert('First and last name are required.');
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = editId ? 'Update Passenger' : 'Save Passenger'; }
+        return;
+      }
+
+      let result;
+      if (editId) {
+        result = await DB.updateTourPassenger(this.tourId, editId, passenger);
+      } else {
+        result = await DB.saveTourPassenger(this.tourId, passenger);
+      }
+
+      if (result) {
+        this.renderPassengers();
+      } else {
+        alert('Failed to save passenger. Please check your connection and try again.');
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = editId ? 'Update Passenger' : 'Save Passenger'; }
+      }
+    } catch (err) {
+      console.error('savePassenger error:', err);
+      alert('Error saving passenger: ' + (err.message || 'Unknown error'));
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = editId ? 'Update Passenger' : 'Save Passenger'; }
     }
   },
 

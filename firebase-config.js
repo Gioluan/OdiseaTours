@@ -23,12 +23,16 @@
        match /tours/{tourId} {
          allow read: if true;
        }
-       // Public can read/create passengers and messages
+       // Public can read/create/update passengers and messages
        match /tours/{tourId}/passengers/{passengerId} {
-         allow read, create: if true;
+         allow read, create, update: if true;
        }
        match /tours/{tourId}/messages/{messageId} {
          allow read, create: if true;
+       }
+       // Tour-level flight details (portal submissions)
+       match /tours/{tourId}/tourFlights/{docId} {
+         allow read, create, update: if true;
        }
        // Public can read documents (download links)
        match /tours/{tourId}/documents/{docId} {
