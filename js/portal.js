@@ -557,6 +557,15 @@ const Portal = {
 
       <div id="overview-checklist"></div>
 
+      <div onclick="Portal.showSection('terms')" style="background:white;border-radius:var(--radius-lg);padding:1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:1rem;cursor:pointer;display:flex;align-items:center;gap:0.8rem">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        <div style="flex:1">
+          <div style="font-size:0.9rem;font-weight:600;color:var(--navy)">${Portal._t('terms')}</div>
+          <div style="font-size:0.78rem;color:var(--gray-400)">${Portal._t('termsCancellation')} &middot; ${Portal._t('termsPayment')}</div>
+        </div>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+
       <div class="contact-card">
         <h4>${Portal._t('tourOperator')}</h4>
         <p><strong>Odisea Tours</strong></p>
