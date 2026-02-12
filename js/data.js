@@ -491,8 +491,21 @@ const DB = {
     if (!this._firebaseReady) { console.error('deleteTourPassenger: Firebase not ready'); return false; }
     if (!passengerId) { console.error('deleteTourPassenger: no passengerId'); return false; }
     try {
-      await this.firestore.collection('tours').doc(String(tourId))
-        .collection('passengers').doc(String(passengerId)).delete();
+      const docRef = this.firestore.collection('tours').doc(String(tourId))
+        .collection('passengers').doc(String(passengerId));
+      // Check if doc exists on server first (catches ghost cache data)
+      try {
+        const doc = await docRef.get({ source: 'server' });
+        if (!doc.exists) {
+          console.warn('deleteTourPassenger: doc not on server (ghost cache), clearing locally');
+          // Force delete from local cache by issuing delete anyway
+          await docRef.delete();
+          return true;
+        }
+      } catch (_) {
+        // If server check fails (offline), proceed with delete normally
+      }
+      await docRef.delete();
       return true;
     } catch (e) {
       console.error('deleteTourPassenger failed:', e.code, e.message);
@@ -500,33 +513,50 @@ const DB = {
     }
   },
 
-  // Get invoices for a tour from Firestore
+  // Get invoices for a tour from Firestore (server-first)
   async getTourInvoices(tourId) {
     if (!this._firebaseReady) return [];
     try {
       const snapshot = await this.firestore.collection('invoices')
-        .where('tourId', '==', Number(tourId)).get();
+        .where('tourId', '==', Number(tourId)).get({ source: 'server' });
       const items = [];
       snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
       return items;
     } catch (e) {
-      console.warn('getTourInvoices failed:', e.message);
-      return [];
+      // Fallback to cache if offline
+      try {
+        const snapshot = await this.firestore.collection('invoices')
+          .where('tourId', '==', Number(tourId)).get({ source: 'cache' });
+        const items = [];
+        snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+        return items;
+      } catch (_) { return []; }
     }
   },
 
-  // Get all passengers from tour subcollection
+  // Get all passengers from tour subcollection (server-first to avoid stale cache)
   async getTourPassengers(tourId) {
     if (!this._firebaseReady) return [];
     try {
+      // Try server first to get fresh data
       const snapshot = await this.firestore.collection('tours').doc(String(tourId))
-        .collection('passengers').orderBy('createdAt', 'desc').get();
+        .collection('passengers').orderBy('createdAt', 'desc').get({ source: 'server' });
       const items = [];
       snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
       return items;
     } catch (e) {
-      console.warn('getTourPassengers failed:', e.message);
-      return [];
+      // Fallback to cache if offline
+      console.warn('getTourPassengers server fetch failed, trying cache:', e.message);
+      try {
+        const snapshot = await this.firestore.collection('tours').doc(String(tourId))
+          .collection('passengers').orderBy('createdAt', 'desc').get({ source: 'cache' });
+        const items = [];
+        snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+        return items;
+      } catch (e2) {
+        console.warn('getTourPassengers cache also failed:', e2.message);
+        return [];
+      }
     }
   },
 
