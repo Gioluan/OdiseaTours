@@ -61,7 +61,7 @@ const Portal = {
       clTravelersRegistered: 'All travelers registered', clPassportDetails: 'Passport details complete',
       clFlightDetails: 'Flight details submitted', clEmergencyContacts: 'Emergency contacts provided',
       clDietaryRequirements: 'Dietary requirements noted', clPaymentComplete: 'Payment complete',
-      clItemsComplete: 'items complete',
+      clFormsSigned: 'Forms & consent signed', clItemsComplete: 'items complete',
       terms: 'Terms & Conditions', termsTitle: 'Terms & Conditions',
       termsIntro: 'By booking a tour with Odisea Tours, you agree to the following terms and conditions. Please read them carefully before confirming your reservation.',
       termsBooking: 'Booking & Confirmation',
@@ -145,7 +145,7 @@ const Portal = {
       clTravelersRegistered: 'Viajeros registrados', clPassportDetails: 'Datos de pasaporte completos',
       clFlightDetails: 'Datos de vuelo enviados', clEmergencyContacts: 'Contactos de emergencia',
       clDietaryRequirements: 'Requisitos dieteticos indicados', clPaymentComplete: 'Pago completado',
-      clItemsComplete: 'elementos completados',
+      clFormsSigned: 'Formularios y consentimientos firmados', clItemsComplete: 'elementos completados',
       terms: 'Terminos y Condiciones', termsTitle: 'Terminos y Condiciones',
       termsIntro: 'Al reservar un tour con Odisea Tours, aceptas los siguientes terminos y condiciones. Por favor, leelos atentamente antes de confirmar tu reserva.',
       termsBooking: 'Reserva y Confirmacion',
@@ -2272,18 +2272,21 @@ const Portal = {
     const t = this.tourData;
 
     // Load data in parallel
-    let passengers = [], flights = null, invoicesRaw = null, roomPlan = [];
+    let passengers = [], flights = null, invoicesRaw = null, roomPlan = [], signatures = {};
+    const sigPromise = DB._firebaseReady ? DB.firestore.collection('tours').doc(this.tourId).collection('consent').doc('signatures').get().then(s => s.exists ? s.data() || {} : {}).catch(() => ({})) : Promise.resolve({});
     try {
       if (isFamily) {
-        [passengers, flights, invoicesRaw] = await Promise.all([
+        [passengers, flights, invoicesRaw, signatures] = await Promise.all([
           DB.firestore ? DB.firestore.collection('tours').doc(this.tourId).collection('passengers').where('familyId', '==', this._familyId).get().then(s => { const a=[]; s.forEach(d => a.push({id:d.id,...d.data()})); return a; }).catch(() => []) : Promise.resolve([]),
           DB.getFamilyFlight(this.tourId, this._familyId),
-          DB._firebaseReady && this._familyData ? Promise.resolve(DB.getInvoices().find(i => i.individualClientRef === this._familyId && i.tourId === this.tourId) || null) : Promise.resolve(null)
+          DB._firebaseReady && this._familyData ? Promise.resolve(DB.getInvoices().find(i => i.individualClientRef === this._familyId && i.tourId === this.tourId) || null) : Promise.resolve(null),
+          sigPromise
         ]);
       } else {
-        [passengers, flights] = await Promise.all([
+        [passengers, flights, signatures] = await Promise.all([
           DB.getTourPassengers(this.tourId),
-          DB.getTourFlights(this.tourId)
+          DB.getTourFlights(this.tourId),
+          sigPromise
         ]);
       }
     } catch (e) {}
@@ -2308,6 +2311,14 @@ const Portal = {
     // 3. Room plan assigned
     const roomOk = roomPlan.length > 0 && assignedCount.size > 0;
     items.push({ done: roomOk, label: Portal._t('roomAssignments').split(' for ')[0] || 'Room plan', detail: roomOk ? `${assignedCount.size} assigned` : '', section: 'roomplan' });
+
+    // 4. Forms & Consent signed
+    const sessionCode = sessionStorage.getItem('portal_code') || 'client';
+    const mySignatures = signatures[sessionCode] || {};
+    const requiredForms = (t && t.requiredForms) || ['terms', 'medical', 'photo'];
+    const signedCount = requiredForms.filter(f => mySignatures[f]).length;
+    const formsOk = signedCount >= requiredForms.length;
+    items.push({ done: formsOk, label: Portal._t('clFormsSigned'), detail: `${signedCount}/${requiredForms.length}`, section: 'forms' });
 
     // Family-mode extras
     if (isFamily) {
