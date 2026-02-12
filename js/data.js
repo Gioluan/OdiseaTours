@@ -488,13 +488,14 @@ const DB = {
 
   // Delete a passenger from tour subcollection
   async deleteTourPassenger(tourId, passengerId) {
-    if (!this._firebaseReady) return false;
+    if (!this._firebaseReady) { console.error('deleteTourPassenger: Firebase not ready'); return false; }
+    if (!passengerId) { console.error('deleteTourPassenger: no passengerId'); return false; }
     try {
       await this.firestore.collection('tours').doc(String(tourId))
-        .collection('passengers').doc(passengerId).delete();
+        .collection('passengers').doc(String(passengerId)).delete();
       return true;
     } catch (e) {
-      console.warn('deleteTourPassenger failed:', e.message);
+      console.error('deleteTourPassenger failed:', e.code, e.message);
       return false;
     }
   },

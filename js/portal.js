@@ -1058,24 +1058,36 @@ const Portal = {
     if (!ids.length) return;
 
     const btn = document.getElementById('pax-confirm-delete-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Deleting... (0/' + ids.length + ')'; }
+    const cancelBtn = btn ? btn.previousElementSibling : null;
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting... 0/' + ids.length; }
+    if (cancelBtn) cancelBtn.style.display = 'none';
 
     let deleted = 0;
     let failed = 0;
-    for (const id of ids) {
+    let lastError = '';
+    for (let i = 0; i < ids.length; i++) {
       try {
-        const result = await DB.deleteTourPassenger(this.tourId, id);
+        const result = await DB.deleteTourPassenger(this.tourId, ids[i]);
         if (result) deleted++;
-        else failed++;
+        else { failed++; lastError = 'Permission denied or not found'; }
       } catch (e) {
         failed++;
+        lastError = e.message || 'Unknown error';
+        console.error('Delete failed for', ids[i], e);
       }
-      if (btn) btn.textContent = 'Deleting... (' + (deleted + failed) + '/' + ids.length + ')';
+      if (btn) btn.textContent = 'Deleting... ' + (i + 1) + '/' + ids.length;
     }
 
     this._selectedPax.clear();
-    this._showToast(deleted + ' passenger' + (deleted !== 1 ? 's' : '') + ' deleted' + (failed ? ' (' + failed + ' failed)' : ''));
-    this.renderPassengers();
+
+    if (failed > 0 && deleted === 0) {
+      alert('Failed to delete passengers. Error: ' + lastError + '\n\nPlease check your connection and try again.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+      if (cancelBtn) cancelBtn.style.display = '';
+    } else {
+      this._showToast(deleted + ' passenger' + (deleted !== 1 ? 's' : '') + ' deleted' + (failed ? ' (' + failed + ' failed)' : ''));
+      this.renderPassengers();
+    }
   },
 
   _showToast(message) {
