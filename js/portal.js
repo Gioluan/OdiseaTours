@@ -155,6 +155,18 @@ const Portal = {
         }
       }
     });
+    // Bottom tab bar labels
+    const tabLabelMap = { overview: 'overview', passengers: 'passengers', flights: 'flights', messages: 'messages', payments: 'payments' };
+    document.querySelectorAll('.bottom-tab').forEach(tab => {
+      const key = tabLabelMap[tab.dataset.section];
+      if (key) { const sp = tab.querySelector('span'); if (sp) sp.textContent = this._t(key); }
+    });
+    // Update header section title if not on overview
+    if (this.currentSection !== 'overview') {
+      const titleEl = document.getElementById('header-section-title');
+      const sectionKeys = { itinerary: 'itinerary', documents: 'documents', passengers: 'passengers', flights: 'flights', roomplan: 'roomPlan', messages: 'messages', forms: 'formsConsent', feedback: 'feedback', payments: 'payments' };
+      if (titleEl && sectionKeys[this.currentSection]) titleEl.textContent = this._t(sectionKeys[this.currentSection]);
+    }
     // Sign out button
     const signOutBtn = document.querySelector('.nav-drawer-footer button');
     if (signOutBtn) signOutBtn.textContent = this._t('signOut');
@@ -351,6 +363,31 @@ const Portal = {
     // Close drawer
     document.getElementById('nav-drawer').classList.remove('open');
     document.getElementById('nav-drawer-overlay').classList.remove('open');
+
+    // Update header: back button + section title
+    const isOverview = name === 'overview';
+    const backBtn = document.getElementById('header-back-btn');
+    const titleEl = document.getElementById('header-section-title');
+    const logoEl = document.getElementById('header-logo');
+    if (backBtn) backBtn.classList.toggle('visible', !isOverview);
+    if (logoEl) logoEl.style.display = isOverview ? '' : 'none';
+    if (titleEl) {
+      titleEl.classList.toggle('visible', !isOverview);
+      const sectionNames = {
+        itinerary: 'Itinerary', documents: 'Documents', passengers: 'Passengers',
+        flights: 'Flights', roomplan: 'Room Plan', messages: 'Messages',
+        forms: 'Forms & Consent', feedback: 'Feedback', payments: 'Payments'
+      };
+      titleEl.textContent = sectionNames[name] || '';
+    }
+
+    // Update bottom tab bar
+    document.querySelectorAll('.bottom-tab').forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.section === name);
+    });
+
+    // Scroll to top
+    window.scrollTo(0, 0);
 
     // Render the section
     switch (name) {
