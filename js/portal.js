@@ -73,10 +73,13 @@ const Portal = {
       termsPaymentP3: 'Payments can be made via bank transfer or the payment methods provided in your client portal.',
       termsCancellation: 'Cancellation Policy',
       termsCancellationP1: 'The deposit paid at the time of booking is non-refundable under any circumstances.',
-      termsCancellationP2: 'If you cancel your booking before the final payment due date, any payments made beyond the deposit will be refunded in full.',
-      termsCancellationP3: 'Cancellations made after the final payment due date or after full payment has been received are non-refundable.',
-      termsCancellationP4: 'All cancellation requests must be submitted in writing via email. The cancellation date is the date the written request is received by Odisea Tours.',
-      termsCancellationP5: 'In the event that Odisea Tours cancels a tour due to unforeseen circumstances, clients will receive a full refund including the deposit.',
+      termsCancellationP2: 'Cancellations are subject to the following refund schedule based on the number of days before the departure date. Refunds apply only to payments made beyond the non-refundable deposit:',
+      termsCancellationTier1: '90 or more days before departure — 75% refund',
+      termsCancellationTier2: '60 to 89 days before departure — 50% refund',
+      termsCancellationTier3: '30 to 59 days before departure — 25% refund',
+      termsCancellationTier4: 'Less than 30 days before departure — no refund',
+      termsCancellationP3: 'All cancellation requests must be submitted in writing via email. The cancellation date is the date the written request is received by Odisea Tours.',
+      termsCancellationP4: 'In the event that Odisea Tours cancels a tour due to unforeseen circumstances, clients will receive a full refund including the deposit.',
       termsChanges: 'Changes & Modifications',
       termsChangesP1: 'Odisea Tours reserves the right to make changes to the itinerary, accommodation, or services if necessary due to circumstances beyond our control (weather, availability, safety, etc.).',
       termsChangesP2: 'If a significant change affects the tour, clients will be notified as early as possible and offered an alternative arrangement or refund where applicable.',
@@ -154,10 +157,13 @@ const Portal = {
       termsPaymentP3: 'Los pagos pueden realizarse mediante transferencia bancaria o los metodos de pago disponibles en tu portal del cliente.',
       termsCancellation: 'Politica de Cancelacion',
       termsCancellationP1: 'El deposito pagado al momento de la reserva no es reembolsable bajo ninguna circunstancia.',
-      termsCancellationP2: 'Si cancelas tu reserva antes de la fecha de vencimiento del pago final, cualquier pago realizado mas alla del deposito sera reembolsado en su totalidad.',
-      termsCancellationP3: 'Las cancelaciones realizadas despues de la fecha de vencimiento del pago final o despues de que se haya recibido el pago completo no son reembolsables.',
-      termsCancellationP4: 'Todas las solicitudes de cancelacion deben enviarse por escrito via correo electronico. La fecha de cancelacion es la fecha en que Odisea Tours recibe la solicitud escrita.',
-      termsCancellationP5: 'En caso de que Odisea Tours cancele un tour por circunstancias imprevistas, los clientes recibiran un reembolso completo incluyendo el deposito.',
+      termsCancellationP2: 'Las cancelaciones estan sujetas al siguiente calendario de reembolsos segun los dias restantes antes de la fecha de salida. Los reembolsos aplican unicamente a los pagos realizados mas alla del deposito no reembolsable:',
+      termsCancellationTier1: '90 o mas dias antes de la salida — 75% de reembolso',
+      termsCancellationTier2: '60 a 89 dias antes de la salida — 50% de reembolso',
+      termsCancellationTier3: '30 a 59 dias antes de la salida — 25% de reembolso',
+      termsCancellationTier4: 'Menos de 30 dias antes de la salida — sin reembolso',
+      termsCancellationP3: 'Todas las solicitudes de cancelacion deben enviarse por escrito via correo electronico. La fecha de cancelacion es la fecha en que Odisea Tours recibe la solicitud escrita.',
+      termsCancellationP4: 'En caso de que Odisea Tours cancele un tour por circunstancias imprevistas, los clientes recibiran un reembolso completo incluyendo el deposito.',
       termsChanges: 'Cambios y Modificaciones',
       termsChangesP1: 'Odisea Tours se reserva el derecho de realizar cambios en el itinerario, alojamiento o servicios si es necesario debido a circunstancias fuera de nuestro control (clima, disponibilidad, seguridad, etc.).',
       termsChangesP2: 'Si un cambio significativo afecta al tour, los clientes seran notificados lo antes posible y se les ofrecera una alternativa o reembolso segun corresponda.',
@@ -2072,9 +2078,22 @@ const Portal = {
         <h3 style="${h3Style};color:var(--red)">3. ${t('termsCancellation')}</h3>
         <p style="${pStyle};font-weight:600">${t('termsCancellationP1')}</p>
         <p style="${pStyle}">${t('termsCancellationP2')}</p>
+        <div style="margin:0.6rem 0 1rem;border-radius:var(--radius);overflow:hidden;border:1px solid var(--gray-100)">
+          <div style="display:flex;align-items:center;padding:0.55rem 0.8rem;background:var(--green);color:white;font-size:0.84rem;font-weight:600;gap:0.5rem">
+            <span style="font-size:1.1rem">90+</span><span style="flex:1">${t('termsCancellationTier1')}</span>
+          </div>
+          <div style="display:flex;align-items:center;padding:0.55rem 0.8rem;background:var(--amber);color:white;font-size:0.84rem;font-weight:600;gap:0.5rem">
+            <span style="font-size:1.1rem">60–89</span><span style="flex:1">${t('termsCancellationTier2')}</span>
+          </div>
+          <div style="display:flex;align-items:center;padding:0.55rem 0.8rem;background:#e67e22;color:white;font-size:0.84rem;font-weight:600;gap:0.5rem">
+            <span style="font-size:1.1rem">30–59</span><span style="flex:1">${t('termsCancellationTier3')}</span>
+          </div>
+          <div style="display:flex;align-items:center;padding:0.55rem 0.8rem;background:var(--red);color:white;font-size:0.84rem;font-weight:600;gap:0.5rem">
+            <span style="font-size:1.1rem">&lt;30</span><span style="flex:1">${t('termsCancellationTier4')}</span>
+          </div>
+        </div>
         <p style="${pStyle}">${t('termsCancellationP3')}</p>
-        <p style="${pStyle}">${t('termsCancellationP4')}</p>
-        <p style="${lastP}">${t('termsCancellationP5')}</p>
+        <p style="${lastP}">${t('termsCancellationP4')}</p>
       </div>
 
       <div style="${sectionStyle}">
