@@ -1565,6 +1565,8 @@ const Tours = {
         </div>
       </div>
       ${hasCode ? `<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${portalUrl}','_blank')">Open Client Portal</button><button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="window.open('https://wa.me/?text='+encodeURIComponent('Hi! Here is the portal for the tour ${(t.tourName||'').replace(/'/g,"\\'")}:\\n${portalUrl}'),'_blank')">WhatsApp Share</button></div>` : ''}
+      <div id="portal-checklist-progress-${t.id}" style="margin-top:1rem"></div>
+      ${hasCode ? `<script>Tours._loadPortalChecklist(${t.id})</script>` : ''}
       <div style="margin-top:0.8rem">
         <h4 style="font-size:0.85rem;margin-bottom:0.4rem">Portal Payment Links <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— shown to clients on portal</span></h4>
         <div class="form-row form-row-2">
@@ -1601,6 +1603,81 @@ const Tours = {
         </div>`;
       })() : ''}
       <div id="portal-detail-${t.id}"></div>`;
+  },
+
+  async _loadPortalChecklist(tourId) {
+    const el = document.getElementById('portal-checklist-progress-' + tourId);
+    if (!el || !DB._firebaseReady) return;
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+
+    el.innerHTML = '<div style="font-size:0.82rem;color:var(--gray-400)">Loading portal progress...</div>';
+
+    try {
+      const tourIdStr = String(tourId);
+      const [paxSnap, flightsDoc, sigDoc] = await Promise.all([
+        DB.firestore.collection('tours').doc(tourIdStr).collection('passengers').get({ source: 'server' }).catch(() => ({ size: 0 })),
+        DB.firestore.collection('tours').doc(tourIdStr).collection('tourFlights').doc('shared').get({ source: 'server' }).catch(() => ({ exists: false })),
+        DB.firestore.collection('tours').doc(tourIdStr).collection('consent').doc('signatures').get({ source: 'server' }).catch(() => ({ exists: false, data: () => ({}) }))
+      ]);
+
+      const expectedPax = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
+      const paxCount = paxSnap.size || 0;
+      const paxOk = paxCount > 0 && (!expectedPax || paxCount >= expectedPax);
+
+      const flightsOk = flightsDoc.exists && flightsDoc.data() && flightsDoc.data().arrival && flightsDoc.data().arrival.flightNumber;
+
+      const roomPlan = t.roomPlan || [];
+      const assignedSet = new Set();
+      roomPlan.forEach(r => (r.passengers || []).forEach(id => assignedSet.add(id)));
+      const roomOk = roomPlan.length > 0 && assignedSet.size > 0;
+
+      const sigs = sigDoc.exists ? sigDoc.data() || {} : {};
+      const requiredForms = t.requiredForms || ['terms', 'medical', 'photo'];
+      // Count total forms signed across all access codes
+      let totalFormsSigned = 0;
+      let totalFormsExpected = 0;
+      const sigEntries = Object.keys(sigs);
+      if (sigEntries.length > 0) {
+        sigEntries.forEach(code => {
+          const mySigs = sigs[code] || {};
+          totalFormsExpected += requiredForms.length;
+          totalFormsSigned += requiredForms.filter(f => mySigs[f]).length;
+        });
+      }
+      const formsOk = sigEntries.length > 0 && totalFormsSigned >= totalFormsExpected;
+
+      const items = [
+        { done: paxOk, label: 'Passengers registered', detail: expectedPax ? `${paxCount}/${expectedPax}` : `${paxCount}` },
+        { done: !!flightsOk, label: 'Flight details submitted', detail: flightsOk ? 'Done' : 'Pending' },
+        { done: roomOk, label: 'Room plan assigned', detail: roomOk ? `${assignedSet.size} assigned` : 'Pending' },
+        { done: formsOk, label: 'Forms & consent signed', detail: sigEntries.length > 0 ? `${totalFormsSigned}/${totalFormsExpected}` : '0 signatures' }
+      ];
+      const doneCount = items.filter(i => i.done).length;
+      const pct = Math.round(doneCount / items.length * 100);
+
+      const barColor = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
+
+      el.innerHTML = `
+        <div style="background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
+            <h4 style="font-size:0.88rem;color:var(--navy)">Client Portal Progress</h4>
+            <span style="font-size:0.82rem;font-weight:700;color:${barColor}">${doneCount}/${items.length} complete</span>
+          </div>
+          <div style="background:var(--gray-100);border-radius:8px;height:8px;overflow:hidden;margin-bottom:0.8rem">
+            <div style="background:${barColor};height:100%;width:${pct}%;border-radius:8px;transition:width 0.5s"></div>
+          </div>
+          ${items.map(item => `
+            <div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;font-size:0.84rem;${item.done ? 'color:var(--gray-400)' : 'color:var(--navy)'}">
+              <span style="color:${item.done ? 'var(--green)' : 'var(--gray-300)';};font-size:1rem">${item.done ? '\u2713' : '\u25CB'}</span>
+              <span style="flex:1;${item.done ? 'text-decoration:line-through' : ''}">${item.label}</span>
+              <span style="font-size:0.78rem;color:var(--gray-400)">${item.detail}</span>
+            </div>
+          `).join('')}
+        </div>`;
+    } catch (e) {
+      el.innerHTML = '<div style="font-size:0.82rem;color:var(--gray-400)">Could not load portal progress.</div>';
+    }
   },
 
   generateAccessCode(tourId) {

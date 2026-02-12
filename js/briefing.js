@@ -134,6 +134,14 @@ const Briefing = {
       }
     });
 
+    // Portal checklist notifications (loaded async, injected after render)
+    const portalChecklistTours = tours.filter(t => {
+      if (!t.accessCode || t.status === 'Completed') return false;
+      const start = new Date(t.startDate);
+      const daysUntil = Math.ceil((start - today) / 86400000);
+      return daysUntil >= 0 && daysUntil <= 30;
+    });
+
     // === THIS WEEK OVERVIEW ===
     const weekEnd = new Date(today.getTime() + 7 * 86400000);
     const toursThisWeek = tours.filter(t => {
@@ -269,6 +277,9 @@ const Briefing = {
         </div>
       ` : ''}
 
+      <!-- Portal Checklist Alerts -->
+      <div id="briefing-portal-alerts"></div>
+
       <!-- This Week -->
       <div class="briefing-section week">
         <div class="bs-header"><h2>THIS WEEK</h2></div>
@@ -351,6 +362,97 @@ const Briefing = {
         </div>
       </div>
     `;
+
+    // Load portal checklist progress asynchronously
+    if (portalChecklistTours.length && DB._firebaseReady) {
+      this._loadPortalAlerts(portalChecklistTours, today);
+    }
+  },
+
+  async _loadPortalAlerts(portalTours, today) {
+    const el = document.getElementById('briefing-portal-alerts');
+    if (!el) return;
+
+    const alerts = [];
+    for (const t of portalTours) {
+      try {
+        const tourIdStr = String(t.id);
+        const [paxSnap, flightsDoc, sigDoc] = await Promise.all([
+          DB.firestore.collection('tours').doc(tourIdStr).collection('passengers').get({ source: 'server' }).catch(() => ({ size: 0 })),
+          DB.firestore.collection('tours').doc(tourIdStr).collection('tourFlights').doc('shared').get({ source: 'server' }).catch(() => ({ exists: false })),
+          DB.firestore.collection('tours').doc(tourIdStr).collection('consent').doc('signatures').get({ source: 'server' }).catch(() => ({ exists: false, data: () => ({}) }))
+        ]);
+
+        const expectedPax = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
+        const paxCount = paxSnap.size || 0;
+        const paxOk = paxCount > 0 && (!expectedPax || paxCount >= expectedPax);
+        const flightsOk = flightsDoc.exists && flightsDoc.data() && flightsDoc.data().arrival && flightsDoc.data().arrival.flightNumber;
+        const roomPlan = t.roomPlan || [];
+        const assignedSet = new Set();
+        roomPlan.forEach(r => (r.passengers || []).forEach(id => assignedSet.add(id)));
+        const roomOk = roomPlan.length > 0 && assignedSet.size > 0;
+        const sigs = sigDoc.exists ? sigDoc.data() || {} : {};
+        const requiredForms = t.requiredForms || ['terms', 'medical', 'photo'];
+        const sigEntries = Object.keys(sigs);
+        let formsSigned = 0, formsExpected = 0;
+        if (sigEntries.length > 0) {
+          sigEntries.forEach(code => {
+            const ms = sigs[code] || {};
+            formsExpected += requiredForms.length;
+            formsSigned += requiredForms.filter(f => ms[f]).length;
+          });
+        }
+        const formsOk = sigEntries.length > 0 && formsSigned >= formsExpected;
+
+        const items = [
+          { done: paxOk, label: 'Passengers', short: expectedPax ? `${paxCount}/${expectedPax}` : `${paxCount}` },
+          { done: !!flightsOk, label: 'Flights' },
+          { done: roomOk, label: 'Rooms' },
+          { done: formsOk, label: 'Forms', short: sigEntries.length > 0 ? `${formsSigned}/${formsExpected}` : '0' }
+        ];
+        const doneCount = items.filter(i => i.done).length;
+        if (doneCount < items.length) {
+          const start = new Date(t.startDate);
+          const daysUntil = Math.ceil((start - today) / 86400000);
+          const missing = items.filter(i => !i.done).map(i => i.short ? `${i.label} (${i.short})` : i.label).join(', ');
+          alerts.push({
+            tourId: t.id,
+            tourName: t.tourName,
+            daysUntil,
+            doneCount,
+            total: items.length,
+            missing,
+            severity: daysUntil <= 7 ? 'critical' : daysUntil <= 14 ? 'high' : 'medium'
+          });
+        }
+      } catch (e) {}
+    }
+
+    if (!alerts.length) return;
+    alerts.sort((a, b) => a.daysUntil - b.daysUntil);
+
+    el.innerHTML = `
+      <div class="briefing-section" style="border-left:4px solid var(--amber)">
+        <div class="bs-header">
+          <h2>PORTAL CHECKLIST ALERTS</h2>
+          <span class="bs-count">${alerts.length}</span>
+        </div>
+        <div class="bs-items">
+          ${alerts.map(a => {
+            const pct = Math.round(a.doneCount / a.total * 100);
+            const sevColor = a.severity === 'critical' ? 'var(--red)' : a.severity === 'high' ? 'var(--amber)' : 'var(--blue)';
+            return `
+            <div class="bs-item ${a.severity}" onclick="App.switchTab('tours');setTimeout(()=>Tours.viewTour(${a.tourId}),100)" style="cursor:pointer">
+              <span class="bs-icon">\u{1F4CB}</span>
+              <div class="bs-text">
+                <div class="bs-title">${a.tourName} — ${a.daysUntil} day${a.daysUntil !== 1 ? 's' : ''} to departure</div>
+                <div class="bs-detail">Portal ${a.doneCount}/${a.total} complete (${pct}%). Missing: ${a.missing}</div>
+              </div>
+              <svg class="bs-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
   },
 
   _buildPriorities(urgent, todayActions, toursThisWeek, invoicesDueThisWeek, quotesActive) {
