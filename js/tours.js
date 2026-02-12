@@ -304,8 +304,14 @@ const Tours = {
         <button class="btn btn-danger" onclick="if(confirm('Delete this tour?')){Tours.deleteTour(${t.id})}">Delete</button>
         <button class="btn btn-outline" onclick="closeModal('tours-modal')">Close</button>
       </div>`;
-    // Initialize map after innerHTML is set
-    setTimeout(() => this._initMap(), 100);
+    // Initialize map and load async portal data after innerHTML is set
+    setTimeout(() => {
+      this._initMap();
+      if (t.accessCode && DB._firebaseReady) {
+        this._loadPortalChecklist(t.id);
+        this._loadPortalBadges(t.id);
+      }
+    }, 100);
   },
 
   updateStatus(id, status) {
@@ -1553,7 +1559,6 @@ const Tours = {
             <span id="pax-badge-${t.id}" style="background:var(--blue);color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px;display:none">0</span>
           </div>
           <button class="btn btn-sm btn-outline" onclick="Tours.viewPortalPassengers(${t.id})">View Registrations</button>
-          <script>(async()=>{if(!DB._firebaseReady)return;try{const s=await DB.firestore.collection('tours').doc('${t.id}').collection('passengers').get();const b=document.getElementById('pax-badge-${t.id}');if(b&&s.size>0){b.textContent=s.size;b.style.display='inline-block';}}catch(e){}})()</script>
         </div>
         <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
@@ -1561,12 +1566,10 @@ const Tours = {
             <span id="flight-badge-${t.id}" style="background:var(--green);color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px;display:none">0</span>
           </div>
           <button class="btn btn-sm btn-outline" onclick="Tours.viewAllFamilyFlights(${t.id})">View All Flights</button>
-          <script>(async()=>{if(!DB._firebaseReady)return;try{const s=await DB.getAllFamilyFlights('${t.id}');const b=document.getElementById('flight-badge-${t.id}');if(b&&s.length>0){b.textContent=s.length;b.style.display='inline-block';}}catch(e){}})()</script>
         </div>
       </div>
       ${hasCode ? `<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${portalUrl}','_blank')">Open Client Portal</button><button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="window.open('https://wa.me/?text='+encodeURIComponent('Hi! Here is the portal for the tour ${(t.tourName||'').replace(/'/g,"\\'")}:\\n${portalUrl}'),'_blank')">WhatsApp Share</button></div>` : ''}
       <div id="portal-checklist-progress-${t.id}" style="margin-top:1rem"></div>
-      ${hasCode ? `<script>Tours._loadPortalChecklist(${t.id})</script>` : ''}
       <div style="margin-top:0.8rem">
         <h4 style="font-size:0.85rem;margin-bottom:0.4rem">Portal Payment Links <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— shown to clients on portal</span></h4>
         <div class="form-row form-row-2">
@@ -1603,6 +1606,20 @@ const Tours = {
         </div>`;
       })() : ''}
       <div id="portal-detail-${t.id}"></div>`;
+  },
+
+  async _loadPortalBadges(tourId) {
+    if (!DB._firebaseReady) return;
+    try {
+      const [paxSnap, flights] = await Promise.all([
+        DB.firestore.collection('tours').doc(String(tourId)).collection('passengers').get({ source: 'server' }).catch(() => ({ size: 0 })),
+        DB.getAllFamilyFlights(String(tourId)).catch(() => [])
+      ]);
+      const paxBadge = document.getElementById('pax-badge-' + tourId);
+      if (paxBadge && paxSnap.size > 0) { paxBadge.textContent = paxSnap.size; paxBadge.style.display = 'inline-block'; }
+      const flightBadge = document.getElementById('flight-badge-' + tourId);
+      if (flightBadge && flights.length > 0) { flightBadge.textContent = flights.length; flightBadge.style.display = 'inline-block'; }
+    } catch (e) {}
   },
 
   async _loadPortalChecklist(tourId) {
@@ -1669,7 +1686,7 @@ const Tours = {
           </div>
           ${items.map(item => `
             <div style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;font-size:0.84rem;${item.done ? 'color:var(--gray-400)' : 'color:var(--navy)'}">
-              <span style="color:${item.done ? 'var(--green)' : 'var(--gray-300)';};font-size:1rem">${item.done ? '\u2713' : '\u25CB'}</span>
+              <span style="color:${item.done ? 'var(--green)' : 'var(--gray-300)'};font-size:1rem">${item.done ? '\u2713' : '\u25CB'}</span>
               <span style="flex:1;${item.done ? 'text-decoration:line-through' : ''}">${item.label}</span>
               <span style="font-size:0.78rem;color:var(--gray-400)">${item.detail}</span>
             </div>
