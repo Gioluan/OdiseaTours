@@ -61,7 +61,37 @@ const Portal = {
       clTravelersRegistered: 'All travelers registered', clPassportDetails: 'Passport details complete',
       clFlightDetails: 'Flight details submitted', clEmergencyContacts: 'Emergency contacts provided',
       clDietaryRequirements: 'Dietary requirements noted', clPaymentComplete: 'Payment complete',
-      clItemsComplete: 'items complete'
+      clItemsComplete: 'items complete',
+      terms: 'Terms & Conditions', termsTitle: 'Terms & Conditions',
+      termsIntro: 'By booking a tour with Odisea Tours, you agree to the following terms and conditions. Please read them carefully before confirming your reservation.',
+      termsBooking: 'Booking & Confirmation',
+      termsBookingP1: 'A booking is confirmed once the required deposit has been received by Odisea Tours. A confirmation email with your tour details and access code will be sent upon receipt of payment.',
+      termsBookingP2: 'All travelers must be registered through the client portal with accurate passport and personal details. Odisea Tours is not responsible for issues arising from incorrect information provided by the client.',
+      termsPayment: 'Payment Terms',
+      termsPaymentP1: 'A non-refundable deposit is required at the time of booking to secure your reservation. The deposit amount will be specified in your invoice.',
+      termsPaymentP2: 'The remaining balance must be paid in full by the due date indicated on your invoice. Failure to pay by the due date may result in cancellation of your booking.',
+      termsPaymentP3: 'Payments can be made via bank transfer or the payment methods provided in your client portal.',
+      termsCancellation: 'Cancellation Policy',
+      termsCancellationP1: 'The deposit paid at the time of booking is non-refundable under any circumstances.',
+      termsCancellationP2: 'If you cancel your booking before the final payment due date, any payments made beyond the deposit will be refunded in full.',
+      termsCancellationP3: 'Cancellations made after the final payment due date or after full payment has been received are non-refundable.',
+      termsCancellationP4: 'All cancellation requests must be submitted in writing via email. The cancellation date is the date the written request is received by Odisea Tours.',
+      termsCancellationP5: 'In the event that Odisea Tours cancels a tour due to unforeseen circumstances, clients will receive a full refund including the deposit.',
+      termsChanges: 'Changes & Modifications',
+      termsChangesP1: 'Odisea Tours reserves the right to make changes to the itinerary, accommodation, or services if necessary due to circumstances beyond our control (weather, availability, safety, etc.).',
+      termsChangesP2: 'If a significant change affects the tour, clients will be notified as early as possible and offered an alternative arrangement or refund where applicable.',
+      termsChangesP3: 'Client-requested changes to bookings (dates, names, services) are subject to availability and may incur additional fees.',
+      termsTravel: 'Travel Requirements',
+      termsTravelP1: 'It is the responsibility of each traveler to ensure they have valid travel documents (passport, visa, etc.) for the duration of the trip. Odisea Tours is not liable for denied boarding or entry due to insufficient documentation.',
+      termsTravelP2: 'Odisea Tours strongly recommends that all travelers obtain comprehensive travel insurance covering cancellation, medical emergencies, luggage loss, and repatriation.',
+      termsLiability: 'Liability',
+      termsLiabilityP1: 'Odisea Tours acts as an organizer and intermediary between clients and third-party service providers (hotels, transport companies, activity providers). We are not liable for any injury, loss, damage, or delay caused by these third parties.',
+      termsLiabilityP2: 'Odisea Tours is not responsible for events beyond our control, including but not limited to natural disasters, pandemics, strikes, political unrest, or travel restrictions imposed by governments.',
+      termsConduct: 'Code of Conduct',
+      termsConductP1: 'All travelers are expected to behave responsibly and respectfully throughout the tour. Odisea Tours reserves the right to remove any participant whose behavior disrupts the group or endangers others, without refund.',
+      termsContact: 'Contact',
+      termsContactP1: 'For any questions regarding these terms, please contact your tour operator through the messages section of your client portal or via the contact details provided in your booking confirmation.',
+      termsLastUpdated: 'Last updated'
     },
     es: {
       overview: 'Resumen', itinerary: 'Itinerario', documents: 'Documentos',
@@ -112,7 +142,37 @@ const Portal = {
       clTravelersRegistered: 'Viajeros registrados', clPassportDetails: 'Datos de pasaporte completos',
       clFlightDetails: 'Datos de vuelo enviados', clEmergencyContacts: 'Contactos de emergencia',
       clDietaryRequirements: 'Requisitos dieteticos indicados', clPaymentComplete: 'Pago completado',
-      clItemsComplete: 'elementos completados'
+      clItemsComplete: 'elementos completados',
+      terms: 'Terminos y Condiciones', termsTitle: 'Terminos y Condiciones',
+      termsIntro: 'Al reservar un tour con Odisea Tours, aceptas los siguientes terminos y condiciones. Por favor, leelos atentamente antes de confirmar tu reserva.',
+      termsBooking: 'Reserva y Confirmacion',
+      termsBookingP1: 'Una reserva se confirma una vez que Odisea Tours recibe el deposito requerido. Se enviara un correo de confirmacion con los detalles del tour y el codigo de acceso al recibir el pago.',
+      termsBookingP2: 'Todos los viajeros deben registrarse a traves del portal del cliente con datos de pasaporte e informacion personal correctos. Odisea Tours no se responsabiliza de problemas derivados de informacion incorrecta proporcionada por el cliente.',
+      termsPayment: 'Condiciones de Pago',
+      termsPaymentP1: 'Se requiere un deposito no reembolsable al momento de la reserva para asegurar tu plaza. El monto del deposito se especificara en tu factura.',
+      termsPaymentP2: 'El saldo restante debe pagarse en su totalidad antes de la fecha de vencimiento indicada en tu factura. El incumplimiento del pago puede resultar en la cancelacion de tu reserva.',
+      termsPaymentP3: 'Los pagos pueden realizarse mediante transferencia bancaria o los metodos de pago disponibles en tu portal del cliente.',
+      termsCancellation: 'Politica de Cancelacion',
+      termsCancellationP1: 'El deposito pagado al momento de la reserva no es reembolsable bajo ninguna circunstancia.',
+      termsCancellationP2: 'Si cancelas tu reserva antes de la fecha de vencimiento del pago final, cualquier pago realizado mas alla del deposito sera reembolsado en su totalidad.',
+      termsCancellationP3: 'Las cancelaciones realizadas despues de la fecha de vencimiento del pago final o despues de que se haya recibido el pago completo no son reembolsables.',
+      termsCancellationP4: 'Todas las solicitudes de cancelacion deben enviarse por escrito via correo electronico. La fecha de cancelacion es la fecha en que Odisea Tours recibe la solicitud escrita.',
+      termsCancellationP5: 'En caso de que Odisea Tours cancele un tour por circunstancias imprevistas, los clientes recibiran un reembolso completo incluyendo el deposito.',
+      termsChanges: 'Cambios y Modificaciones',
+      termsChangesP1: 'Odisea Tours se reserva el derecho de realizar cambios en el itinerario, alojamiento o servicios si es necesario debido a circunstancias fuera de nuestro control (clima, disponibilidad, seguridad, etc.).',
+      termsChangesP2: 'Si un cambio significativo afecta al tour, los clientes seran notificados lo antes posible y se les ofrecera una alternativa o reembolso segun corresponda.',
+      termsChangesP3: 'Los cambios solicitados por el cliente (fechas, nombres, servicios) estan sujetos a disponibilidad y pueden generar cargos adicionales.',
+      termsTravel: 'Requisitos de Viaje',
+      termsTravelP1: 'Es responsabilidad de cada viajero asegurarse de tener documentos de viaje validos (pasaporte, visa, etc.) durante todo el viaje. Odisea Tours no es responsable por denegacion de embarque o entrada por documentacion insuficiente.',
+      termsTravelP2: 'Odisea Tours recomienda encarecidamente que todos los viajeros obtengan un seguro de viaje completo que cubra cancelacion, emergencias medicas, perdida de equipaje y repatriacion.',
+      termsLiability: 'Responsabilidad',
+      termsLiabilityP1: 'Odisea Tours actua como organizador e intermediario entre clientes y proveedores de servicios (hoteles, empresas de transporte, proveedores de actividades). No somos responsables de lesiones, perdidas, danos o retrasos causados por estos terceros.',
+      termsLiabilityP2: 'Odisea Tours no es responsable de eventos fuera de nuestro control, incluyendo desastres naturales, pandemias, huelgas, disturbios politicos o restricciones de viaje impuestas por gobiernos.',
+      termsConduct: 'Codigo de Conducta',
+      termsConductP1: 'Se espera que todos los viajeros se comporten de manera responsable y respetuosa durante todo el tour. Odisea Tours se reserva el derecho de retirar a cualquier participante cuyo comportamiento interrumpa al grupo o ponga en peligro a otros, sin reembolso.',
+      termsContact: 'Contacto',
+      termsContactP1: 'Para cualquier pregunta sobre estos terminos, contacta a tu operador turistico a traves de la seccion de mensajes de tu portal del cliente o mediante los datos de contacto proporcionados en tu confirmacion de reserva.',
+      termsLastUpdated: 'Ultima actualizacion'
     }
   },
 
@@ -136,7 +196,7 @@ const Portal = {
     const navMap = {
       overview: 'overview', itinerary: 'itinerary', documents: 'documents',
       passengers: 'passengers', flights: 'flights', roomplan: 'roomPlan', messages: 'messages',
-      forms: 'formsConsent', feedback: 'feedback', payments: 'payments'
+      forms: 'formsConsent', feedback: 'feedback', payments: 'payments', terms: 'terms'
     };
     document.querySelectorAll('.nav-drawer-links li').forEach(li => {
       const section = li.dataset.section;
@@ -376,7 +436,8 @@ const Portal = {
       const sectionNames = {
         itinerary: 'Itinerary', documents: 'Documents', passengers: 'Passengers',
         flights: 'Flights', roomplan: 'Room Plan', messages: 'Messages',
-        forms: 'Forms & Consent', feedback: 'Feedback', payments: 'Payments'
+        forms: 'Forms & Consent', feedback: 'Feedback', payments: 'Payments',
+        terms: 'Terms & Conditions'
       };
       titleEl.textContent = sectionNames[name] || '';
     }
@@ -401,6 +462,7 @@ const Portal = {
       case 'forms': this.renderForms(); break;
       case 'feedback': this.renderFeedback(); break;
       case 'payments': this.renderPaymentStatus(); break;
+      case 'terms': this.renderTerms(); break;
     }
   },
 
@@ -1972,6 +2034,77 @@ const Portal = {
     } else {
       alert('PDF generator not available. Please try again.');
     }
+  },
+
+  // ── Terms & Conditions Section ──
+  renderTerms() {
+    const container = document.getElementById('section-terms');
+    const t = Portal._t.bind(Portal);
+    const sectionStyle = 'background:white;border-radius:var(--radius-lg);padding:1.2rem 1.3rem;box-shadow:var(--shadow);margin-bottom:1rem';
+    const h3Style = 'font-size:1rem;font-weight:700;color:var(--navy);margin:0 0 0.6rem';
+    const pStyle = 'font-size:0.88rem;color:var(--gray-600);line-height:1.65;margin:0 0 0.6rem';
+    const lastP = 'font-size:0.88rem;color:var(--gray-600);line-height:1.65;margin:0';
+
+    container.innerHTML = `
+      <div class="section-header">
+        <h2>${t('termsTitle')}</h2>
+        <p style="font-size:0.85rem;color:var(--gray-400)">${t('termsLastUpdated')}: February 2026</p>
+      </div>
+
+      <div style="${sectionStyle}">
+        <p style="${lastP}">${t('termsIntro')}</p>
+      </div>
+
+      <div style="${sectionStyle}">
+        <h3 style="${h3Style}">1. ${t('termsBooking')}</h3>
+        <p style="${pStyle}">${t('termsBookingP1')}</p>
+        <p style="${lastP}">${t('termsBookingP2')}</p>
+      </div>
+
+      <div style="${sectionStyle}">
+        <h3 style="${h3Style}">2. ${t('termsPayment')}</h3>
+        <p style="${pStyle}">${t('termsPaymentP1')}</p>
+        <p style="${pStyle}">${t('termsPaymentP2')}</p>
+        <p style="${lastP}">${t('termsPaymentP3')}</p>
+      </div>
+
+      <div style="${sectionStyle};border-left:4px solid var(--red)">
+        <h3 style="${h3Style};color:var(--red)">3. ${t('termsCancellation')}</h3>
+        <p style="${pStyle};font-weight:600">${t('termsCancellationP1')}</p>
+        <p style="${pStyle}">${t('termsCancellationP2')}</p>
+        <p style="${pStyle}">${t('termsCancellationP3')}</p>
+        <p style="${pStyle}">${t('termsCancellationP4')}</p>
+        <p style="${lastP}">${t('termsCancellationP5')}</p>
+      </div>
+
+      <div style="${sectionStyle}">
+        <h3 style="${h3Style}">4. ${t('termsChanges')}</h3>
+        <p style="${pStyle}">${t('termsChangesP1')}</p>
+        <p style="${pStyle}">${t('termsChangesP2')}</p>
+        <p style="${lastP}">${t('termsChangesP3')}</p>
+      </div>
+
+      <div style="${sectionStyle}">
+        <h3 style="${h3Style}">5. ${t('termsTravel')}</h3>
+        <p style="${pStyle}">${t('termsTravelP1')}</p>
+        <p style="${lastP}">${t('termsTravelP2')}</p>
+      </div>
+
+      <div style="${sectionStyle}">
+        <h3 style="${h3Style}">6. ${t('termsLiability')}</h3>
+        <p style="${pStyle}">${t('termsLiabilityP1')}</p>
+        <p style="${lastP}">${t('termsLiabilityP2')}</p>
+      </div>
+
+      <div style="${sectionStyle}">
+        <h3 style="${h3Style}">7. ${t('termsConduct')}</h3>
+        <p style="${lastP}">${t('termsConductP1')}</p>
+      </div>
+
+      <div style="${sectionStyle}">
+        <h3 style="${h3Style}">8. ${t('termsContact')}</h3>
+        <p style="${lastP}">${t('termsContactP1')}</p>
+      </div>`;
   },
 
   // ── Flights Section ──
