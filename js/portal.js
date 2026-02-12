@@ -1719,7 +1719,7 @@ const Portal = {
 
     const formDefs = {
       terms: { title: 'Terms & Conditions', desc: 'I accept the tour terms and conditions, including cancellation policy and travel insurance requirements.' },
-      medical: { title: 'Medical Declaration', desc: 'I acknowledge that each family/traveler is solely responsible for disclosing any medical conditions in their passenger registration forms and for confirming that all members of their party are fit to travel. Odisea Tours and the group organizer accept no liability for undisclosed medical conditions.' },
+      medical: { title: 'Medical Declaration', descTour: 'I acknowledge that each family/traveler is solely responsible for disclosing any medical conditions in their passenger registration forms and for confirming that all members of their party are fit to travel. Odisea Tours and the group organizer accept no liability for undisclosed medical conditions.', descFamily: 'I confirm that all medical conditions have been disclosed in the passenger registration forms and that all travelers in my party are fit to travel.' },
       photo: { title: 'Photo Consent', desc: 'I consent to photographs and videos being taken during the tour for promotional and record-keeping purposes.' }
     };
 
@@ -1730,6 +1730,8 @@ const Portal = {
       </div>
       ${requiredForms.map(formId => {
         const def = formDefs[formId] || { title: formId, desc: '' };
+        const isFamily = Portal._portalMode === 'family';
+        const descText = def.descFamily && isFamily ? def.descFamily : (def.descTour || def.desc || '');
         const signed = mySignatures[formId];
         return `
           <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-bottom:1rem;box-shadow:var(--shadow);border-left:4px solid ${signed ? 'var(--green)' : 'var(--amber)'}">
@@ -1737,7 +1739,7 @@ const Portal = {
               <h3 style="font-size:1rem;color:var(--navy)">${def.title}</h3>
               ${signed ? '<span style="background:var(--green);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">Signed</span>' : '<span style="background:var(--amber);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">Pending</span>'}
             </div>
-            <p style="font-size:0.88rem;color:var(--gray-500);margin-bottom:1rem">${def.desc}</p>
+            <p style="font-size:0.88rem;color:var(--gray-500);margin-bottom:1rem">${descText}</p>
             ${signed ? `
               <div style="background:var(--gray-50);padding:0.8rem;border-radius:var(--radius)">
                 <p style="font-size:0.82rem;color:var(--gray-400)">Signed on: ${Portal._fmtDate(signed.date)}</p>
