@@ -9,9 +9,9 @@ service cloud.firestore {
     match /tours/{tourId} {
       allow read: if true;
     }
-    // Public can read/create/update passengers and messages
+    // Public can read/create/update/delete passengers and messages
     match /tours/{tourId}/passengers/{passengerId} {
-      allow read, create, update: if true;
+      allow read, create, update, delete: if true;
     }
     match /tours/{tourId}/messages/{messageId} {
       allow read, create: if true;

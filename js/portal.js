@@ -764,8 +764,8 @@ const Portal = {
                 <div class="pax-field"><span class="pax-field-label">Registered</span><span class="pax-field-value">${p.createdAt ? Portal._fmtDate(p.createdAt) : '\u2014'}</span></div>
               </div>
               <div class="pax-detail-actions">
-                <button class="btn-primary btn-sm" onclick="Portal.showPassengerForm('${p.id}')">Edit</button>
-                <button class="btn-outline btn-sm btn-danger-outline" onclick="Portal.deletePassenger('${p.id}')">Remove</button>
+                <button class="btn-primary btn-sm" onclick="event.stopPropagation();Portal.showPassengerForm('${p.id}')">Edit</button>
+                <button class="btn-outline btn-sm" style="border-color:var(--red);color:var(--red)" onclick="event.stopPropagation();Portal.deletePassenger('${p.id}')">Remove</button>
               </div>
             </div>
           </div>`;
@@ -877,9 +877,13 @@ const Portal = {
   async savePassenger(event, editId) {
     event.preventDefault();
 
-    // Show loading state on submit button
     const submitBtn = event.target.querySelector('button[type="submit"]');
+    const cancelBtn = event.target.querySelector('button[type="button"]');
+    const origLabel = editId ? 'Update Passenger' : 'Save Passenger';
+
+    // Disable entire form while saving
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving...'; }
+    if (cancelBtn) cancelBtn.disabled = true;
 
     try {
       const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
@@ -898,14 +902,14 @@ const Portal = {
         source: 'portal'
       };
 
-      // Auto-attach familyId when saving in family mode
       if (this._portalMode === 'family' && this._familyId) {
         passenger.familyId = this._familyId;
       }
 
       if (!passenger.firstName || !passenger.lastName) {
         alert('First and last name are required.');
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = editId ? 'Update Passenger' : 'Save Passenger'; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origLabel; }
+        if (cancelBtn) cancelBtn.disabled = false;
         return;
       }
 
@@ -917,26 +921,72 @@ const Portal = {
       }
 
       if (result) {
-        this.renderPassengers();
+        // Show success toast
+        this._showToast(editId ? 'Passenger updated!' : 'Passenger saved!');
+        const savedId = result.id;
+        await this.renderPassengers();
+        // Scroll to and highlight the saved passenger
+        if (savedId) {
+          const el = document.getElementById('pax-' + savedId);
+          if (el) {
+            const card = el.closest('.pax-card-detail');
+            if (card) {
+              card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              card.style.outline = '2px solid var(--green)';
+              card.style.outlineOffset = '2px';
+              setTimeout(() => { card.style.outline = ''; card.style.outlineOffset = ''; }, 2000);
+            }
+          }
+        }
       } else {
         alert('Failed to save passenger. Please check your connection and try again.');
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = editId ? 'Update Passenger' : 'Save Passenger'; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origLabel; }
+        if (cancelBtn) cancelBtn.disabled = false;
       }
     } catch (err) {
       console.error('savePassenger error:', err);
       alert('Error saving passenger: ' + (err.message || 'Unknown error'));
-      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = editId ? 'Update Passenger' : 'Save Passenger'; }
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origLabel; }
+      if (cancelBtn) cancelBtn.disabled = false;
     }
   },
 
   async deletePassenger(passengerId) {
-    if (!confirm('Remove this passenger?')) return;
-    const result = await DB.deleteTourPassenger(this.tourId, passengerId);
-    if (result) {
-      this.renderPassengers();
-    } else {
-      alert('Failed to remove passenger. Please try again.');
+    const p = this._passengers.find(x => x.id === passengerId);
+    const name = p ? (p.firstName + ' ' + p.lastName).trim() : 'this passenger';
+    if (!confirm('Remove ' + name + '? This cannot be undone.')) return;
+
+    // Show loading on the delete button
+    const btn = event && event.target ? event.target : null;
+    if (btn) { btn.disabled = true; btn.textContent = 'Removing...'; }
+
+    try {
+      const result = await DB.deleteTourPassenger(this.tourId, passengerId);
+      if (result) {
+        this._showToast(name + ' removed');
+        this.renderPassengers();
+      } else {
+        alert('Failed to remove passenger. Please try again.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
+      }
+    } catch (err) {
+      alert('Error removing passenger: ' + (err.message || 'Unknown error'));
+      if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
     }
+  },
+
+  _showToast(message) {
+    let toast = document.getElementById('portal-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'portal-toast';
+      toast.style.cssText = 'position:fixed;bottom:5rem;left:50%;transform:translateX(-50%);background:var(--navy);color:white;padding:0.6rem 1.2rem;border-radius:var(--radius-lg);font-size:0.88rem;font-weight:600;z-index:9999;opacity:0;transition:opacity 0.3s;pointer-events:none;box-shadow:var(--shadow-lg)';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
   },
 
   /* ============================================================
