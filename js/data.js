@@ -834,6 +834,33 @@ const DB = {
     }
   },
 
+  async saveTourFlights(tourId, flightData) {
+    if (!this._firebaseReady) return false;
+    try {
+      const now = new Date().toISOString();
+      const data = { ...flightData, updatedAt: now };
+      if (!flightData.createdAt) data.createdAt = now;
+      await this.firestore.collection('tours').doc(String(tourId))
+        .collection('tourFlights').doc('shared').set(data, { merge: true });
+      return true;
+    } catch (e) {
+      console.warn('saveTourFlights failed:', e.message);
+      return false;
+    }
+  },
+
+  async getTourFlights(tourId) {
+    if (!this._firebaseReady) return null;
+    try {
+      const doc = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('tourFlights').doc('shared').get();
+      return doc.exists ? { id: doc.id, ...doc.data() } : null;
+    } catch (e) {
+      console.warn('getTourFlights failed:', e.message);
+      return null;
+    }
+  },
+
   // EXPORT / IMPORT ALL
   exportAll() {
     return JSON.stringify({

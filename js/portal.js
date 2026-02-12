@@ -434,36 +434,23 @@ const Portal = {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/></svg>
           <span>${Portal._t('passengers')}</span>
         </button>
-        ${isFamily ? `<button class="action-btn" onclick="Portal.showSection('flights')">
+        <button class="action-btn" onclick="Portal.showSection('flights')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5 5.1 3 -1.9 1.9-2.1-.5-.6.6 2.6 1.5 1.5 2.6.6-.6-.5-2.1 1.9-1.9 3 5.1.5-.3c.4-.2.6-.6.5-1.1z"/></svg>
           <span>${Portal._t('flights')}</span>
-        </button>` : `<button class="action-btn" onclick="Portal.showSection('roomplan')">
+        </button>
+        <button class="action-btn" onclick="Portal.showSection('roomplan')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
           <span>${Portal._t('roomPlan')}</span>
-        </button>`}
+        </button>
         <button class="action-btn" onclick="Portal.showSection('messages')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           <span>${Portal._t('messages')}</span>
         </button>
       </div>
 
-      ${(t.portalPaymentCard || t.portalPaymentWise) ? `
-      <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-top:1rem;box-shadow:var(--shadow)">
-        <h4 style="font-family:var(--font-display);color:var(--navy);margin-bottom:0.8rem;font-size:1.05rem">${Portal._t('payment')}</h4>
-        <p style="font-size:0.88rem;color:var(--gray-400);margin-bottom:0.8rem">${Portal._t('paymentLinks')}</p>
-        <div style="display:flex;gap:0.8rem;flex-wrap:wrap">
-          ${t.portalPaymentCard ? `<a href="${Portal._escapeAttr(t.portalPaymentCard)}" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem 1.2rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.92rem">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-            ${Portal._t('payByCard')}
-          </a>` : ''}
-          ${t.portalPaymentWise ? `<a href="${Portal._escapeAttr(t.portalPaymentWise)}" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem 1.2rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.92rem">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-            ${Portal._t('payViaWise')}
-          </a>` : ''}
-        </div>
-      </div>` : ''}
+      <div id="overview-payment-summary"></div>
 
-      ${isFamily ? '<div id="family-checklist"></div>' : ''}
+      <div id="overview-checklist"></div>
 
       <div class="contact-card">
         <h4>${Portal._t('tourOperator')}</h4>
@@ -471,8 +458,60 @@ const Portal = {
         <p>For any questions, use the Messages section or contact us directly.</p>
       </div>`;
 
-    // Load checklist async for family mode
-    if (isFamily) this._renderFamilyChecklist();
+    // Load payment summary and checklist async
+    this._renderOverviewPayments();
+    this._renderOverviewChecklist();
+  },
+
+  async _renderOverviewPayments() {
+    const el = document.getElementById('overview-payment-summary');
+    if (!el) return;
+    const t = this.tourData;
+    const isFamily = this._portalMode === 'family' && this._familyId;
+
+    let invoices = [];
+    try {
+      if (isFamily) {
+        invoices = await DB.getTourInvoicesForFamily(this.tourId, this._familyId);
+      } else {
+        invoices = await DB.getTourInvoices(this.tourId);
+      }
+    } catch (e) {}
+
+    if (!invoices.length && !t.portalPaymentCard && !t.portalPaymentWise) return;
+
+    const totalDue = invoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const totalPaid = invoices.reduce((s, i) => s + (i.payments || []).reduce((ps, p) => ps + Number(p.amount), 0), 0);
+    const balance = totalDue - totalPaid;
+    const cur = (invoices[0] && invoices[0].currency) || (t && t.currency) || 'EUR';
+    const pctPaid = totalDue > 0 ? Math.min(100, Math.round(totalPaid / totalDue * 100)) : 0;
+
+    el.innerHTML = `
+      <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-top:1rem;box-shadow:var(--shadow);cursor:pointer" onclick="Portal.showSection('payments')">
+        <h4 style="font-family:var(--font-display);color:var(--navy);margin-bottom:0.8rem;font-size:1.05rem">${Portal._t('payment')}</h4>
+        ${invoices.length ? `
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.8rem;margin-bottom:0.8rem;text-align:center">
+            <div><div style="font-size:0.72rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Total Due</div><div style="font-size:1.1rem;font-weight:700;color:var(--navy)">${Portal._fmtCurrency(totalDue, cur)}</div></div>
+            <div><div style="font-size:0.72rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Paid</div><div style="font-size:1.1rem;font-weight:700;color:var(--green)">${Portal._fmtCurrency(totalPaid, cur)}</div></div>
+            <div><div style="font-size:0.72rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Balance</div><div style="font-size:1.1rem;font-weight:700;color:${balance > 0 ? 'var(--red)' : 'var(--green)'}">${Portal._fmtCurrency(balance, cur)}</div></div>
+          </div>
+          <div style="background:var(--gray-100);border-radius:10px;height:8px;overflow:hidden;margin-bottom:0.5rem">
+            <div style="background:${pctPaid >= 100 ? 'var(--green)' : 'var(--amber)'};height:100%;width:${pctPaid}%;border-radius:10px;transition:width 0.5s"></div>
+          </div>
+          <p style="text-align:center;font-size:0.78rem;color:var(--gray-400)">${pctPaid}% paid &mdash; tap for details</p>
+        ` : `<p style="font-size:0.88rem;color:var(--gray-400);margin-bottom:0.8rem">${Portal._t('paymentLinks')}</p>`}
+        ${(t.portalPaymentCard || t.portalPaymentWise) ? `
+          <div style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-top:0.8rem">
+            ${t.portalPaymentCard ? `<a href="${Portal._escapeAttr(t.portalPaymentCard)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="flex:1;min-width:140px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.6rem 1rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.85rem">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              ${Portal._t('payByCard')}
+            </a>` : ''}
+            ${t.portalPaymentWise ? `<a href="${Portal._escapeAttr(t.portalPaymentWise)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="flex:1;min-width:140px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.6rem 1rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.85rem">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+              ${Portal._t('payViaWise')}
+            </a>` : ''}
+          </div>` : ''}
+      </div>`;
   },
 
   renderItinerary() {
@@ -942,6 +981,11 @@ const Portal = {
             </div>`;
         }).join('')}
       </div>` : ''}
+
+      <div style="background:var(--gray-50);border:1.5px solid var(--gray-200);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:1rem;display:flex;gap:0.6rem;align-items:flex-start">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <p style="font-size:0.82rem;color:var(--gray-500);line-height:1.5;margin:0">Odisea Tours will do its best to accommodate the group as required, however final room arrangements depend on hotel characteristics and availability at the time of booking.</p>
+      </div>
 
       ${unassigned.length ? `
         <div class="rp-unassigned">
@@ -1719,15 +1763,15 @@ const Portal = {
     const container = document.getElementById('section-flights');
     if (!container) return;
 
-    // Only available in family mode
-    if (this._portalMode !== 'family' || !this._familyId) {
-      container.innerHTML = '<div class="empty-state"><p>Flight details are available in family portal mode.</p></div>';
-      return;
-    }
+    const isFamily = this._portalMode === 'family' && this._familyId;
 
     // Load existing flight data
     container.innerHTML = '<div style="text-align:center;padding:2rem"><div class="spinner"></div></div>';
-    this._flightData = await DB.getFamilyFlight(this.tourId, this._familyId);
+    if (isFamily) {
+      this._flightData = await DB.getFamilyFlight(this.tourId, this._familyId);
+    } else {
+      this._flightData = await DB.getTourFlights(this.tourId);
+    }
     const f = this._flightData || {};
     const arr = f.arrival || {};
     const ret = f.return || {};
@@ -1796,11 +1840,12 @@ const Portal = {
 
   async saveFlights(event) {
     if (event) event.preventDefault();
-    if (!this.tourId || !this._familyId) return;
+    if (!this.tourId) return;
 
+    const isFamily = this._portalMode === 'family' && this._familyId;
     const val = id => (document.getElementById(id) || {}).value || '';
     const flightData = {
-      familyName: (this._familyData && this._familyData.name) || '',
+      familyName: isFamily ? ((this._familyData && this._familyData.name) || '') : '',
       arrival: {
         date: val('fl-arr-date'), flightNumber: val('fl-arr-number').toUpperCase(),
         airline: val('fl-arr-airline'), departureAirport: val('fl-arr-dep-airport').toUpperCase(),
@@ -1822,7 +1867,9 @@ const Portal = {
       flightData.createdAt = this._flightData.createdAt;
     }
 
-    const ok = await DB.saveFamilyFlight(this.tourId, this._familyId, flightData);
+    const ok = isFamily
+      ? await DB.saveFamilyFlight(this.tourId, this._familyId, flightData)
+      : await DB.saveTourFlights(this.tourId, flightData);
     if (ok) {
       // Brief success feedback then re-render
       const btn = document.querySelector('#section-flights .btn-primary');
@@ -1836,55 +1883,73 @@ const Portal = {
     }
   },
 
-  async _renderFamilyChecklist() {
-    const el = document.getElementById('family-checklist');
-    if (!el || !this._familyId || !this.tourId) return;
+  async _renderOverviewChecklist() {
+    const el = document.getElementById('overview-checklist');
+    if (!el || !this.tourId) return;
 
     el.innerHTML = '<div style="text-align:center;padding:1rem"><div class="spinner"></div></div>';
 
+    const isFamily = this._portalMode === 'family' && this._familyId;
+    const t = this.tourData;
+
     // Load data in parallel
-    const [passengers, flights, invoicesRaw] = await Promise.all([
-      DB.firestore ? DB.firestore.collection('tours').doc(this.tourId).collection('passengers').where('familyId', '==', this._familyId).get().then(s => { const a=[]; s.forEach(d => a.push({id:d.id,...d.data()})); return a; }).catch(() => []) : Promise.resolve([]),
-      DB.getFamilyFlight(this.tourId, this._familyId),
-      DB._firebaseReady && this._familyData ? Promise.resolve(DB.getInvoices().find(i => i.individualClientRef === this._familyId && i.tourId === this.tourId) || null) : Promise.resolve(null)
-    ]);
+    let passengers = [], flights = null, invoicesRaw = null, roomPlan = [];
+    try {
+      if (isFamily) {
+        [passengers, flights, invoicesRaw] = await Promise.all([
+          DB.firestore ? DB.firestore.collection('tours').doc(this.tourId).collection('passengers').where('familyId', '==', this._familyId).get().then(s => { const a=[]; s.forEach(d => a.push({id:d.id,...d.data()})); return a; }).catch(() => []) : Promise.resolve([]),
+          DB.getFamilyFlight(this.tourId, this._familyId),
+          DB._firebaseReady && this._familyData ? Promise.resolve(DB.getInvoices().find(i => i.individualClientRef === this._familyId && i.tourId === this.tourId) || null) : Promise.resolve(null)
+        ]);
+      } else {
+        [passengers, flights] = await Promise.all([
+          DB.getTourPassengers(this.tourId),
+          DB.getTourFlights(this.tourId)
+        ]);
+      }
+    } catch (e) {}
 
-    const expectedCount = this._familyData ? ((this._familyData.numStudents||0) + (this._familyData.numSiblings||0) + (this._familyData.numAdults||0)) : 0;
+    roomPlan = (t && t.roomPlan) || [];
+    const assignedCount = new Set();
+    roomPlan.forEach(room => (room.passengers || []).forEach(id => assignedCount.add(id)));
 
-    // Calculate 6 checklist items
     const items = [];
 
-    // 1. Travelers registered
-    const travelersOk = expectedCount > 0 && passengers.length >= expectedCount;
-    items.push({ done: travelersOk, label: Portal._t('clTravelersRegistered'), detail: `${passengers.length}/${expectedCount}`, section: 'passengers' });
+    // 1. Passengers added
+    const expectedCount = isFamily
+      ? (this._familyData ? ((this._familyData.numStudents||0) + (this._familyData.numSiblings||0) + (this._familyData.numAdults||0)) : 0)
+      : ((t.numStudents||0) + (t.numSiblings||0) + (t.numAdults||0) + (t.numFOC||0));
+    const paxOk = passengers.length > 0 && (!expectedCount || passengers.length >= expectedCount);
+    items.push({ done: paxOk, label: Portal._t('clTravelersRegistered'), detail: expectedCount ? `${passengers.length}/${expectedCount}` : `${passengers.length}`, section: 'passengers' });
 
-    // 2. Passport details complete
-    const passportsOk = passengers.length > 0 && passengers.every(p => p.passportNumber && p.passportExpiry && p.nationality);
-    items.push({ done: passportsOk, label: Portal._t('clPassportDetails'), section: 'passengers' });
-
-    // 3. Flight details submitted
-    const flightsOk = !!(flights && flights.arrival && flights.arrival.flightNumber && flights.return && flights.return.flightNumber);
+    // 2. Flight details submitted
+    const flightsOk = !!(flights && flights.arrival && flights.arrival.flightNumber);
     items.push({ done: flightsOk, label: Portal._t('clFlightDetails'), section: 'flights' });
 
-    // 4. Emergency contacts
-    const emergencyOk = passengers.length > 0 && passengers.every(p => p.emergencyContact);
-    items.push({ done: emergencyOk, label: Portal._t('clEmergencyContacts'), section: 'passengers' });
+    // 3. Room plan assigned
+    const roomOk = roomPlan.length > 0 && assignedCount.size > 0;
+    items.push({ done: roomOk, label: Portal._t('roomAssignments').split(' for ')[0] || 'Room plan', detail: roomOk ? `${assignedCount.size} assigned` : '', section: 'roomplan' });
 
-    // 5. Dietary requirements noted
-    const dietaryOk = passengers.length > 0 && passengers.every(p => p.dietary);
-    items.push({ done: dietaryOk, label: Portal._t('clDietaryRequirements'), section: 'passengers' });
+    // Family-mode extras
+    if (isFamily) {
+      const passportsOk = passengers.length > 0 && passengers.every(p => p.passportNumber && p.passportExpiry && p.nationality);
+      items.push({ done: passportsOk, label: Portal._t('clPassportDetails'), section: 'passengers' });
 
-    // 6. Payment complete
-    const paymentOk = !!(invoicesRaw && invoicesRaw.amount && (invoicesRaw.payments || []).reduce((s,p) => s + Number(p.amount), 0) >= Number(invoicesRaw.amount));
-    items.push({ done: paymentOk, label: Portal._t('clPaymentComplete'), section: 'payments' });
+      const emergencyOk = passengers.length > 0 && passengers.every(p => p.emergencyContact);
+      items.push({ done: emergencyOk, label: Portal._t('clEmergencyContacts'), section: 'passengers' });
+
+      const paymentOk = !!(invoicesRaw && invoicesRaw.amount && (invoicesRaw.payments || []).reduce((s,p) => s + Number(p.amount), 0) >= Number(invoicesRaw.amount));
+      items.push({ done: paymentOk, label: Portal._t('clPaymentComplete'), section: 'payments' });
+    }
 
     const doneCount = items.filter(i => i.done).length;
-    const pct = Math.round((doneCount / items.length) * 100);
+    const totalItems = items.length;
+    const pct = totalItems > 0 ? Math.round((doneCount / totalItems) * 100) : 0;
 
     el.innerHTML = `
       <div class="checklist-card">
         <h3 style="font-family:var(--font-display);color:var(--navy);font-size:1.05rem;margin-bottom:0.2rem">${Portal._t('checklistTitle')}</h3>
-        <p style="font-size:0.82rem;color:var(--gray-400);margin-bottom:0.8rem">${Portal._t('checklistDesc')} &mdash; ${doneCount}/6 ${Portal._t('clItemsComplete')}</p>
+        <p style="font-size:0.82rem;color:var(--gray-400);margin-bottom:0.8rem">${Portal._t('checklistDesc')} &mdash; ${doneCount}/${totalItems} ${Portal._t('clItemsComplete')}</p>
         <div class="checklist-progress"><div class="checklist-progress-fill" style="width:${pct}%"></div></div>
         <div style="display:flex;flex-direction:column;gap:0.1rem">
           ${items.map(item => `
