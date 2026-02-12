@@ -139,7 +139,7 @@ const Briefing = {
       if (!t.accessCode || t.status === 'Completed') return false;
       const start = new Date(t.startDate);
       const daysUntil = Math.ceil((start - today) / 86400000);
-      return daysUntil >= 0 && daysUntil <= 30;
+      return daysUntil >= -7; // include all upcoming + recently departed (within 7 days)
     });
 
     // === THIS WEEK OVERVIEW ===
@@ -422,7 +422,7 @@ const Briefing = {
             doneCount,
             total: items.length,
             missing,
-            severity: daysUntil <= 7 ? 'critical' : daysUntil <= 14 ? 'high' : 'medium'
+            severity: daysUntil <= 7 ? 'critical' : daysUntil <= 30 ? 'high' : 'medium'
           });
         }
       } catch (e) {}
