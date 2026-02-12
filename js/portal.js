@@ -1719,7 +1719,7 @@ const Portal = {
 
     const formDefs = {
       terms: { title: 'Terms & Conditions', desc: 'I accept the tour terms and conditions, including cancellation policy and travel insurance requirements.' },
-      medical: { title: 'Medical Declaration', desc: 'I confirm that all medical conditions have been disclosed in the passenger registration forms and that all travelers are fit to travel.' },
+      medical: { title: 'Medical Declaration', desc: 'I acknowledge that each family/traveler is solely responsible for disclosing any medical conditions in their passenger registration forms and for confirming that all members of their party are fit to travel. Odisea Tours and the group organizer accept no liability for undisclosed medical conditions.' },
       photo: { title: 'Photo Consent', desc: 'I consent to photographs and videos being taken during the tour for promotional and record-keeping purposes.' }
     };
 
