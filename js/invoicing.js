@@ -228,16 +228,16 @@ const Invoicing = {
           <table class="data-table" style="margin-bottom:0.8rem;font-size:0.82rem">
             <thead><tr><th>Milestone</th><th>%</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>${i.paymentSchedule.map((ms, mi) => {
-              const msPaid = (i.payments || []).reduce((s, p) => s + Number(p.amount), 0);
-              const msAmount = ms.amount || (ms.percentage ? (Number(i.amount) * ms.percentage / 100) : 0);
-              const cumulativeTarget = i.paymentSchedule.slice(0, mi + 1).reduce((s, m) => s + (m.amount || (m.percentage ? Number(i.amount) * m.percentage / 100 : 0)), 0);
-              const msStatus = msPaid >= cumulativeTarget ? 'Paid' : 'Pending';
+              const msStatus = ms.status || 'Pending';
               return `<tr>
                 <td><input value="${(ms.label||'').replace(/"/g,'&quot;')}" style="width:120px;padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Invoicing.saveMilestone(${i.id},${mi},'label',this.value)"></td>
                 <td><input type="number" step="1" value="${ms.percentage||''}" style="width:50px;padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Invoicing.saveMilestone(${i.id},${mi},'percentage',this.value)"></td>
                 <td><input type="number" step="0.01" value="${ms.amount||''}" style="width:80px;padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Invoicing.saveMilestone(${i.id},${mi},'amount',this.value)"></td>
                 <td><input type="date" value="${ms.dueDate||''}" style="padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="Invoicing.saveMilestone(${i.id},${mi},'dueDate',this.value)"></td>
-                <td><span class="badge ${msStatus === 'Paid' ? 'badge-confirmed' : 'badge-unpaid'}">${msStatus}</span></td>
+                <td><select style="padding:0.25rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);background:${msStatus === 'Paid' ? 'var(--green)' : 'var(--amber)'};color:#fff;font-weight:600;cursor:pointer" onchange="Invoicing.saveMilestone(${i.id},${mi},'status',this.value)">
+                  <option value="Pending" ${msStatus === 'Pending' ? 'selected' : ''}>Pending</option>
+                  <option value="Paid" ${msStatus === 'Paid' ? 'selected' : ''}>Paid</option>
+                </select></td>
                 <td><button class="btn btn-sm btn-danger" style="font-size:0.72rem;padding:0.15rem 0.4rem" onclick="Invoicing.removeMilestone(${i.id},${mi})">X</button></td>
               </tr>`;
             }).join('')}</tbody>
@@ -315,7 +315,7 @@ const Invoicing = {
     const i = DB.getInvoices().find(x => x.id === id);
     if (!i) return;
     if (!i.paymentSchedule) i.paymentSchedule = [];
-    i.paymentSchedule.push({ label: '', percentage: 0, amount: 0, dueDate: '' });
+    i.paymentSchedule.push({ label: '', percentage: 0, amount: 0, dueDate: '', status: 'Pending' });
     DB.saveInvoice(i);
     this.viewInvoice(id);
   },
@@ -329,6 +329,8 @@ const Invoicing = {
     } else if (field === 'amount') {
       i.paymentSchedule[idx].amount = Number(value) || 0;
       if (Number(i.amount) > 0) i.paymentSchedule[idx].percentage = ((Number(value) || 0) / Number(i.amount) * 100);
+    } else if (field === 'status') {
+      i.paymentSchedule[idx].status = value;
     } else if (field === 'label' || field === 'dueDate') {
       i.paymentSchedule[idx][field] = value;
     }
@@ -349,8 +351,8 @@ const Invoicing = {
     if (!i) return;
     const amt = Number(i.amount) || 0;
     i.paymentSchedule = [
-      { label: 'Deposit 30%', percentage: 30, amount: Math.round(amt * 0.3 * 100) / 100, dueDate: '' },
-      { label: 'Balance 70%', percentage: 70, amount: Math.round(amt * 0.7 * 100) / 100, dueDate: '' }
+      { label: 'Deposit 30%', percentage: 30, amount: Math.round(amt * 0.3 * 100) / 100, dueDate: '', status: 'Pending' },
+      { label: 'Balance 70%', percentage: 70, amount: Math.round(amt * 0.7 * 100) / 100, dueDate: '', status: 'Pending' }
     ];
     DB.saveInvoice(i);
     this.viewInvoice(id);
