@@ -1568,7 +1568,7 @@ const Tours = {
           <button class="btn btn-sm btn-outline" onclick="Tours.viewAllFamilyFlights(${t.id})">View All Flights</button>
         </div>
       </div>
-      ${hasCode ? `<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${portalUrl}','_blank')">Open Client Portal</button><button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="window.open('https://wa.me/?text='+encodeURIComponent('Hi! Here is the portal for the tour ${(t.tourName||'').replace(/'/g,"\\'")}:\\n${portalUrl}'),'_blank')">WhatsApp Share</button></div>` : ''}
+      ${hasCode ? `<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${portalUrl}','_blank')">Open Client Portal</button><button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="window.open('https://wa.me/?text='+encodeURIComponent('Hi! Here is the portal for the tour ${(t.tourName||'').replace(/'/g,"\\'")}:\\n${portalUrl}'),'_blank')">WhatsApp Share</button><button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.sendGroupLeaderWelcome(${t.id})">Send Welcome Email</button></div>` : ''}
       <div id="portal-checklist-progress-${t.id}" style="margin-top:1rem"></div>
       <div style="margin-top:0.8rem">
         <h4 style="font-size:0.85rem;margin-bottom:0.4rem">Portal Payment Links <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— shown to clients on portal</span></h4>
@@ -1988,6 +1988,105 @@ juan@odisea-tours.com`;
     }).catch(() => {
       prompt('Copy this email:', full);
     });
+  },
+
+  // Group leader welcome email with portal link
+  sendGroupLeaderWelcome(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.accessCode) return;
+    const portalUrl = `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=${t.accessCode}`;
+    const subject = `Your Client Portal is Ready — ${t.tourName}`;
+    const body = this._groupLeaderWelcomeBody(t, portalUrl);
+
+    const container = document.getElementById('portal-detail-' + t.id);
+    if (!container) return;
+    container.innerHTML = `
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-top:1rem;border:1.5px solid var(--gray-200)">
+        <h4 style="margin-bottom:0.7rem;font-size:0.92rem">Welcome Email — Group Leader <span style="font-weight:400;color:var(--gray-400);font-size:0.8rem">${t.clientName || ''} ${t.clientEmail ? '(' + t.clientEmail + ')' : ''}</span></h4>
+        <div class="form-group" style="margin-bottom:0.5rem">
+          <label style="font-size:0.8rem">To</label>
+          <input id="fam-email-to" value="${(t.clientEmail || '').replace(/"/g, '&quot;')}" placeholder="groupleader@email.com" style="font-size:0.85rem">
+        </div>
+        <div class="form-group" style="margin-bottom:0.5rem">
+          <label style="font-size:0.8rem">Subject</label>
+          <input id="fam-email-subject" value="${subject.replace(/"/g, '&quot;')}" style="font-size:0.85rem">
+        </div>
+        <div class="form-group" style="margin-bottom:0.7rem">
+          <label style="font-size:0.8rem">Body <span style="font-weight:400;color:var(--gray-400)">(edit before sending — customize dates & details as needed)</span></label>
+          <textarea id="fam-email-body" rows="28" style="font-size:0.82rem;font-family:inherit;line-height:1.5;white-space:pre-wrap">${body.replace(/</g, '&lt;')}</textarea>
+        </div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="btn btn-primary" style="font-size:0.85rem" onclick="Tours._sendFamilyEmail()">Open in Email Client</button>
+          <button class="btn btn-outline" style="font-size:0.85rem" onclick="Tours._copyFamilyEmail()">Copy to Clipboard</button>
+          <button class="btn btn-outline" style="font-size:0.85rem" onclick="document.getElementById('portal-detail-${t.id}').innerHTML=''">Cancel</button>
+        </div>
+      </div>`;
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  },
+
+  _groupLeaderWelcomeBody(t, portalUrl) {
+    const dest = t.destination || 'the destination';
+    const dates = t.startDate ? fmtDate(t.startDate) + ' — ' + fmtDate(t.endDate) : '[dates to be confirmed]';
+    const nights = t.nights ? ` (${t.nights} nights)` : '';
+    const clientName = t.clientName || '[Group Leader Name]';
+    const groupSize = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
+
+    // Find due date from invoices
+    const invoices = DB.getInvoices().filter(i => i.tourId === t.id);
+    let dueDateLine = '';
+    if (invoices.length) {
+      const unpaid = invoices.find(i => {
+        const paid = (i.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+        return paid < Number(i.amount);
+      });
+      if (unpaid && unpaid.dueDate) {
+        dueDateLine = `\nThe remaining balance is due by ${fmtDate(unpaid.dueDate)}.`;
+      }
+      if (unpaid && unpaid.paymentSchedule && unpaid.paymentSchedule.length) {
+        dueDateLine += '\n\nPAYMENT SCHEDULE';
+        unpaid.paymentSchedule.forEach(ms => {
+          const msAmount = ms.amount || (ms.percentage ? Number(unpaid.amount) * ms.percentage / 100 : 0);
+          dueDateLine += `\n- ${ms.label || 'Payment'}: ${fmt(msAmount, t.currency)}${ms.dueDate ? ' — due ' + fmtDate(ms.dueDate) : ''}`;
+        });
+      }
+    }
+
+    return `Dear ${clientName},
+
+Thank you for confirming the ${t.tourName} tour and for your deposit payment!
+
+TRIP DETAILS
+Destination: ${dest}
+Dates: ${dates}${nights}
+Group size: ${groupSize} travelers
+${t.hotelName ? 'Hotel: ' + t.hotelName + '\n' : ''}${t.mealPlan ? 'Meal Plan: ' + t.mealPlan : ''}
+
+YOUR CLIENT PORTAL
+Your portal is ready. This is where you'll manage all the details for your group:
+
+${portalUrl}
+
+Access Code: ${t.accessCode}
+
+WHAT TO DO NEXT
+Please complete the following on the portal:
+1. Register all passengers — full name, date of birth, passport number & expiry, nationality, and emergency contact for each traveler
+2. Submit flight details — once your group flights are booked
+3. Sign the required forms — Terms & Conditions, Medical Declaration, and Photo Consent
+4. Note any dietary requirements or medical conditions for each passenger
+
+We recommend collecting all passport and personal details from your families ahead of time so you can enter them in one go.
+
+You can track your progress on the portal checklist. Once all passengers are registered, we'll finalize the room plan and share it with you.${dueDateLine}
+
+Any questions? Use the Messages section on the portal or reply to this email.
+
+Looking forward to an amazing trip!
+
+Kind regards,
+Juan
+Odisea Tours
+juan@odisea-tours.com`;
   },
 
   // Batch email all families (opens one at a time)
