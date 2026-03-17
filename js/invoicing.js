@@ -248,10 +248,72 @@ const Invoicing = {
         </div>
       </div>
       <div class="modal-actions">
+        <button class="btn btn-outline" onclick="Invoicing.editInvoice(${i.id})" style="border-color:var(--amber);color:var(--amber)">Edit Invoice</button>
+        <button class="btn btn-outline" onclick="Invoicing.duplicateInvoice(${i.id})" style="border-color:var(--blue);color:var(--blue)">Duplicate Invoice</button>
         <button class="btn btn-outline" onclick="Invoicing.savePaymentLinks(${i.id});PDFQuote.generateInvoice(${i.id})" style="border-color:#111;color:#111">PDF Invoice</button>
         <button class="btn btn-danger" onclick="if(confirm('Delete this invoice?')){Invoicing.deleteInvoice(${i.id})}">Delete</button>
         <button class="btn btn-outline" onclick="closeModal('inv-modal')">Close</button>
       </div>`;
+  },
+
+  editInvoice(id) {
+    const i = DB.getInvoices().find(x => x.id === id);
+    if (!i) return;
+    document.getElementById('inv-modal-content').innerHTML = `
+      <h2>Edit Invoice ${i.number}</h2>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label>Client Name</label><input id="edit-inv-client" value="${(i.clientName||'').replace(/"/g,'&quot;')}"></div>
+        <div class="form-group"><label>Invoice Number</label><input id="edit-inv-number" value="${(i.number||'').replace(/"/g,'&quot;')}"></div>
+      </div>
+      <div class="form-row form-row-3">
+        <div class="form-group"><label>Amount</label><input id="edit-inv-amount" type="number" step="0.01" value="${i.amount||0}"></div>
+        <div class="form-group"><label>Currency</label><select id="edit-inv-currency"><option value="EUR" ${i.currency==='EUR'?'selected':''}>EUR</option><option value="USD" ${i.currency==='USD'?'selected':''}>USD</option></select></div>
+        <div class="form-group"><label>Due Date</label><input id="edit-inv-due" type="date" value="${i.dueDate||''}"></div>
+      </div>
+      <div class="form-group"><label>Description / Items</label><textarea id="edit-inv-desc" rows="4">${i.description||''}</textarea></div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="Invoicing.saveEditedInvoice(${i.id})">Save Changes</button>
+        <button class="btn btn-outline" onclick="Invoicing.viewInvoice(${i.id})">Cancel</button>
+      </div>`;
+  },
+
+  saveEditedInvoice(id) {
+    const i = DB.getInvoices().find(x => x.id === id);
+    if (!i) return;
+    i.clientName = document.getElementById('edit-inv-client').value;
+    i.number = document.getElementById('edit-inv-number').value;
+    i.amount = Number(document.getElementById('edit-inv-amount').value) || 0;
+    i.currency = document.getElementById('edit-inv-currency').value;
+    i.dueDate = document.getElementById('edit-inv-due').value;
+    i.description = document.getElementById('edit-inv-desc').value;
+    // Recalculate milestones if they exist (percentages stay, amounts update)
+    if (i.paymentSchedule && i.paymentSchedule.length) {
+      i.paymentSchedule.forEach(ms => {
+        if (ms.percentage) ms.amount = Math.round(i.amount * ms.percentage / 100 * 100) / 100;
+      });
+    }
+    DB.saveInvoice(i);
+    this.viewInvoice(id);
+    this.render();
+  },
+
+  duplicateInvoice(id) {
+    const orig = DB.getInvoices().find(x => x.id === id);
+    if (!orig) return;
+    if (!confirm(`Duplicate invoice ${orig.number}?\nA new invoice will be created with the same details but no payments.`)) return;
+    const clone = JSON.parse(JSON.stringify(orig));
+    delete clone.id;
+    clone.payments = [];
+    // Clone milestones but reset status to Pending
+    if (clone.paymentSchedule) {
+      clone.paymentSchedule.forEach(ms => { ms.status = 'Pending'; });
+    }
+    clone.createdAt = new Date().toISOString();
+    clone.updatedAt = new Date().toISOString();
+    const saved = DB.saveInvoice(clone);
+    // Open the new invoice in edit mode so user can adjust amount/details
+    this.render();
+    this.editInvoice(saved.id);
   },
 
   addPayment(id) {
