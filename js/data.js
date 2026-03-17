@@ -340,17 +340,22 @@ const DB = {
   async syncToFirestore(collection, data) {
     if (!this._firebaseReady || !data || !data.length) return;
     try {
-      const batch = this.firestore.batch();
-      data.forEach(item => {
-        const docRef = this.firestore.collection(collection).doc(String(item.id));
-        // Strip large base64 invoice files to avoid Firestore 1MB doc limit
-        const clean = JSON.parse(JSON.stringify(item));
-        if (clean.providerExpenses) {
-          clean.providerExpenses.forEach(e => { if (e.invoiceFile) e.invoiceFile = { name: e.invoiceFile.name, uploadedAt: e.invoiceFile.uploadedAt }; });
-        }
-        batch.set(docRef, clean, { merge: true });
-      });
-      await batch.commit();
+      // Firestore batch limit is 500 — split into chunks
+      const BATCH_LIMIT = 450;
+      for (let i = 0; i < data.length; i += BATCH_LIMIT) {
+        const chunk = data.slice(i, i + BATCH_LIMIT);
+        const batch = this.firestore.batch();
+        chunk.forEach(item => {
+          const docRef = this.firestore.collection(collection).doc(String(item.id));
+          // Strip large base64 invoice files to avoid Firestore 1MB doc limit
+          const clean = JSON.parse(JSON.stringify(item));
+          if (clean.providerExpenses) {
+            clean.providerExpenses.forEach(e => { if (e.invoiceFile) e.invoiceFile = { name: e.invoiceFile.name, uploadedAt: e.invoiceFile.uploadedAt }; });
+          }
+          batch.set(docRef, clean, { merge: true });
+        });
+        await batch.commit();
+      }
       console.log(`Synced ${data.length} items to ${collection}.`);
     } catch (e) {
       console.warn(`Sync to Firestore (${collection}) failed:`, e.message);

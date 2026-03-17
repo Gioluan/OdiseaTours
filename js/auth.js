@@ -4,7 +4,9 @@ const Auth = {
   _unsubscribe: null,
   _syncInterval: null,
   _syncing: false,
+  _lastSyncTime: 0,
   SYNC_INTERVAL_MS: 5 * 60 * 1000, // 5 minutes
+  SYNC_COOLDOWN_MS: 30 * 1000, // 30s cooldown between syncs
   COLLECTIONS: ['tours', 'quotes', 'invoices', 'clients', 'providers'],
 
   init() {
@@ -24,9 +26,14 @@ const Auth = {
         this._stopAutoSync();
       }
     });
-    // Sync when app regains focus (e.g. switching back from another app)
+    // Sync when app regains focus — with cooldown to avoid spamming
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && this.user) this.syncAllData();
+      if (!document.hidden && this.user) {
+        const elapsed = Date.now() - this._lastSyncTime;
+        if (elapsed > this.SYNC_COOLDOWN_MS) {
+          this.syncAllData();
+        }
+      }
     });
     // Show login form if not authenticated after a short delay
     setTimeout(() => {
@@ -112,11 +119,13 @@ const Auth = {
     }
   },
 
-  // Two-way sync: pull from Firestore, merge, push back
+  // Two-way sync: pull from Firestore, merge, push only if changed
   async syncAllData() {
     if (!DB._firebaseReady || !this.user || this._syncing) return;
     this._syncing = true;
+    this._lastSyncTime = Date.now();
     this._updateSyncIndicator('syncing');
+    let dataChanged = false;
     try {
       // 0. Fetch global deletion records — these apply to ALL devices
       const deletions = await DB.getDeletions();
@@ -181,27 +190,38 @@ const Auth = {
 
         // 4. Save merged data to localStorage
         const alive = Array.from(merged.values());
-        DB._set(col, alive);
+        const localJSON = JSON.stringify(local);
+        const mergedJSON = JSON.stringify(alive);
+        const changed = localJSON !== mergedJSON;
+
+        if (changed) {
+          DB._set(col, alive);
+          dataChanged = true;
+        }
 
         // 4b. Track highest remote ID so _nextId won't collide
         if (!DB._remoteMaxIds) DB._remoteMaxIds = {};
         DB._remoteMaxIds[col] = alive.reduce((m, item) => Math.max(m, item.id || 0), 0);
 
-        // 5. Push to Firestore
-        await DB.syncToFirestore(col, alive);
+        // 5. Push to Firestore ONLY if data actually changed
+        if (changed) {
+          await DB.syncToFirestore(col, alive);
+        }
         if (pulled > 0) console.log(`Pulled ${pulled} updated items for ${col}`);
       }
 
       this._lastSync = new Date();
       this._updateSyncIndicator('done');
-      console.log('Two-way sync complete.');
-      // Refresh current view if data changed
-      if (typeof App !== 'undefined' && App._currentTab) {
-        const tab = App._currentTab;
+      console.log('Two-way sync complete.' + (dataChanged ? ' (data updated)' : ' (no changes)'));
+
+      // Only refresh the view if data actually changed
+      if (dataChanged && typeof App !== 'undefined' && App.currentTab) {
+        const tab = App.currentTab;
         if (tab === 'dashboard' && typeof Dashboard !== 'undefined') Dashboard.render();
         else if (tab === 'tours' && typeof Tours !== 'undefined') Tours.render();
         else if (tab === 'crm' && typeof CRM !== 'undefined') CRM.render();
         else if (tab === 'invoicing' && typeof Invoicing !== 'undefined') Invoicing.render();
+        else if (tab === 'clients' && typeof Clients !== 'undefined') Clients.render();
       }
     } catch (e) {
       console.warn('Sync failed:', e.message);
