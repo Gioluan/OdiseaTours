@@ -1260,8 +1260,13 @@ const Quote = {
   // Sync updated quote data into the linked confirmed tour
   _syncQuoteToTour(q) {
     if (!q || !q.id) return;
-    const tour = DB.getTours().find(t => t.quoteId === q.id);
-    if (!tour) return; // No linked tour
+    // Match by quoteId — handle both number and string comparison
+    const qId = q.id;
+    const tour = DB.getTours().find(t => t.quoteId == qId);
+    if (!tour) {
+      console.log('No linked tour found for quote', qId);
+      return;
+    }
 
     // Sync all shared fields
     tour.tourName = q.tourName;
