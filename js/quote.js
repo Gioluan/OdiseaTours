@@ -1236,6 +1236,8 @@ const Quote = {
           q.status = existing.status;
         }
         DB.saveQuote(q);
+        // Sync changes to linked confirmed tour if one exists
+        this._syncQuoteToTour(q);
         alert('Quote Q-' + String(this.editingQuoteId).padStart(4, '0') + ' updated successfully!');
       } else if (action === 'new') {
         q.status = 'Draft';
@@ -1253,6 +1255,65 @@ const Quote = {
 
     this.init();
     App.switchTab('crm');
+  },
+
+  // Sync updated quote data into the linked confirmed tour
+  _syncQuoteToTour(q) {
+    if (!q || !q.id) return;
+    const tour = DB.getTours().find(t => t.quoteId === q.id);
+    if (!tour) return; // No linked tour
+
+    // Sync all shared fields
+    tour.tourName = q.tourName;
+    tour.groupName = q.groupName || '';
+    tour.destination = q.destination;
+    tour.destinations = q.destinations ? JSON.parse(JSON.stringify(q.destinations)) : [];
+    tour.hotels = q.hotels ? JSON.parse(JSON.stringify(q.hotels)) : [];
+    tour.startDate = q.startDate;
+    tour.endDate = q.endDate;
+    tour.nights = q.nights;
+    tour.clientId = q.clientId || tour.clientId;
+    tour.clientName = q.clientName;
+    tour.clientEmail = q.clientEmail;
+    tour.clientPhone = q.clientPhone;
+    tour.numStudents = q.numStudents;
+    tour.numSiblings = q.numSiblings;
+    tour.numAdults = q.numAdults;
+    tour.numFOC = q.numFOC || 0;
+    tour.priceStudent = q.priceStudent;
+    tour.priceSibling = q.priceSibling;
+    tour.priceAdult = q.priceAdult;
+    tour.currency = q.currency;
+    tour.hotelName = q.hotelName;
+    tour.hotelConfirmed = q.hotelConfirmed || false;
+    tour.roomType = q.roomType || '';
+    tour.mealPlan = q.mealPlan;
+    tour.activities = q.activities ? JSON.parse(JSON.stringify(q.activities)) : [];
+    tour.flightCostPerPerson = q.flightCostPerPerson || 0;
+    tour.airportTransfers = q.airportTransfers || 0;
+    tour.coachHire = q.coachHire || 0;
+    tour.internalTransport = q.internalTransport || 0;
+    tour.costPerNightPerRoom = q.costPerNightPerRoom || 0;
+    tour.numRooms = q.numRooms || 0;
+    tour.mealCostPerPersonPerDay = q.mealCostPerPersonPerDay || 0;
+    tour.numGuides = q.numGuides || 0;
+    tour.guideDailyRate = q.guideDailyRate || 0;
+    tour.guideFlights = q.guideFlights || 0;
+    tour.guideAccommodation = q.guideAccommodation || 0;
+    tour.guideMeals = q.guideMeals || 0;
+
+    // Recalculate costs & profit
+    const rev = ((q.priceStudent||0) * (q.numStudents||0)) +
+                ((q.priceSibling||0) * (q.numSiblings||0)) +
+                ((q.priceAdult||0) * (q.numAdults||0));
+    const costs = q.costs ? JSON.parse(JSON.stringify(q.costs)) : {};
+    costs.totalRevenue = rev;
+    costs.profit = rev - (costs.grand || 0);
+    costs.margin = rev > 0 ? (costs.profit / rev * 100) : 0;
+    tour.costs = costs;
+
+    DB.saveTour(tour);
+    console.log('Synced quote changes to confirmed tour:', tour.tourName);
   },
 
   renderSmartSuggestions() {
