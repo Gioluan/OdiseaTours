@@ -628,7 +628,7 @@ const Guide = {
     const container = document.getElementById('section-expenses');
     container.innerHTML = '<h2 class="section-title">Expenses</h2><div style="text-align:center;padding:1rem"><div class="spinner"></div></div>';
 
-    const expenses = await DB.getGuideExpenses(this.tourId);
+    const expenses = (await DB.getGuideExpenses(this.tourId)).filter(e => !e._removed);
 
     const total = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
     const currency = (expenses[0] && expenses[0].currency) || 'EUR';
@@ -725,7 +725,10 @@ const Guide = {
 
   async deleteExpense(expenseId) {
     if (!confirm('Delete this expense?')) return;
-    await DB.deleteGuideExpense(this.tourId, expenseId);
+    // Soft-delete: mark as removed (public cannot hard-delete per Firestore rules)
+    const docRef = DB.firestore.collection('tours').doc(this.tourId)
+      .collection('guideExpenses').doc(expenseId);
+    await docRef.update({ _removed: true });
     this.renderExpenses();
   },
 
@@ -869,7 +872,7 @@ const Guide = {
     const container = document.getElementById('section-notes');
     container.innerHTML = '<h2 class="section-title">Incident Notes</h2><div style="text-align:center;padding:1rem"><div class="spinner"></div></div>';
 
-    const notes = await DB.getGuideNotes(this.tourId);
+    const notes = (await DB.getGuideNotes(this.tourId)).filter(n => !n._removed);
 
     container.innerHTML = `
       <h2 class="section-title">Incident Notes</h2>
@@ -945,7 +948,10 @@ const Guide = {
 
   async deleteNote(noteId) {
     if (!confirm('Delete this note?')) return;
-    await DB.deleteGuideNote(this.tourId, noteId);
+    // Soft-delete: mark as removed (public cannot hard-delete per Firestore rules)
+    const docRef = DB.firestore.collection('tours').doc(this.tourId)
+      .collection('guideNotes').doc(noteId);
+    await docRef.update({ _removed: true });
     this.renderNotes();
   },
 

@@ -742,11 +742,11 @@ const Portal = {
       DB.getTourPassengers(this.tourId),
       isFamily ? DB.getTourInvoicesForFamily(this.tourId, this._familyId) : DB.getTourInvoices(this.tourId)
     ]);
-    this._passengers = allPassengers;
+    this._passengers = allPassengers.filter(p => !p._removed);
     this._invoices = invoices;
 
     // Filter passengers for family mode
-    let passengers = allPassengers;
+    let passengers = this._passengers;
     if (isFamily) {
       const familyName = (this._familyData.name || '').toLowerCase().trim();
       passengers = allPassengers.filter(p => {
@@ -1052,14 +1052,12 @@ const Portal = {
     if (btn) { btn.disabled = true; btn.textContent = 'Removing...'; }
 
     try {
-      const result = await DB.deleteTourPassenger(this.tourId, passengerId);
-      if (result) {
-        this._showToast(name + ' removed');
-        this.renderPassengers();
-      } else {
-        alert('Failed to remove passenger. Please try again.');
-        if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
-      }
+      // Soft-delete: mark as removed (public cannot hard-delete per Firestore rules)
+      const docRef = DB.firestore.collection('tours').doc(this.tourId)
+        .collection('passengers').doc(passengerId);
+      await docRef.update({ _removed: true, _removedAt: new Date().toISOString() });
+      this._showToast(name + ' removed');
+      this.renderPassengers();
     } catch (err) {
       alert('Error removing passenger: ' + (err.message || 'Unknown error'));
       if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
@@ -1144,9 +1142,11 @@ const Portal = {
     let lastError = '';
     for (let i = 0; i < ids.length; i++) {
       try {
-        const result = await DB.deleteTourPassenger(this.tourId, ids[i]);
-        if (result) deleted++;
-        else { failed++; lastError = 'Permission denied or not found'; }
+        // Soft-delete: mark as removed (public cannot hard-delete per Firestore rules)
+        const docRef = DB.firestore.collection('tours').doc(this.tourId)
+          .collection('passengers').doc(ids[i]);
+        await docRef.update({ _removed: true, _removedAt: new Date().toISOString() });
+        deleted++;
       } catch (e) {
         failed++;
         lastError = e.message || 'Unknown error';
@@ -1205,7 +1205,7 @@ const Portal = {
 
     // Load passengers if not loaded
     if (!this._passengers.length) {
-      this._passengers = await DB.getTourPassengers(this.tourId);
+      this._passengers = (await DB.getTourPassengers(this.tourId)).filter(p => !p._removed);
     }
 
     // Load room plan from tour doc

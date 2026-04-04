@@ -10,47 +10,16 @@
    7. Copy the config values below
    8. Add your GitHub Pages domain as authorized domain in Authentication > Settings
 
-   FIRESTORE SECURITY RULES (paste in Firestore > Rules):
+   FIRESTORE SECURITY RULES: see firestore.rules file
    ─────────────────────────────────────────────────────
-   rules_version = '2';
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       // Admin (authenticated) can read/write everything
-       match /{document=**} {
-         allow read, write: if request.auth != null;
-       }
-       // Public can read tour data (access code validated in app logic)
-       match /tours/{tourId} {
-         allow read: if true;
-       }
-       // Public can read/create/update passengers and messages
-       match /tours/{tourId}/passengers/{passengerId} {
-         allow read, create, update: if true;
-       }
-       match /tours/{tourId}/messages/{messageId} {
-         allow read, create: if true;
-       }
-       // Tour-level flight details (portal submissions)
-       match /tours/{tourId}/tourFlights/{docId} {
-         allow read, create, update: if true;
-       }
-       // Public can read documents (download links)
-       match /tours/{tourId}/documents/{docId} {
-         allow read: if true;
-       }
-       // Guide portal can read/create/delete expenses and notes
-       match /tours/{tourId}/guideExpenses/{expenseId} {
-         allow read, create, delete: if true;
-       }
-       match /tours/{tourId}/guideNotes/{noteId} {
-         allow read, create, delete: if true;
-       }
-       // Guide portal can read documents shared by admin
-       match /tours/{tourId}/guideDocuments/{docId} {
-         allow read: if true;
-       }
-     }
-   }
+   Key points:
+   - Admin (authenticated) has full read/write
+   - Public can read tours and subcollections (portal/guide access)
+   - Public can create/update passengers (with validation) but NOT delete
+   - Public can create messages (with size limit) but NOT update/delete
+   - Guide expenses/notes: public can read/create but NOT delete
+   - Portal/guide use soft-delete (_removed flag) instead of hard delete
+   - Deploy rules: firebase deploy --only firestore:rules
 
    STORAGE SECURITY RULES (paste in Storage > Rules):
    ──────────────────────────────────────────────────

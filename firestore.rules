@@ -1,41 +1,84 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Admin (authenticated) can read/write everything
+
+    // ── Admin (authenticated) can read/write everything ──
     match /{document=**} {
       allow read, write: if request.auth != null;
     }
-    // Public can read tour data (access code validated in app logic)
+
+    // ── Tours: public can only read specific fields needed for portal lookup ──
+    // Access-code queries (where accessCode == X) still work because read is allowed.
+    // But the tour doc may contain pricing/internal data — acceptable tradeoff
+    // since the access code acts as a shared secret.
     match /tours/{tourId} {
       allow read: if true;
+      // No public write
     }
-    // Public can read/create/update/delete passengers and messages
+
+    // ── Passengers: public can read, create, update — but NOT delete ──
+    // Deletion requires authentication (admin CRM only).
+    // Portal "remove passenger" will need admin auth or a Cloud Function in future.
     match /tours/{tourId}/passengers/{passengerId} {
-      allow read, create, update, delete: if true;
+      allow read: if true;
+      allow create: if true
+        && request.resource.data.keys().hasAny(['firstName', 'lastName'])
+        && request.resource.data.firstName is string
+        && request.resource.data.lastName is string
+        && request.resource.data.firstName.size() <= 100
+        && request.resource.data.lastName.size() <= 100;
+      allow update: if true
+        && request.resource.data.firstName is string
+        && request.resource.data.lastName is string
+        && request.resource.data.firstName.size() <= 100
+        && request.resource.data.lastName.size() <= 100;
+      // delete only for authenticated admin
     }
+
+    // ── Messages: public can read and create (not update or delete) ──
     match /tours/{tourId}/messages/{messageId} {
-      allow read, create: if true;
+      allow read: if true;
+      allow create: if true
+        && request.resource.data.keys().hasAny(['text'])
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 2000;
+      // No update or delete from public
     }
-    // Tour-level flight details (portal submissions)
+
+    // ── Flight details: public create/update, no delete ──
     match /tours/{tourId}/tourFlights/{docId} {
-      allow read, create, update: if true;
+      allow read: if true;
+      allow create, update: if true
+        && request.resource.data.size() <= 20;
+      // No delete from public
     }
-    // Public can read documents (download links)
+
+    // ── Family flights: public create/update, no delete ──
+    match /tours/{tourId}/familyFlights/{familyId} {
+      allow read: if true;
+      allow create, update: if true
+        && request.resource.data.size() <= 20;
+      // No delete from public
+    }
+
+    // ── Documents: read-only for public ──
     match /tours/{tourId}/documents/{docId} {
       allow read: if true;
     }
-    // Family flights (portal submissions)
-    match /tours/{tourId}/familyFlights/{familyId} {
-      allow read, create, update: if true;
-    }
-    // Guide portal can read/create/delete expenses and notes
+
+    // ── Guide expenses: read and create, delete requires auth ──
     match /tours/{tourId}/guideExpenses/{expenseId} {
-      allow read, create, delete: if true;
+      allow read, create: if true;
+      // delete only for authenticated admin
     }
+
+    // ── Guide notes: read and create, delete requires auth ──
     match /tours/{tourId}/guideNotes/{noteId} {
-      allow read, create, delete: if true;
+      allow read, create: if true;
+      // delete only for authenticated admin
     }
-    // Guide portal can read documents shared by admin
+
+    // ── Guide documents: read-only ──
     match /tours/{tourId}/guideDocuments/{docId} {
       allow read: if true;
     }
