@@ -20,7 +20,7 @@
 <script>
 // Force update: if cached version is old, clear caches and reload
 (function(){
-  var APP_VERSION = 37;
+  var APP_VERSION = 38;
   var stored = localStorage.getItem('odisea_app_version');
   if (stored && Number(stored) >= APP_VERSION) return;
   localStorage.setItem('odisea_app_version', APP_VERSION);
@@ -365,6 +365,8 @@
         <option value="">All countries</option>
       </select>
       <input type="text" id="lead-search" placeholder="Search name, email, city..." oninput="Leads.render()">
+      <button id="lead-bulk-delete" class="btn btn-sm btn-danger" style="display:none" onclick="Leads.deleteSelected()">Delete selected (<span id="lead-bulk-count">0</span>)</button>
+      <button class="btn btn-sm btn-outline" onclick="Leads.deleteAllFiltered()" style="border-color:var(--rose,#f43f5e);color:var(--rose,#f43f5e)">Delete all visible</button>
       <span id="lead-count" style="margin-left:auto;color:var(--gray-500);font-size:0.85rem;font-weight:600"></span>
     </div>
     <div id="leads-table-container"></div>

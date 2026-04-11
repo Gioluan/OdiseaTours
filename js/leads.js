@@ -1,5 +1,8 @@
 /* === LEADS MODULE — top of funnel cold prospects === */
 const Leads = {
+  selectedIds: new Set(),
+  _lastVisibleIds: [],
+
   init() {
     this.render();
   },
@@ -56,16 +59,28 @@ const Leads = {
       countEl.textContent = `Showing ${leads.length} of ${total}`;
     }
 
+    // Track which IDs are currently visible (for "select all" / "delete all visible")
+    this._lastVisibleIds = leads.map(l => l.id);
+
+    // Drop selections that are no longer visible
+    this.selectedIds.forEach(id => {
+      if (!this._lastVisibleIds.includes(id)) this.selectedIds.delete(id);
+    });
+
     if (!leads.length) {
       document.getElementById('leads-table-container').innerHTML =
         '<div class="empty-state">No leads to show. Click <strong>Import xlsx</strong> to load Ramy\'s outreach list, or <strong>+ Add Lead</strong> to add manually.</div>';
+      this._refreshBulkBar();
       return;
     }
+
+    const allSelected = leads.length > 0 && leads.every(l => this.selectedIds.has(l.id));
 
     document.getElementById('leads-table-container').innerHTML = `
       <table class="data-table">
         <thead>
           <tr>
+            <th style="width:32px"><input type="checkbox" ${allSelected ? 'checked' : ''} onchange="Leads.toggleSelectAll(this.checked)" title="Select all visible"></th>
             <th>Club</th>
             <th>Location</th>
             <th>Email</th>
@@ -80,6 +95,8 @@ const Leads = {
           ${leads.map(l => this._row(l)).join('')}
         </tbody>
       </table>`;
+
+    this._refreshBulkBar();
   },
 
   _row(l) {
@@ -97,8 +114,10 @@ const Leads = {
       ? '<span class="badge badge-lost" style="margin-left:0.25rem;font-size:0.65rem">⚠ DO NOT ENGAGE</span>'
       : '';
 
+    const checked = this.selectedIds.has(l.id) ? 'checked' : '';
     return `
       <tr class="row-clickable" ondblclick="Leads.viewLead(${l.id})" style="${rowStyle}">
+        <td onclick="event.stopPropagation()"><input type="checkbox" ${checked} onclick="event.stopPropagation()" onchange="Leads.toggleSelect(${l.id}, this.checked)"></td>
         <td>
           <strong>${this._esc(l.name) || '—'}</strong>
           ${competitorTag}
@@ -117,8 +136,63 @@ const Leads = {
             <button class="btn btn-sm btn-outline" onclick="Leads.markReplied(${l.id})" title="Got a reply">✉️</button>
             <button class="btn btn-sm btn-outline" onclick="Leads.markHot(${l.id})" title="Mark hot">🔥</button>
           ` : ''}
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();Leads.deleteOne(${l.id})" title="Delete this lead">×</button>
         </td>
       </tr>`;
+  },
+
+  // ── selection + bulk delete ───────────────────────────────────────────
+  toggleSelect(id, checked) {
+    if (checked) this.selectedIds.add(id);
+    else this.selectedIds.delete(id);
+    this._refreshBulkBar();
+  },
+
+  toggleSelectAll(checked) {
+    if (checked) this._lastVisibleIds.forEach(id => this.selectedIds.add(id));
+    else this._lastVisibleIds.forEach(id => this.selectedIds.delete(id));
+    this.render();
+  },
+
+  _refreshBulkBar() {
+    const btn = document.getElementById('lead-bulk-delete');
+    const count = document.getElementById('lead-bulk-count');
+    if (!btn || !count) return;
+    const n = this.selectedIds.size;
+    if (n > 0) {
+      btn.style.display = '';
+      count.textContent = n;
+    } else {
+      btn.style.display = 'none';
+    }
+  },
+
+  deleteOne(id) {
+    const l = DB.getLeads().find(x => x.id === id);
+    if (!l) return;
+    if (!confirm(`Delete "${l.name}"? This cannot be undone.`)) return;
+    DB.deleteLead(id);
+    this.selectedIds.delete(id);
+    this.render();
+  },
+
+  deleteSelected() {
+    const n = this.selectedIds.size;
+    if (n === 0) { alert('No leads selected.'); return; }
+    if (!confirm(`Delete ${n} selected lead${n === 1 ? '' : 's'}? This cannot be undone.`)) return;
+    [...this.selectedIds].forEach(id => DB.deleteLead(id));
+    this.selectedIds.clear();
+    this.render();
+  },
+
+  deleteAllFiltered() {
+    const n = this._lastVisibleIds.length;
+    if (n === 0) { alert('No leads visible to delete.'); return; }
+    if (!confirm(`Delete ALL ${n} visible lead${n === 1 ? '' : 's'}? This cannot be undone.\n\nTip: Use filters first to narrow down what gets deleted.`)) return;
+    if (n > 50 && !confirm(`Final confirmation: really delete ${n} leads?`)) return;
+    this._lastVisibleIds.forEach(id => DB.deleteLead(id));
+    this.selectedIds.clear();
+    this.render();
   },
 
   _statusBadge(status) {
