@@ -177,6 +177,76 @@ const DB = {
     this._softDelete('clients', id);
   },
 
+  // LEADS — top of funnel (cold prospects worked by Ramy/Juan)
+  getLeads() { return this._get('leads').filter(l => !l._deleted); },
+  saveLead(l) {
+    const leads = this.getLeads();
+    if (l.id) {
+      const idx = leads.findIndex(x => x.id === l.id);
+      if (idx >= 0) leads[idx] = l; else leads.push(l);
+    } else {
+      l.id = this._nextId('leads');
+      l.createdAt = new Date().toISOString();
+      if (!l.status) l.status = 'Cold';
+      if (!l.owner) l.owner = 'Ramy';
+      if (!l.contactCount) l.contactCount = 0;
+      if (!l.history) l.history = [];
+      leads.push(l);
+    }
+    l.updatedAt = new Date().toISOString();
+    this._set('leads', leads);
+    this._pushToFirestore('leads', l);
+    return l;
+  },
+  deleteLead(id) {
+    this._softDelete('leads', id);
+  },
+  // Bulk-import dedupes by email (case-insensitive), falling back to name+phone
+  bulkSaveLeads(rows) {
+    const leads = this.getLeads();
+    const byEmail = new Map();
+    const byKey = new Map();
+    leads.forEach(l => {
+      if (l.email) byEmail.set(l.email.toLowerCase().trim(), l);
+      const k = (l.name || '').toLowerCase().trim() + '|' + (l.phone || '').replace(/\D/g, '');
+      if (k !== '|') byKey.set(k, l);
+    });
+    let added = 0, skipped = 0;
+    rows.forEach(row => {
+      const email = (row.email || '').toLowerCase().trim();
+      const k = (row.name || '').toLowerCase().trim() + '|' + (row.phone || '').replace(/\D/g, '');
+      if ((email && byEmail.has(email)) || (k !== '|' && byKey.has(k))) {
+        skipped++;
+        return;
+      }
+      const lead = {
+        name: row.name || '',
+        league: row.league || '',
+        country: row.country || '',
+        state: row.state || '',
+        city: row.city || '',
+        contactName: row.contact_name || row.contactName || '',
+        contactTitle: row.contact_title || row.contactTitle || '',
+        email: row.email || '',
+        phone: row.phone || '',
+        website: row.website || '',
+        source: row.source || 'Imported',
+        notes: row.notes || '',
+        warning: row.WARNING || row.warning || '',
+        status: 'Cold',
+        owner: 'Ramy',
+        lastContactAt: '',
+        nextActionAt: '',
+        contactCount: 0,
+        history: [],
+      };
+      DB.saveLead(lead);
+      if (lead.email) byEmail.set(lead.email.toLowerCase().trim(), lead);
+      added++;
+    });
+    return { added, skipped };
+  },
+
   // EMAIL LOG
   getEmailLog() { return this._get('emaillog'); },
   logEmail(entry) {

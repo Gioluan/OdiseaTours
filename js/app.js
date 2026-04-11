@@ -26,6 +26,7 @@ const App = {
     Email.init();
     Passengers.init();
     Clients.init();
+    Leads.init();
     Providers.init();
 
     // Initialize Auth (after modules, so UI is ready)
@@ -55,6 +56,7 @@ const App = {
       case 'email': Email.render(); break;
       case 'passengers': Passengers.init(); break;
       case 'clients': Clients.render(); break;
+      case 'leads': Leads.render(); break;
       case 'providers': Providers.render(); break;
     }
   },
