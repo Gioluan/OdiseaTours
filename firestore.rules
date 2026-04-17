@@ -13,7 +13,12 @@ service cloud.firestore {
     // since the access code acts as a shared secret.
     match /tours/{tourId} {
       allow read: if true;
-      // No public write
+      // Portal may update ONLY roomPlan and flight fields — everything else is admin-only.
+      // Keeps pricing / internal fields safe while letting group leader save room changes.
+      allow update: if request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(['roomPlan', 'tourFlightDetails', 'flightLegs']);
+      // No public create or delete
     }
 
     // ── Passengers: public can read, create, update — but NOT delete ──

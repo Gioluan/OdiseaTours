@@ -1530,30 +1530,84 @@ const Portal = {
     if (counts.other) lines.push('Other rooms,' + counts.other);
 
     const csv = '\uFEFF' + lines.join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'RoomPlan_' + (t.tourName || 'Tour').replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const filename = 'RoomPlan_' + (t.tourName || 'Tour').replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
+    Portal._triggerDownload(csv, filename, 'text/csv;charset=utf-8');
 
     // Re-render the section so rooms appear in the UI too
     this.renderRoomPlan();
   },
 
+  // Cross-browser download helper — defers revoke so Safari & Chrome both
+  // actually start the download before the blob URL is thrown away.
+  _triggerDownload(content, filename, mime) {
+    try {
+      const blob = new Blob([content], { type: mime || 'application/octet-stream' });
+      // IE/legacy Edge
+      if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+        window.navigator.msSaveOrOpenBlob(blob, filename);
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.rel = 'noopener';
+      a.style.position = 'fixed';
+      a.style.left = '-9999px';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, 1500);
+    } catch (e) {
+      console.error('Download failed:', e);
+      alert('Could not start download: ' + (e.message || e));
+    }
+  },
+
   async _saveRoomPlan(rerender) {
     this.tourData.roomPlan = this._roomPlan;
+    Portal._showSaveStatus('saving');
+    let saved = false;
     if (DB._firebaseReady) {
       try {
         await DB.firestore.collection('tours').doc(this.tourId).update({ roomPlan: this._roomPlan });
+        saved = true;
       } catch (e) {
         console.warn('Save room plan failed:', e.message);
       }
     }
+    Portal._showSaveStatus(saved ? 'saved' : 'error');
     if (rerender !== false) this.renderRoomPlan();
+  },
+
+  _showSaveStatus(state) {
+    let el = document.getElementById('rp-save-status');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'rp-save-status';
+      el.style.cssText = 'position:fixed;top:70px;right:16px;padding:0.45rem 0.85rem;border-radius:8px;font-size:0.82rem;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15);transition:opacity 0.25s';
+      document.body.appendChild(el);
+    }
+    if (state === 'saving') {
+      el.textContent = 'Saving…';
+      el.style.background = '#fff3cd';
+      el.style.color = '#856404';
+      el.style.opacity = '1';
+    } else if (state === 'saved') {
+      el.textContent = '✓ Saved';
+      el.style.background = '#d4edda';
+      el.style.color = '#155724';
+      el.style.opacity = '1';
+      setTimeout(() => { if (el) el.style.opacity = '0'; }, 1500);
+    } else {
+      el.textContent = '⚠ Save failed — refresh & retry';
+      el.style.background = '#f8d7da';
+      el.style.color = '#721c24';
+      el.style.opacity = '1';
+      setTimeout(() => { if (el) el.style.opacity = '0'; }, 4000);
+    }
   },
 
   downloadRoomPlan() {
@@ -1718,13 +1772,8 @@ const Portal = {
 
     // BOM + CSV content — BOM ensures Excel reads UTF-8 correctly
     const csv = '\uFEFF' + lines.join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Room_Plan_' + (t.tourName || 'Tour').replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    const filename = 'Room_Plan_' + (t.tourName || 'Tour').replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
+    Portal._triggerDownload(csv, filename, 'text/csv;charset=utf-8');
   },
 
   async renderMessages() {
