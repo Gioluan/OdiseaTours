@@ -1397,6 +1397,41 @@ body {
   font-weight: 500;
 }
 
+/* ── Drag & Drop ── */
+.rp-drag-hint {
+  font-size: 0.78rem;
+  color: var(--gray-500);
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  margin-bottom: 0.8rem;
+}
+
+.rp-guest,
+.rp-unassigned-pax {
+  cursor: grab;
+  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+}
+.rp-guest:active,
+.rp-unassigned-pax:active { cursor: grabbing; }
+.rp-guest:hover,
+.rp-unassigned-pax:hover { background: var(--gray-50); }
+
+.rp-dragging { opacity: 0.4; transform: scale(0.98); }
+
+.rp-room.rp-drop-hover {
+  outline: 2px dashed #0066cc;
+  outline-offset: -2px;
+  background: #e6f2ff;
+}
+.rp-unassigned.rp-drop-hover {
+  outline: 2px dashed #c62828;
+  outline-offset: -2px;
+  background: #ffebee;
+  border-radius: var(--radius-lg);
+}
+
 /* ── SECTION HEADERS ── */
 .section-header {
   margin-bottom: 1rem;

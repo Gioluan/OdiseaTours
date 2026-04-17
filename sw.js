@@ -1,5 +1,5 @@
 /* === SERVICE WORKER — Odisea Tours PWA === */
-const CACHE_NAME = 'odisea-tours-v36';
+const CACHE_NAME = 'odisea-tours-v37';
 const ASSETS = [
   './',
   './index.html',

@@ -1245,11 +1245,11 @@ const Portal = {
         ${this._roomPlan.length ? '<button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlan()">Download PDF</button><button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlanExcel()">Download CSV</button>' : ''}
       </div>
 
-      ${this._roomPlan.length ? `<div class="rp-rooms">
+      ${this._roomPlan.length ? `<div class="rp-drag-hint">Tip: drag passengers between rooms to reassign. Drop on the unassigned area to remove.</div><div class="rp-rooms">
         ${this._roomPlan.map((room, ri) => {
           const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean);
           return `
-            <div class="rp-room">
+            <div class="rp-room" data-room-idx="${ri}" ondragover="Portal._dragOver(event)" ondragleave="Portal._dragLeave(event)" ondrop="Portal._dropOnRoom(event,${ri})">
               <div class="rp-room-header">
                 <div class="rp-room-num">
                   <input value="${Portal._escapeAttr(room.name || 'Room ' + (ri+1))}" class="rp-room-name-input" onchange="Portal.updateRoomName(${ri},this.value)" onclick="event.stopPropagation()">
@@ -1260,7 +1260,7 @@ const Portal = {
               </div>
               <div class="rp-room-guests">
                 ${roomPax.length ? roomPax.map(p => `
-                  <div class="rp-guest">
+                  <div class="rp-guest" draggable="true" data-pax-id="${p.id}" ondragstart="Portal._dragStart(event,'${p.id}')" ondragend="Portal._dragEnd(event)">
                     <div class="rp-guest-avatar">${((p.firstName||'')[0]||'')+((p.lastName||'')[0]||'')}</div>
                     <div class="rp-guest-info">
                       <div class="rp-guest-name">${p.firstName||''} ${p.lastName||''}</div>
@@ -1268,7 +1268,7 @@ const Portal = {
                     </div>
                     <button class="rp-guest-remove" onclick="Portal.removeFromRoom(${ri},'${p.id}')" title="Remove from room">&times;</button>
                   </div>
-                `).join('') : '<div class="rp-empty">No guests assigned</div>'}
+                `).join('') : '<div class="rp-empty">No guests assigned &mdash; drag someone here</div>'}
               </div>
               <div class="rp-room-add">
                 <select onchange="Portal.assignToRoom(${ri},this.value);this.value=''" class="rp-assign-select">
@@ -1285,15 +1285,15 @@ const Portal = {
         <p style="font-size:0.82rem;color:var(--gray-500);line-height:1.5;margin:0">Odisea Tours will do its best to accommodate the group as required, however final room arrangements depend on hotel characteristics and availability at the time of booking.</p>
       </div>
 
-      ${unassigned.length ? `
-        <div class="rp-unassigned">
-          <h3 class="rp-unassigned-title">Unassigned Passengers (${unassigned.length})</h3>
+      <div class="rp-unassigned" ondragover="Portal._dragOver(event)" ondragleave="Portal._dragLeave(event)" ondrop="Portal._dropOnUnassigned(event)">
+        <h3 class="rp-unassigned-title">Unassigned Passengers (${unassigned.length})${unassigned.length ? '' : ' &mdash; drop here to unassign'}</h3>
+        ${unassigned.length ? `
           ${Object.keys(familyGroups).length ? Object.entries(familyGroups).map(([family, members]) => `
             <div class="rp-family-group">
               <div class="rp-family-label">${Portal._escapeHtml(family)} (${members.length})</div>
               <div class="rp-family-members">
                 ${members.map(p => `
-                  <div class="rp-unassigned-pax">
+                  <div class="rp-unassigned-pax" draggable="true" data-pax-id="${p.id}" ondragstart="Portal._dragStart(event,'${p.id}')" ondragend="Portal._dragEnd(event)">
                     <span class="rp-ua-name">${p.firstName||''} ${p.lastName||''}</span>
                     <span class="pax-tag pax-tag-role-${(p.role||'player').toLowerCase()}">${p.role||'Player'}</span>
                   </div>
@@ -1306,7 +1306,7 @@ const Portal = {
               <div class="rp-family-label">No Family Group (${noFamily.length})</div>
               <div class="rp-family-members">
                 ${noFamily.map(p => `
-                  <div class="rp-unassigned-pax">
+                  <div class="rp-unassigned-pax" draggable="true" data-pax-id="${p.id}" ondragstart="Portal._dragStart(event,'${p.id}')" ondragend="Portal._dragEnd(event)">
                     <span class="rp-ua-name">${p.firstName||''} ${p.lastName||''}</span>
                     <span class="pax-tag pax-tag-role-${(p.role||'player').toLowerCase()}">${p.role||'Player'}</span>
                   </div>
@@ -1314,8 +1314,49 @@ const Portal = {
               </div>
             </div>
           ` : ''}
-        </div>
-      ` : ''}`;
+        ` : '<div style="color:var(--gray-400);font-size:0.85rem;padding:0.5rem 0">All passengers assigned.</div>'}
+      </div>`;
+  },
+
+  // ── Drag & Drop for Room Plan ──
+  _dragStart(e, paxId) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', paxId);
+    e.currentTarget.classList.add('rp-dragging');
+  },
+  _dragEnd(e) {
+    e.currentTarget.classList.remove('rp-dragging');
+    document.querySelectorAll('.rp-drop-hover').forEach(el => el.classList.remove('rp-drop-hover'));
+  },
+  _dragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.classList.add('rp-drop-hover');
+  },
+  _dragLeave(e) {
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      e.currentTarget.classList.remove('rp-drop-hover');
+    }
+  },
+  _dropOnRoom(e, roomIdx) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('rp-drop-hover');
+    const paxId = e.dataTransfer.getData('text/plain');
+    if (!paxId) return;
+    this.assignToRoom(roomIdx, paxId);
+  },
+  _dropOnUnassigned(e) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('rp-drop-hover');
+    const paxId = e.dataTransfer.getData('text/plain');
+    if (!paxId) return;
+    let changed = false;
+    this._roomPlan.forEach(r => {
+      const before = (r.passengers || []).length;
+      r.passengers = (r.passengers || []).filter(id => id !== paxId);
+      if (r.passengers.length !== before) changed = true;
+    });
+    if (changed) this._saveRoomPlan();
   },
 
   addRoom() {
