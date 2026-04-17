@@ -1537,32 +1537,54 @@ const Portal = {
     this.renderRoomPlan();
   },
 
-  // Cross-browser download helper — defers revoke so Safari & Chrome both
-  // actually start the download before the blob URL is thrown away.
+  // Cross-browser download helper. Forces octet-stream MIME so the browser
+  // can't render inline; defers revoke so Safari actually starts the download.
   _triggerDownload(content, filename, mime) {
+    console.log('[Portal] _triggerDownload called:', filename, content.length + ' bytes');
     try {
-      const blob = new Blob([content], { type: mime || 'application/octet-stream' });
+      // Force binary MIME for the blob so Chrome/Safari don't try to display it
+      const blob = new Blob([content], { type: 'application/octet-stream' });
+
       // IE/legacy Edge
       if (window.navigator && window.navigator.msSaveOrOpenBlob) {
         window.navigator.msSaveOrOpenBlob(blob, filename);
         return;
       }
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
       a.rel = 'noopener';
+      a.target = '_self';
       a.style.position = 'fixed';
       a.style.left = '-9999px';
+      a.style.top = '-9999px';
       document.body.appendChild(a);
-      a.click();
+
+      // Dispatch a real MouseEvent — more reliable than .click() on some mobile browsers
+      const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+      const dispatched = a.dispatchEvent(evt);
+      if (!dispatched) a.click();
+
+      console.log('[Portal] download anchor clicked, dispatched=' + dispatched);
+
       setTimeout(() => {
-        a.remove();
-        URL.revokeObjectURL(url);
-      }, 1500);
+        try { a.remove(); } catch(e){}
+        try { URL.revokeObjectURL(url); } catch(e){}
+      }, 2000);
     } catch (e) {
-      console.error('Download failed:', e);
-      alert('Could not start download: ' + (e.message || e));
+      console.error('[Portal] Download failed:', e);
+      alert('Download failed: ' + (e.message || e) + '\n\nCopy the CSV from the next screen manually.');
+      // Fallback: open in new window so user can at least copy/save manually
+      try {
+        const w = window.open('', '_blank');
+        if (w) {
+          w.document.write('<pre style="font-family:monospace;white-space:pre-wrap;padding:16px">' +
+            String(content).replace(/</g, '&lt;') + '</pre>');
+          w.document.title = filename;
+        }
+      } catch(e2) {}
     }
   },
 
