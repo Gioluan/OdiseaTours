@@ -1397,7 +1397,7 @@ body {
   font-weight: 500;
 }
 
-/* ── Drag & Drop ── */
+/* ── Drag & Drop (SortableJS) ── */
 .rp-drag-hint {
   font-size: 0.78rem;
   color: var(--gray-500);
@@ -1411,25 +1411,45 @@ body {
 .rp-guest,
 .rp-unassigned-pax {
   cursor: grab;
-  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  transition: background 0.15s, opacity 0.15s;
 }
 .rp-guest:active,
 .rp-unassigned-pax:active { cursor: grabbing; }
 .rp-guest:hover,
 .rp-unassigned-pax:hover { background: var(--gray-50); }
 
-.rp-dragging { opacity: 0.4; transform: scale(0.98); }
-
-.rp-room.rp-drop-hover {
-  outline: 2px dashed #0066cc;
-  outline-offset: -2px;
-  background: #e6f2ff;
+.rp-droplist {
+  min-height: 40px;
 }
-.rp-unassigned.rp-drop-hover {
-  outline: 2px dashed #c62828;
-  outline-offset: -2px;
-  background: #ffebee;
-  border-radius: var(--radius-lg);
+
+.rp-unassigned-list.rp-droplist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.3rem;
+  border-radius: 8px;
+  border: 1.5px dashed transparent;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+/* Sortable state classes */
+.rp-drag-ghost {
+  opacity: 0.35;
+  background: #e6f2ff !important;
+}
+.rp-drag-chosen {
+  background: #e6f2ff !important;
+}
+.rp-dragging {
+  opacity: 0.9;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  transform: rotate(1deg);
+  background: #fff !important;
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem !important;
 }
 
 /* ── SECTION HEADERS ── */
