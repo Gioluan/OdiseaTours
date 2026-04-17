@@ -1241,7 +1241,7 @@ const Portal = {
       <div class="rp-actions">
         <button class="btn-primary btn-sm" onclick="Portal.addRoom()">+ Add Room</button>
         <button class="btn-outline btn-sm" onclick="Portal.autoAssignRooms()">Auto-Assign</button>
-        ${this._isAdmin ? '<button class="btn-outline btn-sm" style="border-color:#c62828;color:#c62828" onclick="Portal.autoAssignByLastName()" title="Admin only — groups passengers into rooms by last name">Group by Last Name (Admin)</button>' : ''}
+        ${this._isAdmin ? '<button class="btn-outline btn-sm" style="border-color:#c62828;color:#c62828" onclick="Portal.autoAssignByLastName()" title="Admin only — groups passengers into rooms by last name and downloads Excel">Group by Last Name + Download Excel (Admin)</button>' : ''}
         ${this._roomPlan.length ? '<button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlan()">Download PDF</button><button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlanExcel()">Download CSV</button>' : ''}
       </div>
 
@@ -1393,12 +1393,15 @@ const Portal = {
     this._saveRoomPlan();
   },
 
-  // Admin-only: group passengers into rooms by last name.
+  // Admin-only: group passengers into rooms by last name and download Excel/CSV.
   // Rules: 1→single, 2→twin, 3→triple, N even→N/2 twins, N odd (≥5)→1 triple + (N-3)/2 twins.
-  autoAssignByLastName() {
-    const passengers = this._passengers;
-    if (!passengers.length) { alert('No passengers to group.'); return; }
-    if (this._roomPlan.length && !confirm('This will replace the current room plan. Continue?')) return;
+  async autoAssignByLastName() {
+    // Ensure passengers are loaded (admin may click from a fresh nav)
+    if (!this._passengers || !this._passengers.length) {
+      try { this._passengers = (await DB.getTourPassengers(this.tourId)).filter(p => !p._removed); } catch(e){}
+    }
+    const passengers = this._passengers || [];
+    if (!passengers.length) { alert('No passengers found for this tour.'); return; }
 
     // Group by normalized last name; keep original casing for display
     const groups = {};
@@ -1412,19 +1415,16 @@ const Portal = {
       groups[key].push(p);
     });
 
-    // Split a group of N into room sizes [2|3,…]
+    // Split a group of N into room sizes
     const splitSizes = n => {
       if (n <= 3) return [n];
       if (n % 2 === 0) return Array(n / 2).fill(2);
       return [3, ...Array((n - 3) / 2).fill(2)];
     };
 
-    this._roomPlan = [];
-
-    // Sort families alphabetically for consistent output
+    const rooms = [];
     Object.keys(groups).sort().forEach(key => {
       const members = groups[key];
-      // Sort members: adults/coaches first, then by first name — keeps couples together visually
       members.sort((a, b) => {
         const roleRank = r => (r === 'Adult' || r === 'Coach' ? 0 : 1);
         const ra = roleRank(a.role), rb = roleRank(b.role);
@@ -1434,20 +1434,85 @@ const Portal = {
       const sizes = splitSizes(members.length);
       let cursor = 0;
       sizes.forEach((size, i) => {
-        const chunk = members.slice(cursor, cursor + size).map(p => p.id);
+        const chunk = members.slice(cursor, cursor + size);
         cursor += size;
         const baseName = displayName[key];
         const roomName = sizes.length > 1 ? `${baseName} ${i + 1}` : baseName;
-        this._roomPlan.push({ name: roomName, passengers: chunk });
+        rooms.push({ name: roomName, family: baseName, members: chunk });
+      });
+    });
+    noLastName.forEach((p, i) => {
+      rooms.push({ name: `Unassigned ${i + 1}`, family: '(no last name)', members: [p] });
+    });
+
+    // Persist to room plan too, so the UI reflects it (best-effort save)
+    this._roomPlan = rooms.map(r => ({ name: r.name, passengers: r.members.map(m => m.id) }));
+    this.tourData.roomPlan = this._roomPlan;
+    if (DB._firebaseReady) {
+      try { await DB.firestore.collection('tours').doc(this.tourId).update({ roomPlan: this._roomPlan }); }
+      catch (e) { console.warn('Room plan save failed (portal is unauthenticated):', e.message); }
+    }
+
+    // Build CSV (opens natively in Excel). BOM + CRLF for Excel compatibility.
+    const t = this.tourData;
+    const esc = v => {
+      const s = String(v == null ? '' : v).replace(/"/g, '""');
+      return /[",\n]/.test(s) ? '"' + s + '"' : s;
+    };
+    const roomTypeLabel = n => n === 1 ? 'Single' : n === 2 ? 'Twin' : n === 3 ? 'Triple' : n === 4 ? 'Quadruple' : (n + '-Person');
+
+    const lines = [];
+    lines.push(['ROOM PLAN'].map(esc).join(','));
+    lines.push([t.tourName || '', t.destination || '', (t.startDate || '') + ' to ' + (t.endDate || '')].map(esc).join(','));
+    lines.push('');
+    lines.push(['Room', 'Room Type', 'Guests', 'Family (Last Name)', 'Passenger', 'Role', 'Date of Birth', 'Nationality', 'Passport', 'Dietary', 'Medical'].map(esc).join(','));
+
+    rooms.forEach(room => {
+      const size = room.members.length;
+      const type = roomTypeLabel(size);
+      room.members.forEach((p, i) => {
+        lines.push([
+          i === 0 ? room.name : '',
+          i === 0 ? type : '',
+          i === 0 ? size : '',
+          i === 0 ? room.family : '',
+          (p.firstName || '') + ' ' + (p.lastName || ''),
+          p.role || '',
+          p.dateOfBirth || '',
+          p.nationality || '',
+          p.passportNumber || '',
+          p.dietary || '',
+          p.medical || ''
+        ].map(esc).join(','));
       });
     });
 
-    // Passengers with no last name: one room each (single) so admin can reassign manually
-    noLastName.forEach((p, i) => {
-      this._roomPlan.push({ name: `Unassigned ${i + 1}`, passengers: [p.id] });
-    });
+    // Summary
+    const counts = { 1: 0, 2: 0, 3: 0, 4: 0, other: 0 };
+    rooms.forEach(r => { const n = r.members.length; if (counts[n] != null) counts[n]++; else counts.other++; });
+    lines.push('');
+    lines.push('SUMMARY');
+    lines.push('Total passengers,' + passengers.length);
+    lines.push('Total rooms,' + rooms.length);
+    if (counts[1]) lines.push('Single rooms,' + counts[1]);
+    if (counts[2]) lines.push('Twin rooms,' + counts[2]);
+    if (counts[3]) lines.push('Triple rooms,' + counts[3]);
+    if (counts[4]) lines.push('Quadruple rooms,' + counts[4]);
+    if (counts.other) lines.push('Other rooms,' + counts.other);
 
-    this._saveRoomPlan();
+    const csv = '\uFEFF' + lines.join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'RoomPlan_' + (t.tourName || 'Tour').replace(/[^a-zA-Z0-9]/g, '_') + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    // Re-render the section so rooms appear in the UI too
+    this.renderRoomPlan();
   },
 
   async _saveRoomPlan(rerender) {
