@@ -268,6 +268,10 @@ const Portal = {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
 
+    // Admin mode — set via ?admin=1, persisted in sessionStorage
+    if (params.get('admin') === '1') sessionStorage.setItem('portal_admin', '1');
+    this._isAdmin = sessionStorage.getItem('portal_admin') === '1';
+
     // Check sessionStorage for existing session
     const savedCode = sessionStorage.getItem('portal_code');
     const savedTourId = sessionStorage.getItem('portal_tourId');
@@ -1237,6 +1241,7 @@ const Portal = {
       <div class="rp-actions">
         <button class="btn-primary btn-sm" onclick="Portal.addRoom()">+ Add Room</button>
         <button class="btn-outline btn-sm" onclick="Portal.autoAssignRooms()">Auto-Assign</button>
+        ${this._isAdmin ? '<button class="btn-outline btn-sm" style="border-color:#c62828;color:#c62828" onclick="Portal.autoAssignByLastName()" title="Admin only — groups passengers into rooms by last name">Group by Last Name (Admin)</button>' : ''}
         ${this._roomPlan.length ? '<button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlan()">Download PDF</button><button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlanExcel()">Download CSV</button>' : ''}
       </div>
 
@@ -1383,6 +1388,63 @@ const Portal = {
         this._roomPlan.push({ name: 'Room ' + roomNum, passengers: chunk });
         roomNum++;
       }
+    });
+
+    this._saveRoomPlan();
+  },
+
+  // Admin-only: group passengers into rooms by last name.
+  // Rules: 1→single, 2→twin, 3→triple, N even→N/2 twins, N odd (≥5)→1 triple + (N-3)/2 twins.
+  autoAssignByLastName() {
+    const passengers = this._passengers;
+    if (!passengers.length) { alert('No passengers to group.'); return; }
+    if (this._roomPlan.length && !confirm('This will replace the current room plan. Continue?')) return;
+
+    // Group by normalized last name; keep original casing for display
+    const groups = {};
+    const displayName = {};
+    const noLastName = [];
+    passengers.forEach(p => {
+      const ln = (p.lastName || '').trim();
+      if (!ln) { noLastName.push(p); return; }
+      const key = ln.toLowerCase();
+      if (!groups[key]) { groups[key] = []; displayName[key] = ln; }
+      groups[key].push(p);
+    });
+
+    // Split a group of N into room sizes [2|3,…]
+    const splitSizes = n => {
+      if (n <= 3) return [n];
+      if (n % 2 === 0) return Array(n / 2).fill(2);
+      return [3, ...Array((n - 3) / 2).fill(2)];
+    };
+
+    this._roomPlan = [];
+
+    // Sort families alphabetically for consistent output
+    Object.keys(groups).sort().forEach(key => {
+      const members = groups[key];
+      // Sort members: adults/coaches first, then by first name — keeps couples together visually
+      members.sort((a, b) => {
+        const roleRank = r => (r === 'Adult' || r === 'Coach' ? 0 : 1);
+        const ra = roleRank(a.role), rb = roleRank(b.role);
+        if (ra !== rb) return ra - rb;
+        return (a.firstName || '').localeCompare(b.firstName || '');
+      });
+      const sizes = splitSizes(members.length);
+      let cursor = 0;
+      sizes.forEach((size, i) => {
+        const chunk = members.slice(cursor, cursor + size).map(p => p.id);
+        cursor += size;
+        const baseName = displayName[key];
+        const roomName = sizes.length > 1 ? `${baseName} ${i + 1}` : baseName;
+        this._roomPlan.push({ name: roomName, passengers: chunk });
+      });
+    });
+
+    // Passengers with no last name: one room each (single) so admin can reassign manually
+    noLastName.forEach((p, i) => {
+      this._roomPlan.push({ name: `Unassigned ${i + 1}`, passengers: [p.id] });
     });
 
     this._saveRoomPlan();
