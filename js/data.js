@@ -460,36 +460,130 @@ const DB = {
     return 'F' + base + '-' + rand;
   },
 
-  // Query Firestore for a tour by access code (tour code or family code)
+  // Query Firestore for a tour by access code (tour code or family code).
+  // Tries the SDK first with a timeout; falls back to a public REST query if the
+  // SDK hangs or fails (e.g. iOS Safari + IndexedDB issues, corporate networks
+  // blocking WebChannel). Rules allow public read on /tours, so REST works
+  // unauthenticated with the same API key.
   async getTourByAccessCode(code) {
-    if (!this._firebaseReady) return null;
-    try {
-      // First try tour-level access code
-      const snapshot = await this.firestore.collection('tours')
-        .where('accessCode', '==', code).limit(1).get();
-      if (!snapshot.empty) {
-        const doc = snapshot.docs[0];
-        return { id: doc.id, ...doc.data(), _portalMode: 'tour', _familyId: null };
+    const SDK_TIMEOUT_MS = 6000;
+    if (this._firebaseReady) {
+      try {
+        return await Promise.race([
+          this._lookupTourViaSdk(code),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('sdk-timeout')), SDK_TIMEOUT_MS))
+        ]);
+      } catch (e) {
+        console.warn('Tour lookup SDK path failed, falling back to REST:', e.message);
       }
-      // Fallback: try family access code
-      const famSnapshot = await this.firestore.collection('tours')
-        .where('familyAccessCodesList', 'array-contains', code).limit(1).get();
-      if (!famSnapshot.empty) {
-        const doc = famSnapshot.docs[0];
-        const tourData = doc.data();
-        // Find which family this code belongs to
-        let familyId = null;
-        const codes = tourData.familyAccessCodes || {};
-        for (const [icId, entry] of Object.entries(codes)) {
-          if (entry.code === code) { familyId = icId; break; }
+    }
+    return await this._lookupTourViaRest(code);
+  },
+
+  async _lookupTourViaSdk(code) {
+    const snapshot = await this.firestore.collection('tours')
+      .where('accessCode', '==', code).limit(1).get();
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      return { id: doc.id, ...doc.data(), _portalMode: 'tour', _familyId: null };
+    }
+    const famSnapshot = await this.firestore.collection('tours')
+      .where('familyAccessCodesList', 'array-contains', code).limit(1).get();
+    if (!famSnapshot.empty) {
+      const doc = famSnapshot.docs[0];
+      const tourData = doc.data();
+      let familyId = null;
+      const codes = tourData.familyAccessCodes || {};
+      for (const [icId, entry] of Object.entries(codes)) {
+        if (entry.code === code) { familyId = icId; break; }
+      }
+      return { id: doc.id, ...tourData, _portalMode: 'family', _familyId: familyId };
+    }
+    return null;
+  },
+
+  async _lookupTourViaRest(code) {
+    try {
+      const cfg = (typeof FIREBASE_CONFIG !== 'undefined') ? FIREBASE_CONFIG : null;
+      if (!cfg || !cfg.projectId || !cfg.apiKey) return null;
+      const url = 'https://firestore.googleapis.com/v1/projects/' + cfg.projectId
+        + '/databases/(default)/documents:runQuery?key=' + encodeURIComponent(cfg.apiKey);
+
+      const post = (body) => fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).then(r => r.ok ? r.json() : []);
+
+      // 1) Tour-level access code
+      const tourRows = await post({
+        structuredQuery: {
+          from: [{ collectionId: 'tours' }],
+          where: { fieldFilter: {
+            field: { fieldPath: 'accessCode' },
+            op: 'EQUAL',
+            value: { stringValue: code }
+          }},
+          limit: 1
         }
-        return { id: doc.id, ...tourData, _portalMode: 'family', _familyId: familyId };
+      });
+      const tourHit = (tourRows || []).find(r => r && r.document);
+      if (tourHit) {
+        const fields = DB._restFieldsToObj(tourHit.document.fields);
+        const docId = tourHit.document.name.split('/').pop();
+        return { id: docId, ...fields, _portalMode: 'tour', _familyId: null };
+      }
+
+      // 2) Family access code
+      const famRows = await post({
+        structuredQuery: {
+          from: [{ collectionId: 'tours' }],
+          where: { fieldFilter: {
+            field: { fieldPath: 'familyAccessCodesList' },
+            op: 'ARRAY_CONTAINS',
+            value: { stringValue: code }
+          }},
+          limit: 1
+        }
+      });
+      const famHit = (famRows || []).find(r => r && r.document);
+      if (famHit) {
+        const fields = DB._restFieldsToObj(famHit.document.fields);
+        const docId = famHit.document.name.split('/').pop();
+        let familyId = null;
+        const codes = fields.familyAccessCodes || {};
+        for (const [icId, entry] of Object.entries(codes)) {
+          if (entry && entry.code === code) { familyId = icId; break; }
+        }
+        return { id: docId, ...fields, _portalMode: 'family', _familyId: familyId };
       }
       return null;
     } catch (e) {
-      console.warn('getTourByAccessCode failed:', e.message);
+      console.warn('REST fallback failed:', e.message);
       return null;
     }
+  },
+
+  // Convert a Firestore REST `fields` map back into a plain JS object.
+  _restFieldsToObj(fields) {
+    if (!fields) return {};
+    const out = {};
+    for (const [k, v] of Object.entries(fields)) out[k] = DB._restValue(v);
+    return out;
+  },
+  _restValue(v) {
+    if (v == null) return null;
+    if ('stringValue' in v) return v.stringValue;
+    if ('integerValue' in v) return Number(v.integerValue);
+    if ('doubleValue' in v) return v.doubleValue;
+    if ('booleanValue' in v) return v.booleanValue;
+    if ('nullValue' in v) return null;
+    if ('timestampValue' in v) return v.timestampValue;
+    if ('mapValue' in v) return DB._restFieldsToObj(v.mapValue && v.mapValue.fields);
+    if ('arrayValue' in v) return ((v.arrayValue && v.arrayValue.values) || []).map(x => DB._restValue(x));
+    if ('referenceValue' in v) return v.referenceValue;
+    if ('geoPointValue' in v) return v.geoPointValue;
+    return null;
   },
 
   // Get invoices for a specific family in a tour
