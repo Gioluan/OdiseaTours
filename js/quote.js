@@ -741,8 +741,7 @@ const Quote = {
       const hNights = h.nights || d.nights;
       const rooms = h.rooms || [];
       const hAccom = rooms.reduce((s, r) => s + (r.qty || 0) * (r.costPerNight || 0) * hNights, 0);
-      const hDays = hNights + 1;
-      const hMeals = h.mealCostPerPersonPerDay * tp * hDays;
+      const hMeals = h.mealCostPerPersonPerDay * tp * hNights;
       accommodation += hAccom;
       meals += hMeals;
       hotelDetails.push({ city: h.city, accommodation: hAccom, meals: hMeals, nights: hNights, rooms });

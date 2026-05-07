@@ -226,6 +226,7 @@
         </select>
         <input type="text" id="crm-search" placeholder="Search client or tour..." oninput="CRM.render()">
       </div>
+      <button class="btn btn-outline" style="margin-left:auto;border-color:var(--navy);color:var(--navy)" onclick="CRM.recalculateAllQuotes()" title="Recompute costs for every quote using the current pricing logic. Also syncs linked confirmed tours.">Recalculate All</button>
     </div>
     <div id="crm-table-container"></div>
     <!-- CRM Detail Modal -->

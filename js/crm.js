@@ -574,5 +574,69 @@ const CRM = {
     this.render();
     Dashboard.render();
     alert('Quote cloned as "' + copy.tourName + '"!');
+  },
+
+  recalculateAllQuotes() {
+    const quotes = DB.getQuotes();
+    if (!quotes.length) { alert('No quotes to recalculate.'); return; }
+    if (!confirm('Recompute costs for all ' + quotes.length + ' quotes using the current pricing logic? Linked confirmed tours will also be updated. This cannot be undone.')) return;
+
+    const savedData = Quote.data;
+    const tours = DB.getTours();
+    const diffs = [];
+    let updated = 0;
+    let errors = 0;
+
+    quotes.forEach(q => {
+      try {
+        Quote.data = JSON.parse(JSON.stringify(q));
+        if (!Quote.data.hotels) Quote.data.hotels = [];
+        const oldGrand = (q.costs && q.costs.grand) || 0;
+        const newCosts = Quote.calculateCosts();
+        const rev = ((q.priceStudent||0)*(q.numStudents||0)) + ((q.priceSibling||0)*(q.numSiblings||0)) + ((q.priceAdult||0)*(q.numAdults||0));
+        q.costs = newCosts;
+        q.totalRevenue = rev;
+        q.hotels = Quote.data.hotels;
+        q.updatedAt = new Date().toISOString();
+        DB.saveQuote(q);
+
+        const linkedTour = tours.find(t => t.quoteId === q.id);
+        if (linkedTour) {
+          const tc = JSON.parse(JSON.stringify(newCosts));
+          tc.totalRevenue = rev;
+          tc.profit = rev - (newCosts.grand || 0);
+          tc.margin = rev > 0 ? (tc.profit / rev * 100) : 0;
+          linkedTour.costs = tc;
+          linkedTour.hotels = JSON.parse(JSON.stringify(Quote.data.hotels));
+          linkedTour.updatedAt = new Date().toISOString();
+          DB.saveTour(linkedTour);
+        }
+
+        if (oldGrand !== newCosts.grand) {
+          diffs.push({ id: q.id, name: q.tourName || '', oldGrand, newGrand: newCosts.grand, delta: newCosts.grand - oldGrand });
+        }
+        updated++;
+      } catch (e) {
+        console.error('Recalc failed for quote', q.id, e);
+        errors++;
+      }
+    });
+
+    Quote.data = savedData;
+
+    let msg = 'Recalculated ' + updated + ' quote(s). ' + diffs.length + ' had cost changes.';
+    if (errors) msg += ' ' + errors + ' failed (see console).';
+    if (diffs.length) {
+      msg += '\n\nChanges:\n' + diffs.slice(0, 20).map(d =>
+        'Q-' + String(d.id).padStart(4,'0') + ' ' + (d.name || '').slice(0,30) + ': ' +
+        d.oldGrand + ' → ' + d.newGrand + ' (' + (d.delta >= 0 ? '+' : '') + d.delta + ')'
+      ).join('\n');
+      if (diffs.length > 20) msg += '\n…and ' + (diffs.length - 20) + ' more (see console)';
+      console.table(diffs);
+    }
+    alert(msg);
+    this.render();
+    if (typeof Dashboard !== 'undefined' && Dashboard.render) Dashboard.render();
+    if (typeof Tours !== 'undefined' && Tours.render) Tours.render();
   }
 };
