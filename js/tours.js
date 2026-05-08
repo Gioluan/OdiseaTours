@@ -1708,39 +1708,76 @@ const Tours = {
     this.viewTour(tourId);
   },
 
+  // Verify the CRM is signed in to Firebase before writing a code that the
+  // public portal will need to read. Returns true if writes will reach the cloud.
+  _ensureFirebaseAuth() {
+    if (!DB._firebaseReady) {
+      alert('Firebase is not configured in this build. Family portal codes only work with Firebase enabled.');
+      return false;
+    }
+    if (!DB.auth || !DB.auth.currentUser) {
+      alert('You are signed out of the CRM (Working Offline). Family portal codes generated now will NOT reach the cloud, so the link will fail for the family.\n\nClick the "Not signed in — click to login" pill in the sidebar, sign in, then generate the code again.');
+      if (typeof Auth !== 'undefined' && Auth.showLoginForm) Auth.showLoginForm();
+      return false;
+    }
+    return true;
+  },
+
+  // Push the tour doc to Firestore and WAIT for confirmation. Surface any failure
+  // so the operator never thinks a code is shared when it isn't.
+  async _pushTourAwait(t) {
+    try {
+      await DB.firestore.collection('tours').doc(String(t.id)).set({
+        familyAccessCodes: t.familyAccessCodes || {},
+        familyAccessCodesList: t.familyAccessCodesList || [],
+        individualClients: t.individualClients || [],
+        updatedAt: t.updatedAt
+      }, { merge: true });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e };
+    }
+  },
+
   // Generate a family-specific portal code for one individual client
-  generateFamilyCode(tourId, familyId) {
+  async generateFamilyCode(tourId, familyId) {
+    if (!this._ensureFirebaseAuth()) return;
     const t = DB.getTours().find(x => x.id === tourId);
     if (!t) return;
     const ic = (t.individualClients || []).find(c => String(c.id) === String(familyId));
-    if (!ic) return;
+    if (!ic) { alert('Family not found on this tour. Refresh and try again.'); return; }
     if (!t.familyAccessCodes) t.familyAccessCodes = {};
     if (!t.familyAccessCodesList) t.familyAccessCodesList = [];
     const code = DB.generateFamilyAccessCode(ic.name);
-    t.familyAccessCodes[familyId] = {
+    t.familyAccessCodes[String(familyId)] = {
       code: code,
       generatedAt: new Date().toISOString(),
       lastAccess: null,
       accessCount: 0
     };
-    // Rebuild flat list
+    // Rebuild flat list (used by the portal's array-contains lookup).
     t.familyAccessCodesList = Object.values(t.familyAccessCodes).map(e => e.code);
     DB.saveTour(t);
-    if (DB._firebaseReady) DB.syncToFirestore('tours', [t]);
+    const res = await this._pushTourAwait(t);
+    if (!res.ok) {
+      alert(`Code generated locally (${code}) but the cloud save FAILED: ${res.error.message}\n\nThe family portal link will not work until this succeeds. Try Sync Now in the sidebar, or refresh and regenerate.`);
+    }
     this.viewTour(tourId);
   },
 
   // Bulk generate family codes for all families that don't have one
-  generateAllFamilyCodes(tourId) {
+  async generateAllFamilyCodes(tourId) {
+    if (!this._ensureFirebaseAuth()) return;
     const t = DB.getTours().find(x => x.id === tourId);
     if (!t || !t.individualClients || !t.individualClients.length) return;
     if (!t.familyAccessCodes) t.familyAccessCodes = {};
     if (!t.familyAccessCodesList) t.familyAccessCodesList = [];
     let generated = 0;
     t.individualClients.forEach(ic => {
-      if (!t.familyAccessCodes[ic.id]) {
+      const key = String(ic.id);
+      if (!t.familyAccessCodes[key]) {
         const code = DB.generateFamilyAccessCode(ic.name);
-        t.familyAccessCodes[ic.id] = {
+        t.familyAccessCodes[key] = {
           code: code,
           generatedAt: new Date().toISOString(),
           lastAccess: null,
@@ -1751,8 +1788,12 @@ const Tours = {
     });
     t.familyAccessCodesList = Object.values(t.familyAccessCodes).map(e => e.code);
     DB.saveTour(t);
-    if (DB._firebaseReady) DB.syncToFirestore('tours', [t]);
-    if (generated > 0) alert(generated + ' family code(s) generated.');
+    const res = await this._pushTourAwait(t);
+    if (!res.ok) {
+      alert(`${generated} code(s) generated locally but cloud save FAILED: ${res.error.message}\n\nFamily portal links will not work until this succeeds. Try Sync Now in the sidebar, or refresh and regenerate.`);
+    } else if (generated > 0) {
+      alert(generated + ' family code(s) generated and synced.');
+    }
     this.viewTour(tourId);
   },
 
@@ -2453,6 +2494,7 @@ juan@odisea-tours.com`;
     container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
 
     await DB.resetUnreadCount(String(tourId), 'unreadMessagesCount');
+    await DB.markGuideMessagesRead(String(tourId));
 
     const allMessages = await DB.getTourMessages(String(tourId));
     const t = DB.getTours().find(x => x.id === tourId);
@@ -2546,11 +2588,11 @@ juan@odisea-tours.com`;
       return;
     }
     const result = await DB.uploadTourDocument(String(tourId), file);
-    if (result) {
+    if (result && result.id) {
       alert('Document uploaded: ' + file.name);
       this.viewTour(tourId);
     } else {
-      alert('Upload failed. Please try again.');
+      alert('Upload failed: ' + ((result && result.error) || 'unknown error') + '\n\nOpen the browser console (F12) for details.');
     }
     event.target.value = '';
   },
