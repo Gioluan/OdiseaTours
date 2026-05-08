@@ -15,6 +15,11 @@ const Passengers = {
       document.getElementById('passengers-table-container').innerHTML = '<div class="empty-state">Select a tour to manage passengers.</div>';
       return;
     }
+    const tour = DB.getTours().find(t => t.id === tourId);
+    const families = (tour && tour.individualClients) || [];
+    const familyById = {};
+    families.forEach(f => { familyById[f.id] = f; });
+
     const passengers = DB.getPassengers().filter(p => p.tourId === tourId);
     if (!passengers.length) {
       document.getElementById('passengers-table-container').innerHTML = '<div class="empty-state">No passengers registered. Click "+ Add Passenger" to start.</div>';
@@ -22,11 +27,17 @@ const Passengers = {
     }
     document.getElementById('passengers-table-container').innerHTML = `
       <table class="data-table">
-        <thead><tr><th>#</th><th>Name</th><th>DOB</th><th>Nationality</th><th>Passport</th><th>Category</th><th>Dietary</th><th>Emergency Contact</th><th>Actions</th></tr></thead>
-        <tbody>${passengers.map((p, i) => `
+        <thead><tr><th>#</th><th>Name</th><th>Family</th><th>DOB</th><th>Nationality</th><th>Passport</th><th>Category</th><th>Dietary</th><th>Emergency Contact</th><th>Actions</th></tr></thead>
+        <tbody>${passengers.map((p, i) => {
+          const fam = p.familyId ? familyById[p.familyId] : null;
+          const famCell = fam
+            ? `<span style="font-size:0.82rem">${fam.name || '—'}</span>`
+            : '<span style="color:var(--red);font-size:0.78rem;font-style:italic">No family</span>';
+          return `
           <tr>
             <td>${i + 1}</td>
             <td><strong>${p.firstName} ${p.lastName}</strong></td>
+            <td>${famCell}</td>
             <td>${fmtDate(p.dateOfBirth)}</td>
             <td>${p.nationality || '—'}</td>
             <td>${p.passportNumber || '—'}</td>
@@ -37,14 +48,18 @@ const Passengers = {
               <button class="btn btn-sm btn-outline" onclick="Passengers.editPassenger(${p.id})">Edit</button>
               <button class="btn btn-sm btn-danger" onclick="if(confirm('Delete?')){Passengers.deletePassenger(${p.id})}">Del</button>
             </td>
-          </tr>`).join('')}</tbody>
+          </tr>`;
+        }).join('')}</tbody>
       </table>
-      <div style="margin-top:0.8rem;color:var(--gray-400);font-size:0.85rem">Total: ${passengers.length} passengers</div>`;
+      <div style="margin-top:0.8rem;color:var(--gray-400);font-size:0.85rem">Total: ${passengers.length} passengers · ${families.length} families on this tour. Each family generates one Family Portal code in Confirmed Tours → Family Pays.</div>`;
   },
 
   showForm(passenger) {
     const p = passenger || {};
     const tourId = Number(document.getElementById('pax-tour-select').value);
+    const tour = DB.getTours().find(t => t.id === tourId);
+    const families = (tour && tour.individualClients) || [];
+    const currentFamilyId = p.familyId || '';
     document.getElementById('pax-modal').style.display = 'flex';
     document.getElementById('pax-modal-content').innerHTML = `
       <h2>${p.id ? 'Edit' : 'Add'} Passenger</h2>
@@ -52,7 +67,23 @@ const Passengers = {
       <input type="hidden" id="pax-tourId" value="${p.tourId || tourId}">
       <div class="form-row form-row-2">
         <div class="form-group"><label>First Name</label><input id="pax-first" value="${p.firstName || ''}"></div>
-        <div class="form-group"><label>Last Name</label><input id="pax-last" value="${p.lastName || ''}"></div>
+        <div class="form-group"><label>Last Name</label><input id="pax-last" value="${p.lastName || ''}" oninput="Passengers._suggestFamilyName()"></div>
+      </div>
+      <div class="form-group" style="background:var(--gray-50);border-left:3px solid var(--amber);padding:0.6rem 0.8rem;border-radius:var(--radius)">
+        <label style="font-weight:600">Family <span style="font-weight:400;color:var(--gray-400);font-size:0.78rem">— each family pays separately and gets one portal code</span></label>
+        <select id="pax-family" onchange="Passengers._onFamilyChange()" style="width:100%;padding:0.5rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)">
+          <option value="">— Select a family —</option>
+          ${families.map(f => `<option value="${f.id}" ${String(f.id) === String(currentFamilyId) ? 'selected' : ''}>${(f.name || '(unnamed)').replace(/"/g, '&quot;')} — ${(f.numStudents||0) + (f.numSiblings||0) + (f.numAdults||0)} member(s)</option>`).join('')}
+          <option value="__new__">+ Add new family...</option>
+        </select>
+        <div id="pax-new-family-panel" style="display:none;margin-top:0.6rem;background:white;border:1.5px dashed var(--amber);border-radius:var(--radius);padding:0.7rem 0.9rem">
+          <strong style="font-size:0.85rem;color:var(--amber)">New Family</strong>
+          <div class="form-row form-row-3" style="margin-top:0.4rem">
+            <div class="form-group"><label>Family Name</label><input id="pax-new-fam-name" placeholder="e.g. Smith Family"></div>
+            <div class="form-group"><label>Email</label><input id="pax-new-fam-email" type="email" placeholder="parent@email.com"></div>
+            <div class="form-group"><label>Phone</label><input id="pax-new-fam-phone" placeholder="+1..."></div>
+          </div>
+        </div>
       </div>
       <div class="form-row form-row-3">
         <div class="form-group"><label>Date of Birth</label><input id="pax-dob" type="date" value="${p.dateOfBirth || ''}"></div>
@@ -75,6 +106,28 @@ const Passengers = {
       </div>`;
   },
 
+  _onFamilyChange() {
+    const sel = document.getElementById('pax-family');
+    const panel = document.getElementById('pax-new-family-panel');
+    if (!sel || !panel) return;
+    panel.style.display = sel.value === '__new__' ? 'block' : 'none';
+    if (sel.value === '__new__') {
+      this._suggestFamilyName();
+      const nameInput = document.getElementById('pax-new-fam-name');
+      if (nameInput) nameInput.focus();
+    }
+  },
+
+  _suggestFamilyName() {
+    const sel = document.getElementById('pax-family');
+    if (!sel || sel.value !== '__new__') return;
+    const lastName = (document.getElementById('pax-last') || {}).value || '';
+    const target = document.getElementById('pax-new-fam-name');
+    if (target && !target.value && lastName.trim()) {
+      target.value = lastName.trim() + ' Family';
+    }
+  },
+
   addPassenger() {
     if (!Number(document.getElementById('pax-tour-select').value)) { alert('Select a tour first.'); return; }
     this.showForm();
@@ -87,8 +140,28 @@ const Passengers = {
 
   savePassenger() {
     const id = document.getElementById('pax-id').value;
+    const tourId = Number(document.getElementById('pax-tourId').value);
+
+    // Resolve family: existing → use id; "__new__" → create individualClient on the tour first.
+    const famSel = document.getElementById('pax-family');
+    let familyId = null;
+    if (famSel) {
+      const v = famSel.value;
+      if (v === '__new__') {
+        const name = (document.getElementById('pax-new-fam-name').value || '').trim();
+        if (!name) { alert('Please enter a family name (e.g. "Smith Family") before saving.'); return; }
+        const email = (document.getElementById('pax-new-fam-email').value || '').trim();
+        const phone = (document.getElementById('pax-new-fam-phone').value || '').trim();
+        familyId = this._createFamily(tourId, { name, email, phone });
+        if (!familyId) { alert('Could not create family. Tour not found.'); return; }
+      } else if (v) {
+        familyId = Number(v);
+      }
+    }
+
     const p = {
-      tourId: Number(document.getElementById('pax-tourId').value),
+      tourId,
+      familyId,
       firstName: document.getElementById('pax-first').value,
       lastName: document.getElementById('pax-last').value,
       dateOfBirth: document.getElementById('pax-dob').value,
@@ -101,13 +174,69 @@ const Passengers = {
       emergencyContactName: document.getElementById('pax-emname').value,
       emergencyContactPhone: document.getElementById('pax-emphone').value
     };
-    if (id) p.id = Number(id);
+
+    // Track previous family on edit so we can also recalc the family the passenger left.
+    let prevFamilyId = null;
+    if (id) {
+      p.id = Number(id);
+      const prev = DB.getPassengers().find(x => x.id === p.id);
+      if (prev) prevFamilyId = prev.familyId || null;
+    }
+
     DB.savePassenger(p);
+    if (familyId) this._recalcFamily(tourId, familyId);
+    if (prevFamilyId && prevFamilyId !== familyId) this._recalcFamily(tourId, prevFamilyId);
     closeModal('pax-modal');
     this.render();
   },
 
-  deletePassenger(id) { DB.deletePassenger(id); this.render(); },
+  deletePassenger(id) {
+    const prev = DB.getPassengers().find(x => x.id === id);
+    DB.deletePassenger(id);
+    if (prev && prev.familyId) this._recalcFamily(prev.tourId, prev.familyId);
+    this.render();
+  },
+
+  // Create a new family (individualClient) on the tour. Returns its id.
+  _createFamily(tourId, { name, email, phone }) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return null;
+    if (!t.individualClients) t.individualClients = [];
+    const newId = Date.now() + Math.floor(Math.random() * 1000);
+    t.individualClients.push({
+      id: newId,
+      name,
+      email: email || '',
+      phone: phone || '',
+      numStudents: 0, numSiblings: 0, numAdults: 0,
+      amountDue: 0,
+      notes: 'Created from Passengers tab',
+      portalImported: false
+    });
+    DB.saveTour(t);
+    return newId;
+  },
+
+  // Recompute a family's category counts and amountDue from its current passengers.
+  _recalcFamily(tourId, familyId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.individualClients) return;
+    const ic = t.individualClients.find(x => String(x.id) === String(familyId));
+    if (!ic) return;
+    const members = DB.getPassengers().filter(p => p.tourId === tourId && String(p.familyId) === String(familyId));
+    let nS = 0, nSb = 0, nA = 0;
+    members.forEach(m => {
+      const c = (m.category || 'Student');
+      if (c === 'Student') nS++;
+      else if (c === 'Sibling') nSb++;
+      else if (c === 'Adult') nA++;
+    });
+    ic.numStudents = nS;
+    ic.numSiblings = nSb;
+    ic.numAdults = nA;
+    ic.amountDue = (nS * (t.priceStudent || 0)) + (nSb * (t.priceSibling || 0)) + (nA * (t.priceAdult || 0));
+    DB.saveTour(t);
+  },
 
   printForm() {
     const tourId = Number(document.getElementById('pax-tour-select').value);
@@ -207,7 +336,17 @@ const Passengers = {
         return;
       }
 
+      // Build a name → familyId cache so passengers with the same lastName join the same family.
+      const tour = DB.getTours().find(x => x.id === tourId);
+      const familyCache = {};
+      if (tour && tour.individualClients) {
+        tour.individualClients.forEach(f => {
+          if (f.name) familyCache[f.name.toLowerCase()] = f.id;
+        });
+      }
+
       let imported = 0;
+      const touchedFamilies = new Set();
       for (let i = 1; i < lines.length; i++) {
         // Parse CSV line (handle quoted values)
         const vals = [];
@@ -222,10 +361,20 @@ const Passengers = {
 
         const get = (field) => indices[field] !== undefined ? (vals[indices[field]] || '').replace(/^"|"$/g, '') : '';
 
+        const lastName = get('lastName');
+        const familyName = lastName ? (lastName.trim() + ' Family') : 'Unassigned Family';
+        const cacheKey = familyName.toLowerCase();
+        let familyId = familyCache[cacheKey];
+        if (!familyId && lastName) {
+          familyId = this._createFamily(tourId, { name: familyName, email: '', phone: '' });
+          familyCache[cacheKey] = familyId;
+        }
+
         const p = {
           tourId,
+          familyId: familyId || null,
           firstName: get('firstName'),
-          lastName: get('lastName'),
+          lastName,
           dateOfBirth: get('dateOfBirth'),
           nationality: get('nationality'),
           passportNumber: get('passportNumber'),
@@ -239,11 +388,15 @@ const Passengers = {
 
         if (p.firstName || p.lastName) {
           DB.savePassenger(p);
+          if (familyId) touchedFamilies.add(familyId);
           imported++;
         }
       }
 
-      alert('Imported ' + imported + ' passengers from CSV.');
+      // Recompute counts/amounts on every family the import touched.
+      touchedFamilies.forEach(fid => this._recalcFamily(tourId, fid));
+
+      alert('Imported ' + imported + ' passengers from CSV. Families auto-grouped by last name. Review in Confirmed Tours → Family Pays.');
       event.target.value = '';
       this.render();
     };
