@@ -203,9 +203,22 @@ const Auth = {
         if (!DB._remoteMaxIds) DB._remoteMaxIds = {};
         DB._remoteMaxIds[col] = alive.reduce((m, item) => Math.max(m, item.id || 0), 0);
 
-        // 5. Push to Firestore ONLY if data actually changed
-        if (changed) {
-          await DB.syncToFirestore(col, alive);
+        // 5. Determine which local items need pushing — local-only or local-newer
+        //    than remote. (The previous "if (changed)" gate skipped pushing offline
+        //    edits whenever remote happened to bring nothing new, leaving local
+        //    changes stranded.)
+        const remoteById = new Map();
+        remote.forEach(r => remoteById.set(String(r.id), r));
+        const toPush = alive.filter(item => {
+          const r = remoteById.get(String(item.id));
+          if (!r) return true;
+          const localTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+          const remoteTime = new Date(r.updatedAt || r.createdAt || 0).getTime();
+          return localTime > remoteTime;
+        });
+        if (toPush.length > 0) {
+          await DB.syncToFirestore(col, toPush);
+          console.log(`Pushed ${toPush.length} local ${col} to Firestore.`);
         }
         if (pulled > 0) console.log(`Pulled ${pulled} updated items for ${col}`);
       }
