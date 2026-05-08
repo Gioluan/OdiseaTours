@@ -85,8 +85,27 @@ const Quote = {
         h.rooms = [{ type: h.roomType || 'Twin', qty: h.numRooms || 10, costPerNight: h.costPerNightPerRoom || 0 }];
       }
     });
+    // Heal split-stay corruption from the pre-fix bug:
+    // activities used to be doubled (or worse) whenever two destinations shared a city label.
+    this._dedupeActivities();
     this.currentStep = 0;
     this.render();
+  },
+
+  // Dedupe activities by full content signature. Idempotent.
+  _dedupeActivities() {
+    const seen = new Set();
+    const before = (this.data.activities || []).length;
+    this.data.activities = (this.data.activities || []).filter(a => {
+      const key = JSON.stringify([a.name, a.destination, a.day, a.costPerPerson, !!a.isFree, !!a.playersOnly]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const removed = before - this.data.activities.length;
+    if (removed > 0) {
+      console.warn(`[Quote] Removed ${removed} duplicate activities on load (split-stay heal).`);
+    }
   },
 
   render() {
@@ -151,6 +170,32 @@ const Quote = {
     return dest.city === 'Custom' ? (dest.custom || 'Custom') : dest.city;
   },
 
+  // Stay label = base city, with " (Hotel N)" suffix when the same city appears more than once.
+  // Used to keep hotels distinct in split-stay scenarios (e.g. group splits across two Madrid hotels).
+  getStayLabel(dest, idx) {
+    const dests = this.data.destinations || [];
+    const baseLabel = this.getDestLabel(dest);
+    const sameLabelCount = dests.filter(d2 => this.getDestLabel(d2) === baseLabel).length;
+    if (sameLabelCount <= 1) return baseLabel;
+    const occurrence = dests.slice(0, idx + 1).filter(d2 => this.getDestLabel(d2) === baseLabel).length;
+    return `${baseLabel} (Hotel ${occurrence})`;
+  },
+
+  // Ordered unique base city labels — used for grouping activities so split-stays share one activity card.
+  uniqueCityLabels() {
+    const dests = this.data.destinations || [];
+    const seen = new Set();
+    const out = [];
+    dests.forEach(dest => {
+      const label = this.getDestLabel(dest);
+      if (!seen.has(label)) {
+        seen.add(label);
+        out.push(label);
+      }
+    });
+    return out;
+  },
+
   getDestinationLabel(dests) {
     if (!dests || !dests.length) return '—';
     return dests.map(d => this.getDestLabel(d)).join(' → ');
@@ -198,33 +243,46 @@ const Quote = {
     return dests.length ? dests : [{ city: 'Madrid', custom: '' }];
   },
 
-  /* --- Hotels per destination --- */
+  /* --- Hotels per destination ---
+     One hotel per leg (1:1 by index). Never share references across legs even when
+     two destinations share the same city label (split-stay). */
   syncHotels() {
     const d = this.data;
     const dests = d.destinations || [{ city: 'Madrid', custom: '' }];
-    const existing = d.hotels || [];
-    const synced = [];
-    dests.forEach(dest => {
-      const label = this.getDestLabel(dest);
-      const found = existing.find(h => h.city === label);
-      if (found) {
-        // Migrate legacy single-room to rooms array
-        if (!found.rooms || !found.rooms.length) {
-          found.rooms = [{ type: found.roomType || 'Twin', qty: found.numRooms || 10, costPerNight: found.costPerNightPerRoom || 0 }];
+    const existing = (d.hotels || []).slice();
+    const claimed = new Set();
+    const synced = dests.map((dest, i) => {
+      const stayLabel = this.getStayLabel(dest, i);
+      const cityLabel = this.getDestLabel(dest);
+      // Match preference: exact stay-label → base city (legacy data, single→split migration).
+      // Label-first so reordering destinations preserves the right hotel data per leg.
+      let idx = existing.findIndex((h, j) => !claimed.has(j) && h && h.city === stayLabel);
+      if (idx === -1) idx = existing.findIndex((h, j) => !claimed.has(j) && h && h.city === cityLabel);
+      if (idx !== -1) {
+        claimed.add(idx);
+        const h = existing[idx];
+        if (!h.rooms || !h.rooms.length) {
+          h.rooms = [{ type: h.roomType || 'Twin', qty: h.numRooms || 10, costPerNight: h.costPerNightPerRoom || 0 }];
         }
-        synced.push(found);
-      } else {
-        synced.push({
-          city: label,
-          hotelName: '', starRating: 3, hotelConfirmed: false,
-          rooms: [{ type: 'Twin', qty: 10, costPerNight: 0 }],
-          mealPlan: 'Half Board', mealCostPerPersonPerDay: 0,
-          nights: dests.length === 1 ? d.nights : 0
-        });
+        h.city = stayLabel;
+        return h;
       }
+      return {
+        city: stayLabel,
+        hotelName: '', starRating: 3, hotelConfirmed: false,
+        rooms: [{ type: 'Twin', qty: 10, costPerNight: 0 }],
+        mealPlan: 'Half Board', mealCostPerPersonPerDay: 0,
+        nights: dests.length === 1 ? d.nights : 0
+      };
     });
     if (synced.length === 1) synced[0].nights = d.nights;
-    d.hotels = synced;
+    // Defensive: deep-clone any duplicate references so each leg has its own hotel object.
+    const seenRefs = new Set();
+    d.hotels = synced.map(h => {
+      if (seenRefs.has(h)) return JSON.parse(JSON.stringify(h));
+      seenRefs.add(h);
+      return h;
+    });
   },
 
   roomRowHTML(r) {
@@ -366,7 +424,7 @@ const Quote = {
         });
       });
       d.hotels.push({
-        city: this.getDestLabel(dest),
+        city: this.getStayLabel(dest, idx),
         hotelName: card.querySelector('.h-select').value || '',
         starRating: Number(card.querySelector('.h-stars').value) || 3,
         hotelConfirmed: card.querySelector('.h-confirmed').checked,
@@ -427,8 +485,9 @@ const Quote = {
     d.activities = [];
 
     if (isMulti) {
-      dests.forEach(dest => {
-        const label = this.getDestLabel(dest);
+      // Iterate UNIQUE city labels — two legs in the same city share one activity list,
+      // never duplicate (cost stays correct, group size unchanged).
+      this.uniqueCityLabels().forEach(label => {
         const listEl = document.getElementById('act-list-' + this.slugify(label));
         if (!listEl) return;
         listEl.querySelectorAll('.act-row').forEach(row => {
@@ -643,8 +702,8 @@ const Quote = {
           html += `<div class="card" style="background:var(--gray-50);margin-bottom:1rem;padding:0.8rem 1rem">
             <strong>Multi-destination tour:</strong> Add activities for each city separately.
           </div>`;
-          actDests.forEach(dest => {
-            const label = this.getDestLabel(dest);
+          // Group by UNIQUE city label so split-stays (two hotels in the same city) share one card.
+          this.uniqueCityLabels().forEach(label => {
             const slug = this.slugify(label);
             const destActivities = d.activities.filter(a => a.destination === label);
             html += `<div class="card" style="margin-bottom:1rem;border-left:4px solid var(--amber)">
@@ -807,11 +866,10 @@ const Quote = {
       ).join('');
     }
 
-    // Activities per destination if multi
+    // Activities per destination if multi — group by UNIQUE city so split-stays don't list twice.
     let actSummary = '';
     if (isMulti) {
-      d.destinations.forEach(dest => {
-        const label = this.getDestLabel(dest);
+      this.uniqueCityLabels().forEach(label => {
         const destActs = d.activities.filter(a => a.destination === label);
         if (destActs.length) {
           actSummary += `<p style="margin:0.3rem 0 0.15rem;font-weight:600;color:var(--amber)">${label}:</p>`;
