@@ -141,8 +141,14 @@ const Auth = {
       for (const col of this.COLLECTIONS) {
         const colDeletions = deletedIds[col] || new Set();
 
-        // 1. Pull remote data
-        const remote = await DB.pullFromFirestore(col);
+        // 1. Pull remote data — bail on failure so we don't mass-push the whole
+        //    local DB based on a phantom "remote is empty" view.
+        const pull = await DB.pullFromFirestore(col);
+        if (!pull.ok) {
+          console.warn(`[sync] Skipping ${col} this round — pull failed.`);
+          continue;
+        }
+        const remote = pull.items;
         const local = DB._getAll(col);
 
         // 2. Remove locally deleted items (from _deletions collection)

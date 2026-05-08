@@ -432,17 +432,23 @@ const DB = {
     }
   },
 
-  // Pull Firestore collection → merge into localStorage
-  async pullFromFirestore(collection) {
-    if (!this._firebaseReady) return [];
+  // Pull Firestore collection → merge into localStorage.
+  // Returns { ok, items }. ok=false means we cannot trust `items` (query
+  // failed or timed out). Callers must NOT compute "local-newer than remote"
+  // deltas from a failed pull, otherwise they will mass-push the whole local DB.
+  async pullFromFirestore(collection, { timeoutMs = 15000 } = {}) {
+    if (!this._firebaseReady) return { ok: false, items: [] };
     try {
-      const snapshot = await this.firestore.collection(collection).get();
+      const result = await Promise.race([
+        this.firestore.collection(collection).get(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('pull-timeout')), timeoutMs))
+      ]);
       const items = [];
-      snapshot.forEach(doc => items.push({ ...doc.data(), _firestoreId: doc.id }));
-      return items;
+      result.forEach(doc => items.push({ ...doc.data(), _firestoreId: doc.id }));
+      return { ok: true, items };
     } catch (e) {
       console.warn(`Pull from Firestore (${collection}) failed:`, e.message);
-      return [];
+      return { ok: false, items: [] };
     }
   },
 
