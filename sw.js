@@ -1,5 +1,5 @@
 /* === SERVICE WORKER — Odisea Tours PWA === */
-const CACHE_NAME = 'odisea-tours-v41';
+const CACHE_NAME = 'odisea-tours-v42';
 const ASSETS = [
   './',
   './index.html',
@@ -71,7 +71,26 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // All other assets: cache-first
+  // JS / CSS / JSON: network-first with cached fallback. Critical: cache-first
+  // here used to serve stale code for entire deployment cycles, breaking
+  // production fixes silently until the cache version was bumped manually.
+  const url = new URL(event.request.url);
+  const path = url.pathname;
+  const isCodeAsset = /\.(js|css|json)$/i.test(path);
+  if (isCodeAsset) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Images / fonts / other binary assets: cache-first (rarely change, big to refetch)
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
