@@ -20,7 +20,7 @@
 <script>
 // Force update: if cached version is old, clear caches and reload
 (function(){
-  var APP_VERSION = 44;
+  var APP_VERSION = 45;
   var stored = localStorage.getItem('odisea_app_version');
   if (stored && Number(stored) >= APP_VERSION) return;
   localStorage.setItem('odisea_app_version', APP_VERSION);
@@ -418,10 +418,6 @@
       </select>
       <select id="prov-filter-city" onchange="Providers.render()">
         <option value="">All Cities</option>
-        <option value="Madrid">Madrid</option>
-        <option value="Valencia">Valencia</option>
-        <option value="Barcelona">Barcelona</option>
-        <option value="Tenerife">Tenerife</option>
       </select>
       <input type="text" id="prov-search" placeholder="Search providers..." oninput="Providers.render()">
       <button class="btn btn-outline" onclick="Providers.bulkRFQ()">Bulk RFQ</button>

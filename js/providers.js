@@ -45,7 +45,17 @@ const Providers = {
 
   init() { this.render(); },
 
+  _refreshCityFilter() {
+    const sel = document.getElementById('prov-filter-city');
+    if (!sel) return;
+    const cities = [...new Set(DB.getProviders().map(p => p.city).filter(Boolean))].sort();
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All Cities</option>' +
+      cities.map(c => `<option value="${this._escape(c)}" ${c===current?'selected':''}>${this._escape(c)}</option>`).join('');
+  },
+
   render() {
+    this._refreshCityFilter();
     const catFilter = document.getElementById('prov-filter-cat').value;
     const cityFilter = document.getElementById('prov-filter-city').value;
     const search = (document.getElementById('prov-search').value || '').toLowerCase();
@@ -131,14 +141,10 @@ const Providers = {
       </div>
       <div class="form-row form-row-3">
         <div class="form-group"><label>City</label>
-          <select id="prov-city-sel" onchange="document.getElementById('prov-city-custom').style.display=this.value==='Other'?'block':'none'">
-            <option ${p.city==='Madrid'?'selected':''}>Madrid</option>
-            <option ${p.city==='Valencia'?'selected':''}>Valencia</option>
-            <option ${p.city==='Barcelona'?'selected':''}>Barcelona</option>
-            <option ${p.city==='Tenerife'?'selected':''}>Tenerife</option>
-            <option value="Other" ${!['Madrid','Valencia','Barcelona','Tenerife'].includes(p.city) && p.city ? 'selected' : ''}>Other</option>
-          </select>
-          <input id="prov-city-custom" style="margin-top:0.3rem;display:${!['Madrid','Valencia','Barcelona','Tenerife'].includes(p.city) && p.city ? 'block' : 'none'}" value="${!['Madrid','Valencia','Barcelona','Tenerife'].includes(p.city) ? (p.city || '') : ''}" placeholder="Enter city">
+          <input id="prov-city-input" type="text" list="prov-city-options" value="${this._escape(p.city || '')}" placeholder="Madrid, Barcelona...">
+          <datalist id="prov-city-options">
+            ${[...new Set(DB.getProviders().map(x => x.city).filter(Boolean))].sort().map(c => `<option value="${this._escape(c)}">`).join('')}
+          </datalist>
         </div>
         <div class="form-group"><label>Star Rating (Hotels)</label>
           <select id="prov-stars">${[0,1,2,3,4,5].map(s => `<option value="${s}" ${(p.starRating||0)==s?'selected':''}>${s === 0 ? 'N/A' : '★'.repeat(s)}</option>`).join('')}</select>
@@ -338,7 +344,6 @@ const Providers = {
 
   saveProvider() {
     const id = document.getElementById('prov-id').value;
-    const citySel = document.getElementById('prov-city-sel').value;
     const wasNew = !id;
     const p = {
       companyName: document.getElementById('prov-name').value,
@@ -347,7 +352,7 @@ const Providers = {
       email: document.getElementById('prov-email').value,
       phone: document.getElementById('prov-phone').value,
       website: document.getElementById('prov-website').value,
-      city: citySel === 'Other' ? document.getElementById('prov-city-custom').value : citySel,
+      city: document.getElementById('prov-city-input').value.trim(),
       starRating: Number(document.getElementById('prov-stars').value) || 0,
       ourRating: Number(document.getElementById('prov-our-rating').value) || 0,
       ourReview: document.getElementById('prov-our-review').value,
