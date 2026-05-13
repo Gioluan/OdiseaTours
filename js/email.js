@@ -1,5 +1,27 @@
 /* === EMAIL CENTER MODULE === */
 const Email = {
+  EMAIL_API_URL: 'https://odisea-tours.com/api/email/send',
+  _mode: 'single',       // 'single' or 'bulk'
+  _bulkCity: '',
+  _bulkCategory: '',
+  _bulkSearch: '',
+  _bulkSelected: new Set(),
+
+  async _sendViaApi(to, subject, text, replyTo) {
+    const res = await fetch(this.EMAIL_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, subject, text, replyTo }),
+    });
+    if (!res.ok) {
+      let detail = '';
+      try { const j = await res.json(); detail = j.error || j.detail || JSON.stringify(j); }
+      catch { detail = 'HTTP ' + res.status; }
+      throw new Error(detail);
+    }
+    return res.json();
+  },
+
   templates: [
     {
       name: 'Payment Reminder',
@@ -35,8 +57,62 @@ const Email = {
     this.renderLog();
   },
 
+  setMode(mode) {
+    this._mode = mode;
+    if (mode === 'bulk') this._bulkSelected.clear();
+    this.renderCompose();
+  },
+
   renderCompose() {
+    const mode = this._mode || 'single';
+    const composeHtml = mode === 'bulk' ? this._renderBulkSection() : this._renderSingleSection();
+    const sendLabel = mode === 'bulk'
+      ? `Send to ${this._bulkSelected.size} provider${this._bulkSelected.size===1?'':'s'}`
+      : 'Send Email';
+
     document.getElementById('email-compose-form').innerHTML = `
+      <div class="form-group">
+        <label>Mode</label>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="btn btn-sm ${mode==='single'?'btn-primary':'btn-outline'}" onclick="Email.setMode('single')">Single Recipient</button>
+          <button class="btn btn-sm ${mode==='bulk'?'btn-primary':'btn-outline'}" onclick="Email.setMode('bulk')">Bulk to Providers</button>
+        </div>
+      </div>
+
+      ${composeHtml}
+
+      <div class="form-group"><label>Subject</label><input id="em-subject" placeholder="Email subject"></div>
+      <div class="form-group">
+        <label>Body</label>
+        <textarea id="em-body" rows="10" placeholder="Email body... ${mode==='bulk' ? 'Use {contactPerson}, {companyName}, {city} for per-recipient substitution.' : ''}"></textarea>
+        ${mode === 'bulk' ? '<span style="font-size:0.78rem;color:var(--gray-400);margin-top:0.3rem;display:block">Variables: <code>{contactPerson}</code> · <code>{companyName}</code> · <code>{city}</code> · <code>{category}</code></span>' : ''}
+      </div>
+
+      ${mode === 'single' ? `
+      <div class="form-group">
+        <label>Attach Invoice PDF</label>
+        <select id="em-attach-inv" onchange="document.getElementById('em-preview-inv-btn').style.display=this.value?'':'none'">
+          <option value="">— No attachment —</option>
+          ${DB.getInvoices().map(inv => {
+            const paid = (inv.payments||[]).reduce((s,p)=>s+Number(p.amount),0);
+            const status = paid >= Number(inv.amount) ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
+            return `<option value="${inv.id}">${inv.number} — ${inv.clientName||'—'} — ${fmt(inv.amount,inv.currency)} [${status}]</option>`;
+          }).join('')}
+        </select>
+        <span style="font-size:0.78rem;color:var(--gray-400);margin-top:0.3rem;display:block">The invoice PDF will open in a new tab — save it, then drag it into your email.</span>
+      </div>` : ''}
+
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="Email.sendFromForm()">${sendLabel}</button>
+        ${mode === 'single' ? '<button class="btn btn-outline" id="em-preview-inv-btn" style="display:none;border-color:var(--amber);color:var(--amber)" onclick="Email.previewAttachedInvoice()">Preview Invoice PDF</button>' : ''}
+      </div>
+    `;
+
+    if (mode === 'bulk') this._renderBulkList();
+  },
+
+  _renderSingleSection() {
+    return `
       <div class="form-group">
         <label>Quick Select Recipient</label>
         <select id="em-source" onchange="Email.loadRecipients()">
@@ -51,25 +127,134 @@ const Email = {
         <select id="em-recipient-sel" onchange="Email.fillRecipient()"></select>
       </div>
       <div class="form-group"><label>To (Email)</label><input id="em-to" type="email" placeholder="recipient@email.com"></div>
-      <div class="form-group"><label>Subject</label><input id="em-subject" placeholder="Email subject"></div>
-      <div class="form-group"><label>Body</label><textarea id="em-body" rows="10" placeholder="Email body..."></textarea></div>
-      <div class="form-group">
-        <label>Attach Invoice PDF</label>
-        <select id="em-attach-inv" onchange="document.getElementById('em-preview-inv-btn').style.display=this.value?'':'none'">
-          <option value="">— No attachment —</option>
-          ${DB.getInvoices().map(inv => {
-            const paid = (inv.payments||[]).reduce((s,p)=>s+Number(p.amount),0);
-            const status = paid >= Number(inv.amount) ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid';
-            return `<option value="${inv.id}">${inv.number} — ${inv.clientName||'—'} — ${fmt(inv.amount,inv.currency)} [${status}]</option>`;
-          }).join('')}
-        </select>
-        <span style="font-size:0.78rem;color:var(--gray-400);margin-top:0.3rem;display:block">The invoice PDF will open in a new tab — save it, then drag it into your email.</span>
-      </div>
-      <div style="display:flex;gap:0.5rem">
-        <button class="btn btn-primary" onclick="Email.sendFromForm()">Open in Outlook</button>
-        <button class="btn btn-outline" id="em-preview-inv-btn" style="display:none;border-color:var(--amber);color:var(--amber)" onclick="Email.previewAttachedInvoice()">Preview Invoice PDF</button>
-      </div>
     `;
+  },
+
+  _renderBulkSection() {
+    const providers = DB.getProviders();
+    const cities = [...new Set(providers.map(p => p.city).filter(Boolean))].sort();
+    const cats = [...new Set(providers.map(p => p.category).filter(Boolean))].sort();
+
+    return `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.8rem">
+        <div class="form-group" style="margin:0">
+          <label>City</label>
+          <select id="em-bulk-city" onchange="Email._onFilterChange()">
+            <option value="">All cities</option>
+            ${cities.map(c => `<option value="${this._esc(c)}" ${c===this._bulkCity?'selected':''}>${this._esc(c)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Category</label>
+          <select id="em-bulk-cat" onchange="Email._onFilterChange()">
+            <option value="">All categories</option>
+            ${cats.map(c => `<option value="${this._esc(c)}" ${c===this._bulkCategory?'selected':''}>${this._esc(c)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Search</label>
+          <input id="em-bulk-search" type="text" value="${this._esc(this._bulkSearch)}" oninput="Email._onSearchInput(this.value)" placeholder="name, contact...">
+        </div>
+      </div>
+
+      <div id="em-bulk-list-container"></div>
+    `;
+  },
+
+  _renderBulkList() {
+    const container = document.getElementById('em-bulk-list-container');
+    if (!container) return;
+
+    const providers = DB.getProviders();
+    const filtered = providers.filter(p => this._matchesBulkFilters(p));
+    const withoutEmail = providers.filter(p => !p.email).length;
+    const allFilteredIds = filtered.map(p => p.id);
+    const allSelected = allFilteredIds.length > 0 && allFilteredIds.every(id => this._bulkSelected.has(id));
+
+    container.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0.6rem;background:var(--gray-100);border-radius:var(--radius);margin-bottom:0.4rem;font-size:0.85rem">
+        <label style="display:flex;align-items:center;gap:0.4rem;margin:0;cursor:pointer">
+          <input type="checkbox" id="em-bulk-all" ${allSelected?'checked':''} onchange="Email._toggleAll(this.checked)">
+          <span>Select all (${filtered.length} match${filtered.length===1?'':'es'})</span>
+        </label>
+        <span style="font-weight:600;color:var(--amber)" id="em-bulk-count">${this._bulkSelected.size} selected</span>
+      </div>
+
+      <div style="max-height:280px;overflow-y:auto;border:1.5px solid var(--gray-200);border-radius:var(--radius);padding:0.4rem 0.6rem;margin-bottom:1rem">
+        ${filtered.length === 0
+          ? '<div style="text-align:center;color:var(--gray-400);padding:1.5rem">No providers match these filters.</div>'
+          : filtered.map(p => {
+              const checked = this._bulkSelected.has(p.id);
+              const stars = p.category === 'Hotel' && p.starRating ? ' ' + '★'.repeat(p.starRating) : '';
+              return `<label style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.2rem;border-bottom:1px solid var(--gray-100);cursor:pointer;font-size:0.85rem">
+                <input type="checkbox" value="${p.id}" ${checked?'checked':''} onchange="Email._toggleOne(${p.id}, this.checked)">
+                <span style="flex:1"><strong>${this._esc(p.companyName)}</strong>${stars} <span style="color:var(--gray-400)">· ${this._esc(p.category)} · ${this._esc(p.city||'?')}</span></span>
+                <span style="color:var(--gray-400);font-size:0.78rem">${this._esc(p.email)}</span>
+              </label>`;
+            }).join('')}
+      </div>
+      ${withoutEmail > 0 ? `<div style="font-size:0.78rem;color:var(--gray-400);margin-bottom:0.6rem">${withoutEmail} provider${withoutEmail===1?'':'s'} hidden (no email on file).</div>` : ''}
+    `;
+
+    // Keep send button label in sync
+    this._refreshSendLabel();
+  },
+
+  _refreshSendLabel() {
+    if (this._mode !== 'bulk') return;
+    const btn = document.querySelector('#email-compose-form button.btn-primary');
+    if (btn) btn.textContent = `Send to ${this._bulkSelected.size} provider${this._bulkSelected.size===1?'':'s'}`;
+  },
+
+  _matchesBulkFilters(p) {
+    if (this._bulkCity && p.city !== this._bulkCity) return false;
+    if (this._bulkCategory && p.category !== this._bulkCategory) return false;
+    if (this._bulkSearch) {
+      const s = this._bulkSearch.toLowerCase();
+      const blob = [p.companyName, p.contactPerson, p.email, p.city].join(' ').toLowerCase();
+      if (!blob.includes(s)) return false;
+    }
+    return !!p.email;
+  },
+
+  _esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  },
+
+  _onFilterChange() {
+    this._bulkCity = document.getElementById('em-bulk-city').value;
+    this._bulkCategory = document.getElementById('em-bulk-cat').value;
+    this._renderBulkList();
+  },
+
+  _onSearchInput(value) {
+    this._bulkSearch = value;
+    if (this._searchDebounce) clearTimeout(this._searchDebounce);
+    this._searchDebounce = setTimeout(() => this._renderBulkList(), 120);
+  },
+
+  _toggleOne(id, checked) {
+    if (checked) this._bulkSelected.add(id);
+    else this._bulkSelected.delete(id);
+    // Just update the counter, not the whole list — keeps scroll position
+    const countEl = document.getElementById('em-bulk-count');
+    if (countEl) countEl.textContent = `${this._bulkSelected.size} selected`;
+    this._refreshSendLabel();
+    // Sync "Select all" checkbox
+    const allEl = document.getElementById('em-bulk-all');
+    if (allEl) {
+      const visible = DB.getProviders().filter(p => this._matchesBulkFilters(p));
+      allEl.checked = visible.length > 0 && visible.every(p => this._bulkSelected.has(p.id));
+    }
+  },
+
+  _toggleAll(checked) {
+    const providers = DB.getProviders().filter(p => this._matchesBulkFilters(p));
+    providers.forEach(p => {
+      if (checked) this._bulkSelected.add(p.id);
+      else this._bulkSelected.delete(p.id);
+    });
+    this._renderBulkList();
   },
 
   loadRecipients() {
@@ -101,17 +286,68 @@ const Email = {
     if (email) document.getElementById('em-to').value = email;
   },
 
-  sendFromForm() {
-    const to = document.getElementById('em-to').value;
+  async sendFromForm() {
     const subject = document.getElementById('em-subject').value;
     const body = document.getElementById('em-body').value;
-    if (!to) { alert('Please enter a recipient email.'); return; }
-    // Generate invoice PDF if one is attached
-    const invId = Number(document.getElementById('em-attach-inv').value);
-    if (invId) {
-      PDFQuote.generateInvoice(invId);
+    if (!subject) { alert('Please enter a subject.'); return; }
+    if (!body) { alert('Please enter a body.'); return; }
+
+    if (this._mode === 'bulk') {
+      return this._sendBulk(subject, body);
     }
-    this.sendEmail(to, subject, body);
+
+    const to = document.getElementById('em-to').value;
+    if (!to) { alert('Please enter a recipient email.'); return; }
+    const invId = Number(document.getElementById('em-attach-inv').value);
+    if (invId) PDFQuote.generateInvoice(invId);
+    return this.sendEmail(to, subject, body);
+  },
+
+  async _sendBulk(subjectTpl, bodyTpl) {
+    if (this._bulkSelected.size === 0) {
+      alert('Select at least one provider.');
+      return;
+    }
+    const targets = DB.getProviders().filter(p => this._bulkSelected.has(p.id) && p.email);
+    if (!confirm(`Send this email to ${targets.length} provider(s) from juan@odisea-tours.com?`)) return;
+
+    let sent = 0;
+    const failed = [];
+    for (const p of targets) {
+      const data = {
+        contactPerson: p.contactPerson || 'Sir/Madam',
+        companyName: p.companyName || '',
+        city: p.city || '',
+        category: p.category || '',
+      };
+      const subject = this._substitute(subjectTpl, data);
+      const body = this._substitute(bodyTpl, data);
+      try {
+        await this._sendViaApi(p.email, subject, body);
+        DB.logEmail({ to: p.email, subject, type: 'Bulk email' });
+        sent++;
+      } catch (e) {
+        failed.push({ name: p.companyName, email: p.email, error: e.message });
+      }
+      await new Promise(r => setTimeout(r, 400));
+    }
+    if (failed.length === 0) {
+      alert(`Sent to ${sent} provider(s) from juan@odisea-tours.com.`);
+    } else {
+      const lines = failed.map(f => `- ${f.name} (${f.email}): ${f.error}`).join('\n');
+      alert(`Sent ${sent} of ${targets.length}. Failed:\n${lines}`);
+    }
+    this._bulkSelected.clear();
+    this.renderCompose();
+    this.renderLog();
+  },
+
+  _substitute(template, data) {
+    let out = template;
+    Object.keys(data).forEach(k => {
+      out = out.replace(new RegExp('\\{' + k + '\\}', 'g'), data[k] || '');
+    });
+    return out;
   },
 
   previewAttachedInvoice() {
@@ -119,13 +355,21 @@ const Email = {
     if (invId) PDFQuote.generateInvoice(invId);
   },
 
-  sendEmail(to, subject, body) {
-    const mailto = 'mailto:' + encodeURIComponent(to) +
-      '?subject=' + encodeURIComponent(subject) +
-      '&body=' + encodeURIComponent(body);
-    window.location.href = mailto;
-    DB.logEmail({ to, subject, type: 'sent' });
-    setTimeout(() => this.renderLog(), 500);
+  async sendEmail(to, subject, body) {
+    try {
+      await this._sendViaApi(to, subject, body);
+      DB.logEmail({ to, subject, type: 'sent' });
+      alert('Email sent to ' + to);
+    } catch (e) {
+      if (confirm(`Email send failed: ${e.message}\n\nOpen in Outlook instead?`)) {
+        const mailto = 'mailto:' + encodeURIComponent(to) +
+          '?subject=' + encodeURIComponent(subject) +
+          '&body=' + encodeURIComponent(body);
+        window.location.href = mailto;
+        DB.logEmail({ to, subject, type: 'sent (Outlook fallback)' });
+      }
+    }
+    setTimeout(() => this.renderLog(), 200);
   },
 
   renderTemplates() {
@@ -226,6 +470,7 @@ const Email = {
       body = body.replace(re, data[key] || '');
     });
 
+    this._mode = 'single';
     this.renderCompose();
     setTimeout(() => {
       document.getElementById('em-to').value = to;
