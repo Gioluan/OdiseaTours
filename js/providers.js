@@ -369,6 +369,33 @@ const Providers = {
     this.render();
   },
 
+  // Scan for providers whose normalised name collides with another, keep the
+  // latest-updated, merge any missing fields, move their rate sheets onto the
+  // survivor, and soft-delete the rest.
+  deduplicateAll() {
+    const all = DB.getProviders();
+    const norm = (s) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    const groups = new Map();
+    all.forEach(p => {
+      const k = norm(p.companyName);
+      if (!k) return;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(p);
+    });
+    const dupGroups = [...groups.values()].filter(g => g.length > 1);
+    if (dupGroups.length === 0) {
+      alert('No duplicates found.');
+      return;
+    }
+    const sampleLines = dupGroups.slice(0, 8).map(g => `  • ${g[0].companyName} (${g.length} copies)`).join('\n');
+    const more = dupGroups.length > 8 ? `\n  ...and ${dupGroups.length - 8} more` : '';
+    const totalExtras = dupGroups.reduce((sum, g) => sum + (g.length - 1), 0);
+    if (!confirm(`Found ${dupGroups.length} duplicate group${dupGroups.length===1?'':'s'} (${totalExtras} extra copies).\n\nSample:\n${sampleLines}${more}\n\nKeep the latest-updated copy of each, merge missing fields, move rate sheets to the survivor, and remove the rest. Continue?`)) return;
+    const result = DB.dedupProviders();
+    alert(`Done.\n\nKept ${result.kept} survivor${result.kept===1?'':'s'}, removed ${result.removed} duplicate${result.removed===1?'':'s'}${result.merged ? `, merged data from extras on ${result.merged}` : ''}.`);
+    this.render();
+  },
+
   sendRFQ(providerId) {
     const prov = DB.getProviders().find(x => x.id === providerId);
     if (!prov) return;

@@ -138,6 +138,74 @@ const DB = {
     this._softDelete('providers', id);
   },
 
+  // Deduplicate providers by normalised company name. Keeps the record
+  // with the latest updatedAt (or createdAt if no update), merges any
+  // missing scalar fields from the discarded copies, and soft-deletes
+  // the rest so Firestore sync drops them across devices too.
+  // Returns { groups, kept, removed, merged }.
+  dedupProviders() {
+    const norm = (s) => String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+    const all = this.getProviders();
+    const groups = new Map();
+    all.forEach(p => {
+      const key = norm(p.companyName);
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(p);
+    });
+    let removed = 0;
+    let merged = 0;
+    let groupCount = 0;
+    groups.forEach(items => {
+      if (items.length < 2) return;
+      groupCount++;
+      // Pick the survivor: latest updatedAt → latest createdAt → highest id
+      const sorted = [...items].sort((a, b) => {
+        const at = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        const bt = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        if (bt !== at) return bt - at;
+        return (b.id || 0) - (a.id || 0);
+      });
+      const survivor = sorted[0];
+      const losers = sorted.slice(1);
+
+      // Merge: fill survivor's empty scalar fields from any loser that has them
+      const scalarKeys = ['contactPerson','email','phone','website','category','city','starRating','ourRating','ourReview','notes'];
+      let mergedAny = false;
+      losers.forEach(l => {
+        scalarKeys.forEach(k => {
+          if ((survivor[k] === undefined || survivor[k] === '' || survivor[k] === null || survivor[k] === 0)
+              && l[k] !== undefined && l[k] !== '' && l[k] !== null && l[k] !== 0) {
+            survivor[k] = l[k];
+            mergedAny = true;
+          }
+        });
+      });
+      if (mergedAny) {
+        this.saveProvider(survivor);
+        merged++;
+      }
+      // Also move any rate sheets that point to the loser → point to survivor
+      const rates = this.getRates();
+      let ratesMoved = 0;
+      rates.forEach(r => {
+        if (losers.some(l => Number(l.id) === Number(r.providerId))) {
+          r.providerId = survivor.id;
+          this.saveRate(r);
+          ratesMoved++;
+        }
+      });
+      if (ratesMoved > 0) console.log(`[dedup] moved ${ratesMoved} rate sheets onto survivor "${survivor.companyName}"`);
+
+      losers.forEach(l => {
+        this._softDelete('providers', l.id);
+        removed++;
+      });
+    });
+    if (removed > 0) console.log(`[dedup] kept ${groupCount} survivors, removed ${removed}, merged data on ${merged}`);
+    return { groups: groupCount, kept: groupCount, removed, merged };
+  },
+
   // RATES — rate sheets linked to providers (one provider can have N rates: room types, seasons, products)
   getRates() { return this._get('rates').filter(r => !r._deleted); },
   getRatesForProvider(providerId) {
