@@ -451,7 +451,7 @@ const Providers = {
       DB.logEmail({ to: prov.email, subject, type: 'RFQ' });
       alert('Sent RFQ to ' + prov.companyName + ' (' + prov.email + ')');
     } catch (e) {
-      if (confirm(`Gmail send failed: ${e.message}\n\nOpen in Outlook instead?`)) {
+      if (confirm(`Email send failed: ${e.message}\n\nOpen in Outlook instead?`)) {
         this._outlookFallback(prov.email, subject, body);
         DB.logEmail({ to: prov.email, subject, type: 'RFQ (Outlook fallback)' });
       }
@@ -524,7 +524,7 @@ const Providers = {
       alert('Selected providers have no email addresses.');
       return;
     }
-    if (!confirm(`Send RFQ via Gmail to ${targets.length} provider(s)?`)) return;
+    if (!confirm(`Send RFQ to ${targets.length} provider(s) from juan@odisea-tours.com?`)) return;
 
     closeModal('prov-modal');
     let sent = 0;
@@ -558,7 +558,7 @@ Odisea Tours`;
     }
 
     if (failed.length === 0) {
-      alert(`Sent RFQ to ${sent} provider(s) via Gmail.`);
+      alert(`Sent RFQ to ${sent} provider(s) from juan@odisea-tours.com.`);
     } else {
       const lines = failed.map(f => `- ${f.name} (${f.email}): ${f.error}`).join('\n');
       alert(`Sent ${sent} of ${targets.length}. Failed:\n${lines}`);
