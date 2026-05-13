@@ -1,5 +1,28 @@
 /* === PROVIDERS MODULE === */
 const Providers = {
+  EMAIL_API_URL: 'https://odisea-tours.com/api/email/send',
+
+  async _sendViaGmail(to, subject, text, replyTo) {
+    const res = await fetch(this.EMAIL_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, subject, text, replyTo }),
+    });
+    if (!res.ok) {
+      let detail = '';
+      try { const j = await res.json(); detail = j.error || j.detail || JSON.stringify(j); }
+      catch { detail = 'HTTP ' + res.status; }
+      throw new Error(detail);
+    }
+    return res.json();
+  },
+
+  _outlookFallback(to, subject, body) {
+    window.location.href = 'mailto:' + encodeURIComponent(to) +
+      '?subject=' + encodeURIComponent(subject) +
+      '&body=' + encodeURIComponent(body);
+  },
+
   RATE_UNITS: [
     { key: 'per_room_per_night',    label: 'per room / night' },
     { key: 'per_person_per_night',  label: 'per person / night' },
@@ -389,7 +412,7 @@ const Providers = {
     document.getElementById('rfq-nights').value = t.nights || '';
   },
 
-  executeRFQ(providerId) {
+  async executeRFQ(providerId) {
     const prov = DB.getProviders().find(x => x.id === providerId);
     if (!prov || !prov.email) { alert('Provider has no email address.'); return; }
 
@@ -422,14 +445,17 @@ const Providers = {
 
     body += `\n${reqs ? 'Additional Requirements:\n' + reqs + '\n' : ''}Please send us your best rates and availability at your earliest convenience.\n\nKind regards,\nOdisea Tours`;
 
-    const mailto = 'mailto:' + encodeURIComponent(prov.email) +
-      '?subject=' + encodeURIComponent(subject) +
-      '&body=' + encodeURIComponent(body);
-    window.location.href = mailto;
-
-    DB.logEmail({ to: prov.email, subject, type: 'RFQ' });
     closeModal('prov-modal');
-    alert('Opening Outlook with RFQ email for ' + prov.companyName);
+    try {
+      await this._sendViaGmail(prov.email, subject, body);
+      DB.logEmail({ to: prov.email, subject, type: 'RFQ' });
+      alert('Sent RFQ to ' + prov.companyName + ' (' + prov.email + ')');
+    } catch (e) {
+      if (confirm(`Gmail send failed: ${e.message}\n\nOpen in Outlook instead?`)) {
+        this._outlookFallback(prov.email, subject, body);
+        DB.logEmail({ to: prov.email, subject, type: 'RFQ (Outlook fallback)' });
+      }
+    }
   },
 
   bulkRFQ() {
@@ -478,7 +504,7 @@ const Providers = {
     document.getElementById('bulk-nights').value = t.nights || '';
   },
 
-  executeBulkRFQ() {
+  async executeBulkRFQ() {
     const checkboxes = document.querySelectorAll('.bulk-prov-cb:checked');
     if (!checkboxes.length) { alert('Select at least one provider.'); return; }
 
@@ -490,15 +516,23 @@ const Providers = {
     const reqs = document.getElementById('bulk-reqs').value;
 
     const ids = Array.from(checkboxes).map(cb => Number(cb.value));
-    let delay = 0;
+    const targets = ids
+      .map(id => DB.getProviders().find(x => x.id === id))
+      .filter(p => p && p.email);
 
-    ids.forEach(id => {
-      const prov = DB.getProviders().find(x => x.id === id);
-      if (!prov || !prov.email) return;
+    if (!targets.length) {
+      alert('Selected providers have no email addresses.');
+      return;
+    }
+    if (!confirm(`Send RFQ via Gmail to ${targets.length} provider(s)?`)) return;
 
-      setTimeout(() => {
-        const subject = `Quote Request — Group Tour to ${dest}`;
-        const body = `Dear ${prov.contactPerson || 'Sir/Madam'},
+    closeModal('prov-modal');
+    let sent = 0;
+    const failed = [];
+
+    for (const prov of targets) {
+      const subject = `Quote Request — Group Tour to ${dest}`;
+      const body = `Dear ${prov.contactPerson || 'Sir/Madam'},
 
 We are organising a group tour and would like to request a quote for your services.
 
@@ -512,17 +546,22 @@ Please send us your best rates and availability.
 
 Kind regards,
 Odisea Tours`;
-
-        window.location.href = 'mailto:' + encodeURIComponent(prov.email) +
-          '?subject=' + encodeURIComponent(subject) +
-          '&body=' + encodeURIComponent(body);
-
+      try {
+        await this._sendViaGmail(prov.email, subject, body);
         DB.logEmail({ to: prov.email, subject, type: 'Bulk RFQ' });
-      }, delay);
-      delay += 1500;
-    });
+        sent++;
+      } catch (e) {
+        failed.push({ name: prov.companyName, email: prov.email, error: e.message });
+      }
+      // 400 ms politeness delay between Gmail API calls
+      await new Promise(r => setTimeout(r, 400));
+    }
 
-    closeModal('prov-modal');
-    alert(`Opening Outlook for ${ids.length} provider(s). Each email will open with a short delay.`);
+    if (failed.length === 0) {
+      alert(`Sent RFQ to ${sent} provider(s) via Gmail.`);
+    } else {
+      const lines = failed.map(f => `- ${f.name} (${f.email}): ${f.error}`).join('\n');
+      alert(`Sent ${sent} of ${targets.length}. Failed:\n${lines}`);
+    }
   }
 };
