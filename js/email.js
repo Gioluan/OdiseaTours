@@ -4,6 +4,7 @@ const Email = {
   _mode: 'single',       // 'single' or 'bulk'
   _bulkCity: '',
   _bulkCategory: '',
+  _bulkStars: '',        // only used when category === 'Hotel'
   _bulkSearch: '',
   _bulkSelected: new Set(),
 
@@ -134,9 +135,11 @@ const Email = {
     const providers = DB.getProviders();
     const cities = [...new Set(providers.map(p => p.city).filter(Boolean))].sort();
     const cats = [...new Set(providers.map(p => p.category).filter(Boolean))].sort();
+    const showStars = this._bulkCategory === 'Hotel';
+    const cols = showStars ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr';
 
     return `
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.8rem">
+      <div style="display:grid;grid-template-columns:${cols};gap:0.5rem;margin-bottom:0.8rem">
         <div class="form-group" style="margin:0">
           <label>City</label>
           <select id="em-bulk-city" onchange="Email._onFilterChange()">
@@ -146,11 +149,19 @@ const Email = {
         </div>
         <div class="form-group" style="margin:0">
           <label>Category</label>
-          <select id="em-bulk-cat" onchange="Email._onFilterChange()">
+          <select id="em-bulk-cat" onchange="Email._onCategoryChange()">
             <option value="">All categories</option>
             ${cats.map(c => `<option value="${this._esc(c)}" ${c===this._bulkCategory?'selected':''}>${this._esc(c)}</option>`).join('')}
           </select>
         </div>
+        ${showStars ? `
+        <div class="form-group" style="margin:0">
+          <label>Stars</label>
+          <select id="em-bulk-stars" onchange="Email._onFilterChange()">
+            <option value="">Any stars</option>
+            ${[5,4,3,2,1].map(n => `<option value="${n}" ${String(n)===String(this._bulkStars)?'selected':''}>${'★'.repeat(n)} (${n})</option>`).join('')}
+          </select>
+        </div>` : ''}
         <div class="form-group" style="margin:0">
           <label>Search</label>
           <input id="em-bulk-search" type="text" value="${this._esc(this._bulkSearch)}" oninput="Email._onSearchInput(this.value)" placeholder="name, contact...">
@@ -209,6 +220,7 @@ const Email = {
   _matchesBulkFilters(p) {
     if (this._bulkCity && p.city !== this._bulkCity) return false;
     if (this._bulkCategory && p.category !== this._bulkCategory) return false;
+    if (this._bulkCategory === 'Hotel' && this._bulkStars && Number(p.starRating || 0) !== Number(this._bulkStars)) return false;
     if (this._bulkSearch) {
       const s = this._bulkSearch.toLowerCase();
       const blob = [p.companyName, p.contactPerson, p.email, p.city].join(' ').toLowerCase();
@@ -224,7 +236,21 @@ const Email = {
   _onFilterChange() {
     this._bulkCity = document.getElementById('em-bulk-city').value;
     this._bulkCategory = document.getElementById('em-bulk-cat').value;
+    const starsEl = document.getElementById('em-bulk-stars');
+    this._bulkStars = starsEl ? starsEl.value : '';
     this._renderBulkList();
+  },
+
+  // Category change can add/remove the stars filter column → rerender the
+  // whole bulk section (preserving subject + body) instead of just the list.
+  _onCategoryChange() {
+    this._bulkCategory = document.getElementById('em-bulk-cat').value;
+    if (this._bulkCategory !== 'Hotel') this._bulkStars = '';
+    const subject = document.getElementById('em-subject')?.value || '';
+    const body = document.getElementById('em-body')?.value || '';
+    this.renderCompose();
+    if (document.getElementById('em-subject')) document.getElementById('em-subject').value = subject;
+    if (document.getElementById('em-body')) document.getElementById('em-body').value = body;
   },
 
   _onSearchInput(value) {
