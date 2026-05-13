@@ -7,7 +7,7 @@ const Auth = {
   _lastSyncTime: 0,
   SYNC_INTERVAL_MS: 5 * 60 * 1000, // 5 minutes
   SYNC_COOLDOWN_MS: 30 * 1000, // 30s cooldown between syncs
-  COLLECTIONS: ['tours', 'quotes', 'invoices', 'clients', 'providers'],
+  COLLECTIONS: ['tours', 'quotes', 'invoices', 'clients', 'providers', 'rates'],
 
   init() {
     if (!DB._firebaseReady) {

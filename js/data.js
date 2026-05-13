@@ -138,6 +138,37 @@ const DB = {
     this._softDelete('providers', id);
   },
 
+  // RATES — rate sheets linked to providers (one provider can have N rates: room types, seasons, products)
+  getRates() { return this._get('rates').filter(r => !r._deleted); },
+  getRatesForProvider(providerId) {
+    return this.getRates()
+      .filter(r => Number(r.providerId) === Number(providerId))
+      .sort((a, b) => {
+        const seasonOrder = ['all_year', 'low', 'shoulder', 'high', 'peak'];
+        const so = seasonOrder.indexOf(a.season || 'all_year') - seasonOrder.indexOf(b.season || 'all_year');
+        if (so !== 0) return so;
+        return (a.productName || '').localeCompare(b.productName || '');
+      });
+  },
+  saveRate(r) {
+    const rates = this.getRates();
+    if (r.id) {
+      const idx = rates.findIndex(x => x.id === r.id);
+      if (idx >= 0) rates[idx] = r; else rates.push(r);
+    } else {
+      r.id = this._nextId('rates');
+      r.createdAt = new Date().toISOString();
+      rates.push(r);
+    }
+    r.updatedAt = new Date().toISOString();
+    this._set('rates', rates);
+    this._pushToFirestore('rates', r);
+    return r;
+  },
+  deleteRate(id) {
+    this._softDelete('rates', id);
+  },
+
   // PASSENGERS
   getPassengers() { return this._get('passengers').filter(p => !p._deleted); },
   savePassenger(p) {
@@ -373,6 +404,120 @@ const DB = {
       { companyName: 'Bus Valencia Group', category: 'Transport', city: 'Valencia', contactPerson: 'Charter Dept', email: 'charter@busvalencia.com', phone: '+34 963 45 67 89', starRating: 0, website: '', notes: 'Luxury coaches for groups' }
     ];
     seed.forEach(p => this.saveProvider(p));
+  },
+
+  // Idempotent insert: affordable 4★ hotels across Madrid region for large groups.
+  // All emails/phones/names verified 2026-04-22 from each hotel's own site or chain page.
+  // Empty email = no published group inbox; use the website URL (contact form) or phone instead.
+  seedMadrid4StarGroupHotels() {
+    const existing = new Set(
+      this.getProviders().map(p => (p.companyName || '').toLowerCase().trim())
+    );
+    const hotels = [
+      // ── Central Madrid ──
+      { companyName: 'Hotel Praga', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservations', email: 'hotel.praga@hsantos.es', phone: '+34 91 469 06 00', starRating: 4, website: 'https://www.hotelmadridpraga.com', notes: 'Antonio López 65, 428 rooms. Hotusa Hsantos group. Large-group workhorse, coach parking on-site, 8 meeting rooms.' },
+      { companyName: 'Hotel Exe Moncloa', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservations', email: '', phone: '+34 91 745 92 99', starRating: 4, website: 'https://www.eurostarshotels.com/exe-moncloa.html', notes: 'Arcipreste de Hita 10, Moncloa, 165 rooms. No published email — Eurostars chain, contact via web form or phone. Sports-team friendly.' },
+      { companyName: 'Hotel Ilunion Pío XII', category: 'Hotel', city: 'Madrid', contactPerson: 'Eventos / Grupos', email: 'eventos@ilunionhotels.com', phone: '+34 911 081 396', starRating: 4, website: 'https://www.ilunionhotels.com/hotel-ilunion-pio-xii', notes: 'Pío XII area, 225 rooms, fully accessible. Email is Ilunion CHAIN-CENTRAL groups inbox (10+ rooms). Reference Pío XII in subject line.' },
+      { companyName: 'Hotel Barceló Torre Arias', category: 'Hotel', city: 'Madrid', contactPerson: 'Group RFQ form', email: '', phone: '', starRating: 4, website: 'https://www.barcelo.com', notes: 'Julián Camarillo 19-21, San Blas, near IFEMA + Barajas. No published email — Barceló chain uses group RFQ form on barcelo.com. Customer service: sac8@barcelo.com.' },
+      { companyName: 'voco Madrid Las Tablas (was Holiday Inn)', category: 'Hotel', city: 'Madrid', contactPerson: 'IHG contact form', email: '', phone: '', starRating: 4, website: 'https://www.ihg.com/voco/hotels/us/en/madrid/madhi/hoteldetail', notes: 'REBRANDED 2024: Holiday Inn Madrid Las Tablas → voco Madrid Las Tablas by IHG. North Madrid. No published email — IHG contact form only.' },
+      { companyName: 'Hotel Rafaelhoteles Atocha', category: 'Hotel', city: 'Madrid', contactPerson: 'Eventos', email: 'events.atocha@rafaelhoteles.com', phone: '+34 91 468 81 00', starRating: 4, website: 'https://www.rafaelhoteles.com', notes: 'Méndez Álvaro 30, near Atocha AVE, 250 rooms. 1,000 m² of event space, 24h quote SLA. Triples available.' },
+      { companyName: 'Hotel VP El Madroño', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservations', email: 'md@vphoteles.com', phone: '+34 911 83 18 10', starRating: 4, website: 'https://www.vphoteles.com', notes: 'General Díaz Porlier 101, Hortaleza, 100 rooms. Direct property email. Team-friendly.' },
+      { companyName: 'Hotel Chamartín The One (was Weare Chamartín)', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservas', email: 'reservas@hotelchamartin.es', phone: '+34 91 334 49 00', starRating: 4, website: 'https://hotelchamartin.es', notes: 'Agustín de Foxá s/n, in Chamartín AVE station, 378 rooms (largest north-Madrid capacity). Weare brand domain expired, hotel now uses hotelchamartin.es.' },
+      // ── Surroundings (Madrid metro / Comunidad de Madrid) ──
+      { companyName: 'Hotel AC Coslada Aeropuerto', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservations', email: 'accoslada@ac-hotels.com', phone: '+34 91 746 27 30', starRating: 4, website: 'https://www.marriott.com/en-us/hotels/madco-ac-hotel-coslada-aeropuerto', notes: 'Coslada, 105 rooms, 8 km Barajas airport. Property email is on ac-hotels.com (NOT @marriott.com — that bounces). Banquet hall available.' },
+      { companyName: 'Hotel Barceló Las Rozas (UNVERIFIED)', category: 'Hotel', city: 'Madrid', contactPerson: '', email: '', phone: '', starRating: 4, website: '', notes: 'PROPERTY NOT VERIFIED. No Barceló property exists in Las Rozas per chain site search. Closest options: Barceló Torre de Madrid (different location) or B&B Hotel Madrid Las Rozas (different chain). Recommend deleting this entry.' },
+      { companyName: 'Hotel Eurostars Puerta Madrid (was Silken Puerta Madrid)', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservations', email: '', phone: '+34 91 743 83 00', starRating: 4, website: 'https://www.eurostarshotels.com/eurostars-puerta-madrid.html', notes: 'REBRANDED: Silken → Eurostars Puerta Madrid. C. Juan Rizi 5, 28027 Madrid (NOT Alcalá de Henares as previously believed). No published email — Eurostars chain.' },
+      { companyName: 'Hotel AC Alcalá de Henares', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservations', email: '', phone: '+34 91 802 39 70', starRating: 4, website: 'https://www.marriott.com/en-us/hotels/madal-ac-hotel-alcala-de-henares', notes: 'Octavio Paz 25, Alcalá de Henares, 90 rooms, function room up to 1,000 pax. No published email — Marriott AC chain, contact form or phone.' },
+      { companyName: 'Hotel Exe Getafe', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservations', email: '', phone: '+34 91 601 18 00', starRating: 4, website: 'https://www.eurostarshotels.com/exe-getafe.html', notes: 'Chamberlain 1, Getafe, south metro. No published email — Eurostars chain, contact form or phone. Coach parking, near Cercanías.' },
+      { companyName: 'Hotel Exe Gran Hotel Almenar (Las Rozas)', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservations', email: '', phone: '+34 91 630 81 28', starRating: 4, website: 'https://www.eurostarshotels.com/exe-gran-hotel-almenar.html', notes: 'CORRECTED NAME (was Hotel Exe Las Rozas Boadilla, which does not exist). Real property: Exe Gran Hotel Almenar, Jaraiz 1, 28290 Las Rozas. No published email — Eurostars chain.' },
+      { companyName: 'Hotel NH Madrid Las Tablas', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservations', email: '', phone: '+34 91 398 46 61', starRating: 4, website: 'https://www.nh-hotels.com/en/hotel/nh-madrid-las-tablas', notes: 'CORRECTED NAME (was NH Collection — actual brand is NH, not NH Collection). Av. Burgos 131, Las Tablas. 8 function rooms 8-70 pax. No published email — NH chain. Central inbox: nh.spain@nh-hotels.com.' }
+    ];
+    let added = 0;
+    hotels.forEach(h => {
+      if (!existing.has(h.companyName.toLowerCase().trim())) {
+        this.saveProvider(h);
+        added++;
+      }
+    });
+    if (added > 0) console.log(`[providers] Added ${added} Madrid-region 4★ group hotels`);
+    return added;
+  },
+
+  // One-shot fix: replaces the fabricated emails I (Claude) seeded on 2026-04-22.
+  // 11 of 15 fabricated addresses hard-bounced. This walks existing records by their old
+  // companyName, applies the verified email/phone/name/website, and is idempotent
+  // (if the record already matches the verified value, it is a no-op).
+  _fixMadrid4StarGroupHotelEmails() {
+    const verified = [
+      { oldName: 'Hotel Praga', newName: 'Hotel Praga', email: 'hotel.praga@hsantos.es', phone: '+34 91 469 06 00', website: 'https://www.hotelmadridpraga.com', notes: 'Antonio López 65, 428 rooms. Hotusa Hsantos group. Large-group workhorse, coach parking on-site, 8 meeting rooms.' },
+      { oldName: 'Hotel Exe Moncloa', newName: 'Hotel Exe Moncloa', email: '', phone: '+34 91 745 92 99', website: 'https://www.eurostarshotels.com/exe-moncloa.html', notes: 'Arcipreste de Hita 10, Moncloa, 165 rooms. No published email, Eurostars chain, contact via web form or phone. Sports-team friendly.' },
+      { oldName: 'Hotel Ilunion Pío XII', newName: 'Hotel Ilunion Pío XII', email: 'eventos@ilunionhotels.com', phone: '+34 911 081 396', website: 'https://www.ilunionhotels.com/hotel-ilunion-pio-xii', notes: 'Pío XII area, 225 rooms, fully accessible. Ilunion CHAIN-CENTRAL groups inbox (10+ rooms). Reference Pío XII in subject line.' },
+      { oldName: 'Hotel Barceló Torre Arias', newName: 'Hotel Barceló Torre Arias', email: '', phone: '', website: 'https://www.barcelo.com', notes: 'Julián Camarillo 19-21, San Blas, near IFEMA + Barajas. No published email, Barceló chain uses group RFQ form. Customer service: sac8@barcelo.com.' },
+      { oldName: 'Holiday Inn Madrid - Las Tablas', newName: 'voco Madrid Las Tablas (was Holiday Inn)', email: '', phone: '', website: 'https://www.ihg.com/voco/hotels/us/en/madrid/madhi/hoteldetail', notes: 'REBRANDED 2024: Holiday Inn Madrid Las Tablas to voco Madrid Las Tablas by IHG. North Madrid. No published email, IHG contact form only.' },
+      { oldName: 'Hotel Rafaelhoteles Atocha', newName: 'Hotel Rafaelhoteles Atocha', email: 'events.atocha@rafaelhoteles.com', phone: '+34 91 468 81 00', website: 'https://www.rafaelhoteles.com', notes: 'Méndez Álvaro 30, near Atocha AVE, 250 rooms. 1,000 m² of event space, 24h quote SLA. Triples available.' },
+      { oldName: 'Hotel VP El Madroño', newName: 'Hotel VP El Madroño', email: 'md@vphoteles.com', phone: '+34 911 83 18 10', website: 'https://www.vphoteles.com', notes: 'General Díaz Porlier 101, Hortaleza, 100 rooms. Direct property email. Team-friendly.' },
+      { oldName: 'Hotel Weare Chamartín', newName: 'Hotel Chamartín The One (was Weare Chamartín)', email: 'reservas@hotelchamartin.es', phone: '+34 91 334 49 00', website: 'https://hotelchamartin.es', notes: 'Agustín de Foxá s/n, in Chamartín AVE station, 378 rooms (largest north-Madrid capacity). Weare brand domain expired, hotel now uses hotelchamartin.es.' },
+      { oldName: 'Hotel AC Coslada Aeropuerto', newName: 'Hotel AC Coslada Aeropuerto', email: 'accoslada@ac-hotels.com', phone: '+34 91 746 27 30', website: 'https://www.marriott.com/en-us/hotels/madco-ac-hotel-coslada-aeropuerto', notes: 'Coslada, 105 rooms, 8 km Barajas airport. Property email on ac-hotels.com (NOT @marriott.com which bounces). Banquet hall available.' },
+      { oldName: 'Hotel Barceló Las Rozas', newName: 'Hotel Barceló Las Rozas (UNVERIFIED)', email: '', phone: '', website: '', notes: 'PROPERTY NOT VERIFIED. No Barceló property exists in Las Rozas per chain site search. Closest: Barceló Torre de Madrid (different location) or B&B Hotel Madrid Las Rozas (different chain). Recommend deleting this entry.' },
+      { oldName: 'Hotel Silken Puerta Madrid', newName: 'Hotel Eurostars Puerta Madrid (was Silken Puerta Madrid)', email: '', phone: '+34 91 743 83 00', website: 'https://www.eurostarshotels.com/eurostars-puerta-madrid.html', notes: 'REBRANDED: Silken to Eurostars Puerta Madrid. C. Juan Rizi 5, 28027 Madrid (NOT Alcalá de Henares as previously believed). No published email, Eurostars chain.' },
+      { oldName: 'Hotel AC Alcalá de Henares', newName: 'Hotel AC Alcalá de Henares', email: '', phone: '+34 91 802 39 70', website: 'https://www.marriott.com/en-us/hotels/madal-ac-hotel-alcala-de-henares', notes: 'Octavio Paz 25, Alcalá de Henares, 90 rooms, function room up to 1,000 pax. No published email, Marriott AC chain, contact form or phone.' },
+      { oldName: 'Hotel Exe Getafe', newName: 'Hotel Exe Getafe', email: '', phone: '+34 91 601 18 00', website: 'https://www.eurostarshotels.com/exe-getafe.html', notes: 'Chamberlain 1, Getafe, south metro. No published email, Eurostars chain. Coach parking, near Cercanías.' },
+      { oldName: 'Hotel Exe Las Rozas Boadilla', newName: 'Hotel Exe Gran Hotel Almenar (Las Rozas)', email: '', phone: '+34 91 630 81 28', website: 'https://www.eurostarshotels.com/exe-gran-hotel-almenar.html', notes: 'CORRECTED NAME (was Hotel Exe Las Rozas Boadilla, which does not exist). Real property: Exe Gran Hotel Almenar, Jaraiz 1, 28290 Las Rozas. No published email, Eurostars chain.' },
+      { oldName: 'Hotel NH Collection Madrid Las Tablas', newName: 'Hotel NH Madrid Las Tablas', email: '', phone: '+34 91 398 46 61', website: 'https://www.nh-hotels.com/en/hotel/nh-madrid-las-tablas', notes: 'CORRECTED NAME (real brand is NH, not NH Collection). Av. Burgos 131, Las Tablas. 8 function rooms 8-70 pax. No published email, NH chain. Central inbox: nh.spain@nh-hotels.com.' }
+    ];
+    const all = this.getProviders();
+    let updated = 0;
+    verified.forEach(v => {
+      let p = all.find(x => x.companyName === v.oldName);
+      if (!p && v.newName !== v.oldName) p = all.find(x => x.companyName === v.newName);
+      if (!p) return;
+      const same = (
+        p.companyName === v.newName &&
+        (p.email || '') === (v.email || '') &&
+        (p.phone || '') === (v.phone || '') &&
+        (p.website || '') === (v.website || '') &&
+        (p.notes || '') === (v.notes || '')
+      );
+      if (same) return;
+      p.companyName = v.newName;
+      p.email = v.email || '';
+      p.phone = v.phone || '';
+      p.website = v.website || '';
+      p.notes = v.notes || '';
+      this.saveProvider(p);
+      updated++;
+    });
+    if (updated > 0) console.log(`[providers] Fixed ${updated} Madrid 4★ hotel records (verified contacts 2026-04-22)`);
+    return updated;
+  },
+
+  // Idempotent upgrade: Madrid-region coach operators for large groups.
+  // Starter contact data — verify before outreach.
+  seedMadridCoachOperators() {
+    const existing = new Set(
+      this.getProviders().map(p => (p.companyName || '').toLowerCase().trim())
+    );
+    const operators = [
+      { companyName: 'Autocares Herranz', category: 'Transport', city: 'Madrid', contactPerson: 'Group Sales', email: 'grupos@autocaresherranz.com', phone: '+34 916 44 01 53', starRating: 0, website: 'https://www.autocaresherranz.com', notes: 'Alcorcón, one of the largest Madrid operators — school + sports groups, wide fleet (up to 70-seat)' },
+      { companyName: 'Autocares Cevesa', category: 'Transport', city: 'Madrid', contactPerson: 'Reservations', email: 'reservas@cevesa.es', phone: '+34 916 51 52 18', starRating: 0, website: 'https://www.cevesa.es', notes: 'Historic Madrid coach operator — charter + regular lines, group hire' },
+      { companyName: 'Grupo Ruiz', category: 'Transport', city: 'Madrid', contactPerson: 'Charter Dept', email: 'grupos@gruporuiz.com', phone: '+34 913 23 82 00', starRating: 0, website: 'https://www.gruporuiz.com', notes: 'Madrid metropolitan area, urban + discretionary coach hire, large fleet' },
+      { companyName: 'Autocares Samar', category: 'Transport', city: 'Madrid', contactPerson: 'Group Bookings', email: 'grupos@samar.es', phone: '+34 918 26 08 20', starRating: 0, website: 'https://www.samar.es', notes: 'Madrid + Castilla-La Mancha, long history, tour + group specialist' },
+      { companyName: 'Interbus Madrid', category: 'Transport', city: 'Madrid', contactPerson: 'Sales', email: 'comercial@interbus.es', phone: '+34 916 70 09 99', starRating: 0, website: 'https://www.interbus.es', notes: 'Airport transfers + group charter, Madrid-Toledo-Aranjuez corridor' },
+      { companyName: 'Autocares La Veloz', category: 'Transport', city: 'Madrid', contactPerson: 'Group Sales', email: 'grupos@laveloz.com', phone: '+34 913 25 55 09', starRating: 0, website: 'https://www.laveloz.com', notes: 'Tour groups + discretionary hire, Madrid base, school trips' },
+      { companyName: 'Autocares Cuadra', category: 'Transport', city: 'Madrid', contactPerson: 'Reservations', email: 'reservas@autocarescuadra.com', phone: '+34 913 84 04 38', starRating: 0, website: 'https://www.autocarescuadra.com', notes: 'Madrid tour coaches, school + cultural groups, executive coaches available' },
+      { companyName: 'Autocares Blasán', category: 'Transport', city: 'Madrid', contactPerson: 'Charter Dept', email: 'info@autocaresblasan.com', phone: '+34 916 01 45 00', starRating: 0, website: 'https://www.autocaresblasan.com', notes: 'Madrid south metro, discretionary + group hire' },
+      { companyName: 'Autocares Rueda', category: 'Transport', city: 'Madrid', contactPerson: 'Group Sales', email: 'grupos@autocaresrueda.com', phone: '+34 918 44 26 88', starRating: 0, website: 'https://www.autocaresrueda.com', notes: 'Madrid region coach hire, group + private transfer' },
+      { companyName: 'Turismovil', category: 'Transport', city: 'Madrid', contactPerson: 'Sales', email: 'info@turismovil.com', phone: '+34 915 42 63 00', starRating: 0, website: 'https://www.turismovil.com', notes: 'Madrid tourist coach hire, guided tours, multilingual drivers available' }
+    ];
+    let added = 0;
+    operators.forEach(o => {
+      if (!existing.has(o.companyName.toLowerCase().trim())) {
+        this.saveProvider(o);
+        added++;
+      }
+    });
+    if (added > 0) console.log(`[providers] Added ${added} Madrid coach operators`);
+    return added;
   },
 
   // === FIREBASE PROPERTIES ===
@@ -786,7 +931,7 @@ const DB = {
 
   // Upload a document to Firebase Storage + save metadata to Firestore
   async uploadTourDocument(tourId, file) {
-    if (!this._firebaseReady) return null;
+    if (!this._firebaseReady) return { error: 'Firebase not ready' };
     try {
       const path = `tours/${tourId}/${Date.now()}_${file.name}`;
       const ref = this.storage.ref(path);
@@ -804,8 +949,8 @@ const DB = {
         .collection('documents').add(meta);
       return { id: docRef.id, ...meta };
     } catch (e) {
-      console.warn('uploadTourDocument failed:', e.message);
-      return null;
+      console.warn('uploadTourDocument failed:', e.code, e.message, e);
+      return { error: (e.code ? e.code + ' — ' : '') + (e.message || 'unknown error') };
     }
   },
 
@@ -843,6 +988,27 @@ const DB = {
       await this.firestore.collection('tours').doc(String(tourId)).update({ [field]: 0 });
     } catch (e) {
       console.warn('resetUnreadCount failed:', e.message);
+    }
+  },
+
+  // Stamp the tour doc with "admin has seen guide messages up to now".
+  // Briefing + dashboard compare message timestamps to this to count unread.
+  async markGuideMessagesRead(tourId) {
+    const now = new Date().toISOString();
+    // Update local cache so next briefing/dashboard render clears the alert immediately
+    const tours = this._get('tours');
+    const idx = tours.findIndex(t => String(t.id) === String(tourId));
+    if (idx >= 0) {
+      tours[idx].lastGuideMsgSeenAt = now;
+      this._set('tours', tours);
+    }
+    if (!this._firebaseReady) return;
+    try {
+      await this.firestore.collection('tours').doc(String(tourId)).update({
+        lastGuideMsgSeenAt: now
+      });
+    } catch (e) {
+      console.warn('markGuideMessagesRead failed:', e.message);
     }
   },
 
@@ -1074,6 +1240,7 @@ const DB = {
       tours: this.getTours(),
       invoices: this.getInvoices(),
       providers: this.getProviders(),
+      rates: this.getRates(),
       passengers: this.getPassengers(),
       clients: this.getClients(),
       emaillog: this.getEmailLog()
@@ -1086,6 +1253,7 @@ const DB = {
       if (data.tours) this._set('tours', data.tours);
       if (data.invoices) this._set('invoices', data.invoices);
       if (data.providers) this._set('providers', data.providers);
+      if (data.rates) this._set('rates', data.rates);
       if (data.passengers) this._set('passengers', data.passengers);
       if (data.clients) this._set('clients', data.clients);
       if (data.emaillog) this._set('emaillog', data.emaillog);

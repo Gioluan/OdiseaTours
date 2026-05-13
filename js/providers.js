@@ -1,5 +1,25 @@
 /* === PROVIDERS MODULE === */
 const Providers = {
+  RATE_UNITS: [
+    { key: 'per_room_per_night',    label: 'per room / night' },
+    { key: 'per_person_per_night',  label: 'per person / night' },
+    { key: 'per_person',            label: 'per person (flat)' },
+    { key: 'per_group',             label: 'per group (flat)' },
+    { key: 'per_group_per_day',     label: 'per group / day' },
+    { key: 'per_hour',              label: 'per hour' },
+    { key: 'per_vehicle',           label: 'per vehicle (flat)' },
+    { key: 'per_vehicle_per_day',   label: 'per vehicle / day' },
+  ],
+  RATE_SEASONS: [
+    { key: 'all_year',  label: 'All year' },
+    { key: 'low',       label: 'Low' },
+    { key: 'shoulder',  label: 'Shoulder' },
+    { key: 'high',      label: 'High' },
+    { key: 'peak',      label: 'Peak' },
+  ],
+  _editingProviderId: null,
+  _editingRateId: null,
+
   init() { this.render(); },
 
   render() {
@@ -23,9 +43,13 @@ const Providers = {
 
     document.getElementById('providers-table-container').innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Name</th><th>Category</th><th>City</th><th>Contact</th><th>Email</th><th>Phone</th><th>Website</th><th>Stars</th><th>Our Rating</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Category</th><th>City</th><th>Contact</th><th>Email</th><th>Phone</th><th>Website</th><th>Stars</th><th>Our Rating</th><th>Rates</th><th>Actions</th></tr></thead>
         <tbody>${providers.map(p => {
           const ourRatingStars = p.ourRating ? '<span style="color:var(--amber)">' + '★'.repeat(p.ourRating) + '</span>' + '<span style="color:var(--gray-200)">' + '★'.repeat(5 - p.ourRating) + '</span>' : '—';
+          const rateCount = DB.getRatesForProvider(p.id).length;
+          const rateBadge = rateCount > 0
+            ? `<span class="badge badge-confirmed" style="cursor:pointer" onclick="Providers.editProvider(${p.id})">${rateCount} rate${rateCount===1?'':'s'}</span>`
+            : `<span style="color:var(--gray-400);font-size:0.8rem">—</span>`;
           return `<tr>
             <td><strong>${p.companyName}</strong></td>
             <td><span class="badge badge-sent">${p.category}</span></td>
@@ -36,6 +60,7 @@ const Providers = {
             <td>${p.website ? `<a href="${p.website}" target="_blank" style="color:var(--amber);text-decoration:none;font-size:0.82rem" title="${p.website}">Visit</a>` : '—'}</td>
             <td>${p.category === 'Hotel' ? '★'.repeat(p.starRating || 0) : '—'}</td>
             <td style="font-size:0.82rem">${ourRatingStars}</td>
+            <td>${rateBadge}</td>
             <td>
               <button class="btn btn-sm btn-outline" onclick="Providers.editProvider(${p.id})">Edit</button>
               <button class="btn btn-sm btn-outline" onclick="Providers.sendRFQ(${p.id})">RFQ</button>
@@ -56,6 +81,7 @@ const Providers = {
 
   _showForm(provider) {
     const p = provider || {};
+    this._editingProviderId = p.id || null;
     document.getElementById('prov-modal').style.display = 'flex';
     document.getElementById('prov-modal-content').innerHTML = `
       <h2>${p.id ? 'Edit' : 'Add'} Provider</h2>
@@ -108,12 +134,189 @@ const Providers = {
       <div class="modal-actions">
         <button class="btn btn-primary" onclick="Providers.saveProvider()">Save</button>
         <button class="btn btn-outline" onclick="closeModal('prov-modal')">Cancel</button>
+      </div>
+      ${p.id ? this._renderRatesSection(p.id) : '<p style="margin-top:1rem;color:var(--gray-400);font-size:0.85rem;font-style:italic">Save the provider first to add rate sheets.</p>'}`;
+  },
+
+  _renderRatesSection(providerId) {
+    const rates = DB.getRatesForProvider(providerId);
+    const rows = rates.length ? rates.map(r => {
+      const unitLabel = (this.RATE_UNITS.find(u => u.key === r.unit) || { label: r.unit }).label;
+      const seasonLabel = (this.RATE_SEASONS.find(s => s.key === r.season) || { label: r.season || 'all year' }).label;
+      const sym = r.currency === 'USD' ? '$' : r.currency === 'GBP' ? '£' : '€';
+      const paxRange = (r.minPax || r.maxPax)
+        ? `${r.minPax || '?'}-${r.maxPax || '∞'} pax`
+        : '—';
+      return `<tr>
+        <td><strong>${this._escape(r.productName || '(unnamed)')}</strong>${r.source ? `<div style="font-size:0.75rem;color:var(--gray-400);margin-top:0.2rem">${this._escape(r.source)}</div>` : ''}</td>
+        <td><span class="badge badge-sent" style="font-size:0.7rem">${seasonLabel}</span></td>
+        <td><strong style="color:var(--amber)">${sym}${Number(r.price || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</strong> <span style="color:var(--gray-400);font-size:0.78rem">${unitLabel}</span></td>
+        <td style="font-size:0.82rem">${paxRange}</td>
+        <td style="font-size:0.78rem;color:var(--gray-400)">${r.validUntil ? 'Until ' + r.validUntil : '—'}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick="Providers.editRate(${providerId}, ${r.id})">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="if(confirm('Delete this rate?')){Providers.deleteRate(${providerId}, ${r.id})}">Del</button>
+        </td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:1rem">No rate sheets yet. Click "+ Add Rate" to record one.</td></tr>`;
+
+    return `
+      <div style="margin-top:1.5rem;padding-top:1rem;border-top:2px solid var(--gray-100)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem">
+          <div>
+            <h3 style="margin:0;font-size:1rem">Rate Sheets</h3>
+            <p style="margin:0.2rem 0 0;font-size:0.8rem;color:var(--gray-400)">One row per product / season. Used by quote builder and PDF generator.</p>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="Providers.addRate(${providerId})">+ Add Rate</button>
+        </div>
+        <table class="data-table" style="font-size:0.85rem">
+          <thead><tr><th>Product</th><th>Season</th><th>Price</th><th>Pax</th><th>Valid</th><th>Actions</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
       </div>`;
+  },
+
+  _escape(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  },
+
+  addRate(providerId) {
+    this._showRateForm(providerId, null);
+  },
+
+  editRate(providerId, rateId) {
+    const r = DB.getRates().find(x => x.id === rateId);
+    if (r) this._showRateForm(providerId, r);
+  },
+
+  _showRateForm(providerId, rate) {
+    const r = rate || {};
+    this._editingProviderId = providerId;
+    this._editingRateId = r.id || null;
+    const provider = DB.getProviders().find(p => p.id === providerId);
+    const providerName = provider ? provider.companyName : 'Provider';
+
+    document.getElementById('prov-modal-content').innerHTML = `
+      <h2>${r.id ? 'Edit' : 'Add'} Rate — <span style="color:var(--gray-400);font-weight:400">${this._escape(providerName)}</span></h2>
+      <p style="margin-bottom:1rem;color:var(--gray-400);font-size:0.85rem">One product or room type, one season. Add multiple rows for seasonal variation.</p>
+      <input type="hidden" id="rate-id" value="${r.id || ''}">
+      <input type="hidden" id="rate-provider-id" value="${providerId}">
+
+      <div class="form-group"><label>Product / Room Name *</label>
+        <input id="rate-product" value="${this._escape(r.productName || '')}" placeholder="Double room / Camp Nou tour / BCN-Salou transfer">
+      </div>
+
+      <div class="form-row form-row-3">
+        <div class="form-group"><label>Unit *</label>
+          <select id="rate-unit">
+            ${this.RATE_UNITS.map(u => `<option value="${u.key}" ${(r.unit || 'per_person')===u.key?'selected':''}>${u.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Season</label>
+          <select id="rate-season">
+            ${this.RATE_SEASONS.map(s => `<option value="${s.key}" ${(r.season || 'all_year')===s.key?'selected':''}>${s.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Currency</label>
+          <select id="rate-currency">
+            <option value="EUR" ${(r.currency || 'EUR')==='EUR'?'selected':''}>EUR €</option>
+            <option value="USD" ${r.currency==='USD'?'selected':''}>USD $</option>
+            <option value="GBP" ${r.currency==='GBP'?'selected':''}>GBP £</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row form-row-3">
+        <div class="form-group"><label>Price *</label>
+          <input id="rate-price" type="number" min="0" step="0.01" value="${r.price != null ? r.price : ''}">
+        </div>
+        <div class="form-group"><label>Min Pax</label>
+          <input id="rate-minpax" type="number" min="0" step="1" value="${r.minPax != null ? r.minPax : ''}">
+        </div>
+        <div class="form-group"><label>Max Pax</label>
+          <input id="rate-maxpax" type="number" min="0" step="1" value="${r.maxPax != null ? r.maxPax : ''}">
+        </div>
+      </div>
+
+      <div class="form-row form-row-2">
+        <div class="form-group"><label>VAT %</label>
+          <input id="rate-vat" type="number" min="0" max="30" step="0.1" value="${r.vatPct != null ? r.vatPct : ''}">
+        </div>
+        <div class="form-group"><label>Valid Until</label>
+          <input id="rate-valid-until" type="date" value="${r.validUntil || ''}">
+        </div>
+      </div>
+
+      <div class="form-group"><label>Includes</label>
+        <input id="rate-includes" value="${this._escape(r.includes || '')}" placeholder="breakfast, wifi, towels">
+      </div>
+      <div class="form-group"><label>Excludes</label>
+        <input id="rate-excludes" value="${this._escape(r.excludes || '')}" placeholder="city tax, parking">
+      </div>
+      <div class="form-group"><label>Source (where the rate came from)</label>
+        <input id="rate-source" value="${this._escape(r.source || '')}" placeholder="Email 2026-03-15 from Maria">
+      </div>
+      <div class="form-group"><label>Notes</label>
+        <textarea id="rate-notes" rows="2">${this._escape(r.notes || '')}</textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="Providers.saveRate()">Save Rate</button>
+        <button class="btn btn-outline" onclick="Providers._returnToProvider()">Back to Provider</button>
+      </div>`;
+  },
+
+  _returnToProvider() {
+    const provider = DB.getProviders().find(p => p.id === this._editingProviderId);
+    if (provider) this._showForm(provider);
+    else closeModal('prov-modal');
+  },
+
+  saveRate() {
+    const productName = document.getElementById('rate-product').value.trim();
+    const price = document.getElementById('rate-price').value;
+    if (!productName) { alert('Product name is required.'); return; }
+    if (price === '' || isNaN(Number(price))) { alert('Price is required.'); return; }
+
+    const id = document.getElementById('rate-id').value;
+    const providerId = Number(document.getElementById('rate-provider-id').value);
+    const minPax = document.getElementById('rate-minpax').value;
+    const maxPax = document.getElementById('rate-maxpax').value;
+    const vatPct = document.getElementById('rate-vat').value;
+
+    const rate = {
+      providerId,
+      productName,
+      unit: document.getElementById('rate-unit').value,
+      season: document.getElementById('rate-season').value,
+      price: Number(price),
+      currency: document.getElementById('rate-currency').value,
+      minPax: minPax === '' ? null : Number(minPax),
+      maxPax: maxPax === '' ? null : Number(maxPax),
+      vatPct: vatPct === '' ? null : Number(vatPct),
+      includes: document.getElementById('rate-includes').value,
+      excludes: document.getElementById('rate-excludes').value,
+      source: document.getElementById('rate-source').value,
+      validUntil: document.getElementById('rate-valid-until').value || null,
+      notes: document.getElementById('rate-notes').value,
+    };
+    if (id) rate.id = Number(id);
+    DB.saveRate(rate);
+    this._returnToProvider();
+    this.render();
+  },
+
+  deleteRate(providerId, rateId) {
+    DB.deleteRate(rateId);
+    const provider = DB.getProviders().find(p => p.id === providerId);
+    if (provider) this._showForm(provider);
+    this.render();
   },
 
   saveProvider() {
     const id = document.getElementById('prov-id').value;
     const citySel = document.getElementById('prov-city-sel').value;
+    const wasNew = !id;
     const p = {
       companyName: document.getElementById('prov-name').value,
       category: document.getElementById('prov-cat').value,
@@ -128,9 +331,14 @@ const Providers = {
       notes: document.getElementById('prov-notes').value
     };
     if (id) p.id = Number(id);
-    DB.saveProvider(p);
-    closeModal('prov-modal');
+    const saved = DB.saveProvider(p);
     this.render();
+    if (wasNew) {
+      // Stay in the modal so the user can add rate sheets immediately
+      this._showForm(saved);
+    } else {
+      closeModal('prov-modal');
+    }
   },
 
   deleteProvider(id) {
