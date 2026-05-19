@@ -465,6 +465,23 @@ const Invoicing = {
     this.viewInvoice(id);
   },
 
+  // Standard Odisea tour payment cadence: 300 deposit, then 50/50 of the
+  // remaining balance. Dates left blank for the operator to lock once
+  // departure is confirmed. Used at invoice creation time so the family
+  // portal Payments tab is never empty.
+  _buildStandardTourSchedule(amount) {
+    const amt = Number(amount) || 0;
+    const deposit = Math.min(300, Math.round(amt * 0.1));
+    const remaining = Math.max(0, amt - deposit);
+    const mid = Math.round(remaining / 2 * 100) / 100;
+    const final = Math.round((remaining - mid) * 100) / 100;
+    return [
+      { label: 'Deposit',         percentage: null, amount: deposit, dueDate: '', status: 'Pending', note: 'Due on confirmation · secures your spot' },
+      { label: 'Second payment',  percentage: null, amount: mid,     dueDate: '', status: 'Pending', note: 'Due 90 days before departure' },
+      { label: 'Final payment',   percentage: null, amount: final,   dueDate: '', status: 'Pending', note: 'Due 30 days before departure' }
+    ];
+  },
+
   exportAccounting() {
     const invoices = DB.getInvoices();
     invoices.forEach(i => {

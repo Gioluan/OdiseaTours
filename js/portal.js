@@ -693,9 +693,18 @@ const Portal = {
       </div>
       <div style="text-align:center;padding:2rem"><div class="spinner"></div></div>`;
 
-    const docs = await DB.getTourDocuments(this.tourId);
+    const isFamily = this._portalMode === 'family' && this._familyId;
+    const [docs, invoices] = await Promise.all([
+      DB.getTourDocuments(this.tourId),
+      isFamily
+        ? DB.getTourInvoicesForFamily(this.tourId, this._familyId)
+        : DB.getTourInvoices(this.tourId)
+    ]);
+    // Keep them on the instance so downloadInvoice() can find them later.
+    this._paymentInvoices = invoices;
 
-    if (!docs.length) {
+    const total = docs.length + invoices.length;
+    if (!total) {
       container.innerHTML = `
         <div class="section-header">
           <h2>Documents</h2>
@@ -707,25 +716,55 @@ const Portal = {
       return;
     }
 
+    const invoiceCards = invoices.map(inv => {
+      const paid = (inv.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+      const balance = Number(inv.amount) - paid;
+      const status = balance <= 0 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID';
+      const statusColor = balance <= 0 ? 'var(--green)' : paid > 0 ? 'var(--amber)' : 'var(--red)';
+      const cur = inv.currency || (this.tourData && this.tourData.currency) || 'EUR';
+      return `
+        <div class="doc-item">
+          <div class="doc-icon">\uD83E\uDDFE</div>
+          <div class="doc-info">
+            <div class="doc-name">Invoice ${inv.number || ''} \u00B7 ${Portal._fmtCurrency(Number(inv.amount), cur)}</div>
+            <div class="doc-meta">
+              <span style="color:${statusColor};font-weight:600">${status}</span>
+              ${balance > 0 ? ' \u2022 ' + Portal._fmtCurrency(balance, cur) + ' due' : ''}
+              ${inv.wiseReference ? ' \u2022 Ref: <code style="background:#fff8e1;padding:0.05rem 0.3rem;border-radius:3px;font-size:0.78rem">' + Portal._escapeAttr(inv.wiseReference) + '</code>' : ''}
+            </div>
+          </div>
+          <button onclick="Portal.downloadInvoice(${inv.id})" class="doc-download" style="background:var(--navy);color:white;border:none;cursor:pointer;font:inherit">Download PDF</button>
+        </div>`;
+    }).join('');
+
+    const fileCards = docs.map(doc => {
+      const ext = (doc.name || '').split('.').pop().toLowerCase();
+      const icon = { pdf: '\uD83D\uDCC4', doc: '\uD83D\uDCC3', docx: '\uD83D\uDCC3', xls: '\uD83D\uDCCA', xlsx: '\uD83D\uDCCA', jpg: '\uD83D\uDDBC', jpeg: '\uD83D\uDDBC', png: '\uD83D\uDDBC' }[ext] || '\uD83D\uDCC1';
+      const size = doc.size ? (doc.size < 1024*1024 ? Math.round(doc.size/1024) + ' KB' : (doc.size/(1024*1024)).toFixed(1) + ' MB') : '';
+      return `
+        <div class="doc-item">
+          <div class="doc-icon">${icon}</div>
+          <div class="doc-info">
+            <div class="doc-name">${doc.name}</div>
+            <div class="doc-meta">${size}${doc.uploadedAt ? ' \u2022 ' + Portal._fmtDate(doc.uploadedAt) : ''}</div>
+          </div>
+          <a href="${doc.url}" target="_blank" class="doc-download" rel="noopener">Download</a>
+        </div>`;
+    }).join('');
+
     container.innerHTML = `
       <div class="section-header">
         <h2>Documents</h2>
-        <p>${docs.length} file${docs.length!==1?'s':''} available</p>
+        <p>${total} file${total!==1?'s':''} available</p>
       </div>
-      ${docs.map(doc => {
-        const ext = (doc.name || '').split('.').pop().toLowerCase();
-        const icon = { pdf: '\uD83D\uDCC4', doc: '\uD83D\uDCC3', docx: '\uD83D\uDCC3', xls: '\uD83D\uDCCA', xlsx: '\uD83D\uDCCA', jpg: '\uD83D\uDDBC', jpeg: '\uD83D\uDDBC', png: '\uD83D\uDDBC' }[ext] || '\uD83D\uDCC1';
-        const size = doc.size ? (doc.size < 1024*1024 ? Math.round(doc.size/1024) + ' KB' : (doc.size/(1024*1024)).toFixed(1) + ' MB') : '';
-        return `
-          <div class="doc-item">
-            <div class="doc-icon">${icon}</div>
-            <div class="doc-info">
-              <div class="doc-name">${doc.name}</div>
-              <div class="doc-meta">${size}${doc.uploadedAt ? ' \u2022 ' + Portal._fmtDate(doc.uploadedAt) : ''}</div>
-            </div>
-            <a href="${doc.url}" target="_blank" class="doc-download" rel="noopener">Download</a>
-          </div>`;
-      }).join('')}`;
+      ${invoices.length ? `
+        <div style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--gray-400);font-weight:700;margin:0.4rem 0 0.5rem">Invoices</div>
+        ${invoiceCards}
+      ` : ''}
+      ${docs.length ? `
+        <div style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--gray-400);font-weight:700;margin:${invoices.length ? '1.2rem' : '0.4rem'} 0 0.5rem">Tour Files</div>
+        ${fileCards}
+      ` : ''}`;
   },
 
   _passengers: [],

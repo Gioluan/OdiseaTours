@@ -1088,6 +1088,10 @@ const Tours = {
     if (!inv.wiseReference && typeof Invoicing !== 'undefined' && Invoicing._buildWiseReference) {
       inv.wiseReference = Invoicing._buildWiseReference(inv);
     }
+    // Attach the standard 3-payment schedule so the portal Payments tab populates immediately.
+    if (!(inv.paymentSchedule && inv.paymentSchedule.length) && typeof Invoicing !== 'undefined' && Invoicing._buildStandardTourSchedule) {
+      inv.paymentSchedule = Invoicing._buildStandardTourSchedule(inv.amount);
+    }
     DB.saveInvoice(inv);
 
     alert(`Invoice ${inv.number} created for ${ic.name} — ${fmt(ic.amountDue, t.currency)}`);
@@ -1120,11 +1124,14 @@ const Tours = {
       if (!inv.wiseReference && typeof Invoicing !== 'undefined' && Invoicing._buildWiseReference) {
         inv.wiseReference = Invoicing._buildWiseReference(inv);
       }
+      if (!(inv.paymentSchedule && inv.paymentSchedule.length) && typeof Invoicing !== 'undefined' && Invoicing._buildStandardTourSchedule) {
+        inv.paymentSchedule = Invoicing._buildStandardTourSchedule(inv.amount);
+      }
       DB.saveInvoice(inv);
       created++;
     });
 
-    alert(`Created ${created} invoice(s) with auto-filled Wise references. ${skipped ? skipped + ' skipped (already invoiced or missing data).' : ''}`);
+    alert(`Created ${created} invoice(s) with auto-filled Wise references and the standard 3-payment schedule. ${skipped ? skipped + ' skipped (already invoiced or missing data).' : ''}`);
     this.viewTour(tourId);
   },
 
@@ -1174,6 +1181,9 @@ const Tours = {
       inv.clientPhone = ic.phone;
       if (typeof Invoicing !== 'undefined' && Invoicing._buildWiseReference) {
         inv.wiseReference = Invoicing._buildWiseReference(inv);
+      }
+      if (typeof Invoicing !== 'undefined' && Invoicing._buildStandardTourSchedule) {
+        inv.paymentSchedule = Invoicing._buildStandardTourSchedule(inv.amount);
       }
       DB.saveInvoice(inv);
     }
