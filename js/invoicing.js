@@ -215,12 +215,24 @@ const Invoicing = {
         </div>
         <button class="btn btn-success" onclick="Invoicing.addPayment(${i.id})">Record Payment</button>` : ''}
       <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin:1rem 0">
-        <h3 style="margin-bottom:0.6rem;font-size:0.95rem">Payment Links (for PDF Invoice)</h3>
+        <h3 style="margin-bottom:0.6rem;font-size:0.95rem">Payment Links (per family &middot; shown in portal &amp; PDF)</h3>
         <div class="form-row form-row-2">
-          <div class="form-group"><label>Credit Card Payment Link</label><input id="inv-link-card" value="${i.paymentLinkCard || ''}" placeholder="e.g. https://pay.stripe.com/your-link"></div>
+          <div class="form-group"><label>Credit Card Payment Link (Stripe)</label><input id="inv-link-card" value="${i.paymentLinkCard || ''}" placeholder="e.g. https://buy.stripe.com/your-link"></div>
           <div class="form-group"><label>Wise Payment Link</label><input id="inv-link-wise" value="${i.paymentLinkWise || ''}" placeholder="e.g. https://wise.com/pay/your-link"></div>
         </div>
-        <button class="btn btn-sm btn-outline" onclick="Invoicing.savePaymentLinks(${i.id})" style="margin-top:0.3rem">Save Links</button>
+        <div class="form-row form-row-2" style="margin-top:0.5rem">
+          <div class="form-group">
+            <label>Wise Reference (per family &middot; for reconciliation)</label>
+            <div style="display:flex;gap:0.4rem">
+              <input id="inv-wise-ref" value="${(i.wiseReference || '').replace(/"/g,'&quot;')}" placeholder="e.g. BBET-0001-DRESS" style="flex:1">
+              <button type="button" class="btn btn-sm btn-outline" onclick="Invoicing.autoFillWiseReference(${i.id})" title="Auto-generate from tour + family + invoice number">Auto</button>
+            </div>
+            <small style="color:var(--gray-400);font-size:0.72rem">Family pays into the same Wise account but quotes this code, so each transfer is auto-matched to the right invoice.</small>
+          </div>
+          <div class="form-group"><label>&nbsp;</label>
+            <button class="btn btn-sm btn-outline" onclick="Invoicing.savePaymentLinks(${i.id})" style="width:100%">Save Links &amp; Reference</button>
+          </div>
+        </div>
       </div>
       <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin:1rem 0">
         <h3 style="margin-bottom:0.6rem;font-size:0.95rem">Payment Schedule</h3>
@@ -337,8 +349,40 @@ const Invoicing = {
     if (!i) return;
     const cardEl = document.getElementById('inv-link-card');
     const wiseEl = document.getElementById('inv-link-wise');
+    const refEl  = document.getElementById('inv-wise-ref');
     if (cardEl) i.paymentLinkCard = cardEl.value.trim();
     if (wiseEl) i.paymentLinkWise = wiseEl.value.trim();
+    if (refEl)  i.wiseReference   = refEl.value.trim();
+    DB.saveInvoice(i);
+  },
+
+  // Build a short, reconciliation-friendly Wise reference for a given invoice.
+  // Pattern: {TOUR}-{INVNUM}-{FAMILY}   e.g. BBET-0001-DRESS
+  _buildWiseReference(i) {
+    if (!i) return '';
+    const initials = (s, max) => (s || '')
+      .split(/[^A-Za-z0-9]+/).filter(Boolean)
+      .map(w => w[0]).join('').toUpperCase().slice(0, max);
+    const tour = DB.getTours().find(t => t.id === i.tourId);
+    const tourCode = initials(i.tourName || (tour && tour.tourName) || 'TOUR', 5) || 'TOUR';
+    const numMatch = String(i.number || '').match(/\d+/);
+    const invCode = numMatch ? numMatch[0].padStart(4, '0') : String(i.id || '').slice(-4);
+    let famCode = '';
+    if (i.individualClientRef && tour && tour.individualClients) {
+      const fam = tour.individualClients.find(f => String(f.id) === String(i.individualClientRef));
+      if (fam) famCode = (fam.name || '').replace(/[^A-Za-z0-9]+/g, '').toUpperCase().slice(0, 5);
+    }
+    if (!famCode) famCode = (i.clientName || '').replace(/[^A-Za-z0-9]+/g, '').toUpperCase().slice(0, 5);
+    return [tourCode, invCode, famCode].filter(Boolean).join('-');
+  },
+
+  autoFillWiseReference(id) {
+    const i = DB.getInvoices().find(x => x.id === id);
+    if (!i) return;
+    const ref = this._buildWiseReference(i);
+    const refEl = document.getElementById('inv-wise-ref');
+    if (refEl) refEl.value = ref;
+    i.wiseReference = ref;
     DB.saveInvoice(i);
   },
 

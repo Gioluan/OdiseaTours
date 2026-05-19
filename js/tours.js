@@ -933,6 +933,7 @@ const Tours = {
             <td style="white-space:nowrap">
               <button class="btn btn-sm btn-outline" onclick="Tours.editIndividualClient(${t.id},${i})" title="Edit">Edit</button>
               ${!inv ? `<button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.createIndividualInvoice(${t.id},${i})" title="Create invoice">Invoice</button>` : `<button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="PDFQuote.generateInvoice(${inv.id})" title="View PDF">PDF</button>`}
+              <button class="btn btn-sm btn-outline" style="border-color:#7C3AED;color:#7C3AED" onclick="Tours.editFamilyPaymentLinks(${t.id},${i})" title="Per-family Stripe / Wise links + reference">Pay Links</button>
               <button class="btn btn-sm btn-danger" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.removeIndividualClient(${t.id},${i})">X</button>
             </td>
           </tr>`;
@@ -952,6 +953,7 @@ const Tours = {
         ` : ''}
         ${clients.length > 0 ? `<button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.autoCalcIndividualAmounts(${t.id})">Auto-Calculate Amounts</button>
         <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="Tours.createAllIndividualInvoices(${t.id})">Create All Invoices</button>
+        <button class="btn btn-sm btn-outline" style="border-color:#7C3AED;color:#7C3AED" onclick="Tours.syncAllWiseRefs(${t.id})" title="Re-generate the per-family Wise reference on every invoice">Sync Wise Refs</button>
         <button class="btn btn-sm btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.generateAllFamilyCodes(${t.id})">Generate All Portal Codes</button>
         <button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="Tours.sendAllFamilyInvites(${t.id})">Email All Invites</button>` : ''}
       </div>`;
@@ -1082,6 +1084,10 @@ const Tours = {
     // Copy client details to invoice for PDF generation
     inv.clientEmail = ic.email;
     inv.clientPhone = ic.phone;
+    // Auto-fill the Wise reconciliation reference so the family portal has it from day one.
+    if (!inv.wiseReference && typeof Invoicing !== 'undefined' && Invoicing._buildWiseReference) {
+      inv.wiseReference = Invoicing._buildWiseReference(inv);
+    }
     DB.saveInvoice(inv);
 
     alert(`Invoice ${inv.number} created for ${ic.name} — ${fmt(ic.amountDue, t.currency)}`);
@@ -1111,11 +1117,122 @@ const Tours = {
       });
       inv.clientEmail = ic.email;
       inv.clientPhone = ic.phone;
+      if (!inv.wiseReference && typeof Invoicing !== 'undefined' && Invoicing._buildWiseReference) {
+        inv.wiseReference = Invoicing._buildWiseReference(inv);
+      }
       DB.saveInvoice(inv);
       created++;
     });
 
-    alert(`Created ${created} invoice(s). ${skipped ? skipped + ' skipped (already invoiced or missing data).' : ''}`);
+    alert(`Created ${created} invoice(s) with auto-filled Wise references. ${skipped ? skipped + ' skipped (already invoiced or missing data).' : ''}`);
+    this.viewTour(tourId);
+  },
+
+  /* ------------------------------------------------------------
+     Per-family payment links (inline editor, no module switch)
+     ------------------------------------------------------------ */
+  syncAllWiseRefs(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    if (typeof Invoicing === 'undefined' || !Invoicing._buildWiseReference) {
+      alert('Invoicing module not loaded.'); return;
+    }
+    const invoices = DB.getInvoices().filter(i => i.tourId === t.id && i.individualClientRef);
+    let filled = 0;
+    invoices.forEach(inv => {
+      const ref = Invoicing._buildWiseReference(inv);
+      if (ref && inv.wiseReference !== ref) {
+        inv.wiseReference = ref;
+        DB.saveInvoice(inv);
+        filled++;
+      }
+    });
+    alert(`Synced Wise references on ${filled} family invoice(s).`);
+    this.viewTour(tourId);
+  },
+
+  editFamilyPaymentLinks(tourId, idx) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.individualClients || !t.individualClients[idx]) return;
+    const ic = t.individualClients[idx];
+    // Auto-create the invoice on demand so the operator never gets stuck behind a missing record.
+    let inv = DB.getInvoices().find(i => i.individualClientRef === ic.id && i.tourId === t.id);
+    if (!inv) {
+      if (!ic.name) { alert('Add the family name first.'); return; }
+      if (!ic.amountDue) { alert('Set the amount due first (or run Auto-Calculate Amounts).'); return; }
+      inv = DB.saveInvoice({
+        clientName: ic.name,
+        tourId: t.id,
+        tourName: t.tourName,
+        amount: ic.amountDue,
+        currency: t.currency || 'EUR',
+        dueDate: '',
+        description: `Individual booking — ${t.tourName} (${t.destination})\n${ic.numStudents ? ic.numStudents + ' student(s)' : ''}${ic.numSiblings ? ', ' + ic.numSiblings + ' sibling(s)' : ''}${ic.numAdults ? ', ' + ic.numAdults + ' adult(s)' : ''}`,
+        individualClientRef: ic.id
+      });
+      inv.clientEmail = ic.email;
+      inv.clientPhone = ic.phone;
+      if (typeof Invoicing !== 'undefined' && Invoicing._buildWiseReference) {
+        inv.wiseReference = Invoicing._buildWiseReference(inv);
+      }
+      DB.saveInvoice(inv);
+    }
+    if (!inv.wiseReference && typeof Invoicing !== 'undefined' && Invoicing._buildWiseReference) {
+      inv.wiseReference = Invoicing._buildWiseReference(inv);
+      DB.saveInvoice(inv);
+    }
+
+    const esc = s => (s || '').replace(/"/g, '&quot;');
+    document.getElementById('tours-modal-content').innerHTML = `
+      <h2 style="margin-bottom:0.3rem">Payment Links · ${esc(ic.name)}</h2>
+      <p style="color:var(--gray-400);font-size:0.85rem;margin-bottom:1rem">Invoice ${inv.number} · ${fmt(inv.amount, inv.currency)} · shown in the family portal once saved.</p>
+      <div class="form-group" style="margin-bottom:0.8rem">
+        <label>Credit Card Payment Link (Stripe)</label>
+        <input id="fam-link-card" value="${esc(inv.paymentLinkCard)}" placeholder="https://buy.stripe.com/your-link">
+        <small style="color:var(--gray-400);font-size:0.72rem">Create one fixed-amount link per family in your Stripe dashboard, paste here.</small>
+      </div>
+      <div class="form-group" style="margin-bottom:0.8rem">
+        <label>Wise Payment Link (optional)</label>
+        <input id="fam-link-wise" value="${esc(inv.paymentLinkWise)}" placeholder="https://wise.com/pay/your-link">
+        <small style="color:var(--gray-400);font-size:0.72rem">Optional. Most families pay by transfer + reference (below) instead.</small>
+      </div>
+      <div class="form-group" style="margin-bottom:0.8rem">
+        <label>Wise Reference (per family · for reconciliation)</label>
+        <div style="display:flex;gap:0.4rem">
+          <input id="fam-wise-ref" value="${esc(inv.wiseReference)}" placeholder="e.g. BEST-0001-DRESS" style="flex:1">
+          <button type="button" class="btn btn-sm btn-outline" onclick="Tours._regenWiseRef(${inv.id})">Re-generate</button>
+        </div>
+        <small style="color:var(--gray-400);font-size:0.72rem">Family quotes this code on the Wise transfer so it auto-matches their invoice.</small>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="Tours.saveFamilyPaymentLinks(${tourId},${idx})">Save</button>
+        <button class="btn btn-outline" onclick="closeModal('tours-modal')">Cancel</button>
+      </div>`;
+    document.getElementById('tours-modal').style.display = 'flex';
+  },
+
+  _regenWiseRef(invoiceId) {
+    const inv = DB.getInvoices().find(x => x.id === invoiceId);
+    if (!inv || typeof Invoicing === 'undefined') return;
+    const ref = Invoicing._buildWiseReference(inv);
+    const el = document.getElementById('fam-wise-ref');
+    if (el) el.value = ref;
+  },
+
+  saveFamilyPaymentLinks(tourId, idx) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.individualClients || !t.individualClients[idx]) return;
+    const ic = t.individualClients[idx];
+    const inv = DB.getInvoices().find(i => i.individualClientRef === ic.id && i.tourId === t.id);
+    if (!inv) return;
+    const cardEl = document.getElementById('fam-link-card');
+    const wiseEl = document.getElementById('fam-link-wise');
+    const refEl  = document.getElementById('fam-wise-ref');
+    if (cardEl) inv.paymentLinkCard = cardEl.value.trim();
+    if (wiseEl) inv.paymentLinkWise = wiseEl.value.trim();
+    if (refEl)  inv.wiseReference   = refEl.value.trim();
+    DB.saveInvoice(inv);
+    closeModal('tours-modal');
     this.viewTour(tourId);
   },
 

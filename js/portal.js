@@ -2222,6 +2222,11 @@ const Portal = {
         const paid = (inv.payments || []).reduce((s, p) => s + Number(p.amount), 0);
         const invBalance = Number(inv.amount) - paid;
         const schedule = inv.paymentSchedule || [];
+        // Per-invoice payment links win; tour-level links are a fallback so legacy tours keep working.
+        const cardLink = inv.paymentLinkCard || t.portalPaymentCard || '';
+        const wiseLink = inv.paymentLinkWise || t.portalPaymentWise || '';
+        const wiseRef  = inv.wiseReference || '';
+        const showPay  = invBalance > 0 && (cardLink || wiseLink || wiseRef);
         return `
           <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-bottom:1rem;box-shadow:var(--shadow)">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.8rem">
@@ -2258,14 +2263,26 @@ const Portal = {
                 </div>
               `).join('')}
             ` : ''}
+            ${showPay ? `
+              <div style="border-top:1px dashed var(--gray-200);margin-top:0.8rem;padding-top:0.8rem">
+                <div style="font-size:0.82rem;font-weight:600;color:var(--gray-500);margin-bottom:0.5rem">Pay this invoice</div>
+                ${wiseRef ? `
+                  <div style="background:#F4FBE8;border:1px solid #C7E89A;border-radius:var(--radius);padding:0.6rem 0.8rem;margin-bottom:0.6rem;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:0.5rem">
+                    <div>
+                      <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:#3F6B12;font-weight:700">Your Wise reference</div>
+                      <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.95rem;font-weight:700;color:#1F3A05;letter-spacing:0.02em">${Portal._escapeAttr(wiseRef)}</div>
+                      <div style="font-size:0.74rem;color:#3F6B12;margin-top:0.15rem">Quote this code on your transfer so we can match it to your invoice.</div>
+                    </div>
+                    <button onclick="navigator.clipboard&amp;&amp;navigator.clipboard.writeText('${Portal._escapeAttr(wiseRef)}');this.textContent='Copied';setTimeout(()=>this.textContent='Copy',1600)" style="background:white;border:1.5px solid #3F6B12;color:#3F6B12;border-radius:var(--radius);padding:0.35rem 0.7rem;font-size:0.78rem;font-weight:600;cursor:pointer">Copy</button>
+                  </div>` : ''}
+                <div style="display:flex;gap:0.6rem;flex-wrap:wrap">
+                  ${cardLink ? '<a href="' + Portal._escapeAttr(cardLink) + '" target="_blank" rel="noopener" style="flex:1;min-width:160px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.7rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.88rem">Pay by Card</a>' : ''}
+                  ${wiseLink ? '<a href="' + Portal._escapeAttr(wiseLink) + '" target="_blank" rel="noopener" style="flex:1;min-width:160px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.7rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.88rem">Pay via Wise</a>' : ''}
+                </div>
+              </div>
+            ` : ''}
           </div>`;
-      }).join('')}
-
-      ${(t.portalPaymentCard || t.portalPaymentWise) ? `
-        <div style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-top:1rem">
-          ${t.portalPaymentCard ? '<a href="' + Portal._escapeAttr(t.portalPaymentCard) + '" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600">Pay by Card</a>' : ''}
-          ${t.portalPaymentWise ? '<a href="' + Portal._escapeAttr(t.portalPaymentWise) + '" target="_blank" rel="noopener" style="flex:1;min-width:180px;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.8rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600">Pay via Wise</a>' : ''}
-        </div>` : ''}`;
+      }).join('')}`;
   },
 
   downloadInvoice(invoiceId) {
