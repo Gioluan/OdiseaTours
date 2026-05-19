@@ -176,6 +176,7 @@ const Invoicing = {
           <p><strong>Amount:</strong> ${fmt(i.amount, i.currency)}</p>
           <p><strong>Due Date:</strong> <span class="${isOverdue(i.dueDate) && status !== 'Paid' ? 'overdue' : ''}">${fmtDate(i.dueDate)}</span></p>
           <p><strong>Status:</strong> <span class="badge ${badgeClass(status)}">${status}</span></p>
+          ${i.wiseReference ? `<p><strong>Payment Ref:</strong> <code style="background:#fff8e1;padding:0.1rem 0.4rem;border-radius:3px;font-weight:600;color:#5a3d00">${i.wiseReference}</code></p>` : ''}
         </div>
       </div>
       ${i.description ? `<p style="margin-bottom:1rem;white-space:pre-wrap;background:var(--gray-50);padding:0.8rem;border-radius:var(--radius)">${i.description}</p>` : ''}

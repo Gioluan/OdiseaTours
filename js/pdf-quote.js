@@ -890,12 +890,15 @@ const PDFQuote = {
           <div class="bank-row"><span class="bl">Bank Address</span><span class="bv">Avenida Oscar Espla 37, 03007, Alicante, Espa\u00f1a</span></div>
         </div>
         <div class="bank-col">
-          <div class="bank-row"><span class="bl">Reference</span><span class="bv">${invNum}</span></div>
+          <div class="bank-row"><span class="bl">Payment Reference</span><span class="bv" style="font-weight:700;color:#111;letter-spacing:0.02em">${inv.wiseReference || invNum}</span></div>
           <div class="bank-row"><span class="bl">Amount Due</span><span class="bv" style="color:#ffb400;font-size:11pt">${f(balance)}</span></div>
           <div class="bank-row"><span class="bl">Due Date</span><span class="bv">${fmtDate(inv.dueDate)}</span></div>
           <div class="bank-row"><span class="bl">Currency</span><span class="bv">${cur}</span></div>
         </div>
       </div>
+      ${inv.wiseReference ? `<div style="margin-top:10px;padding:8px 10px;background:#fff8e1;border-left:3px solid #ffb400;font-size:8.5pt;color:#5a3d00">
+        <strong>Important:</strong> please quote <strong>${inv.wiseReference}</strong> as the payment reference on your transfer so we can auto-match it to your invoice.
+      </div>` : ''}
       ${(inv.paymentLinkCard || inv.paymentLinkWise) ? `<div class="pay-online">
         <div style="font-size:8.5pt;color:#999;margin-bottom:8px">Or pay securely online:</div>
         ${inv.paymentLinkCard ? `<a href="${inv.paymentLinkCard}">Pay with Card</a>` : ''}
@@ -914,7 +917,7 @@ const PDFQuote = {
 
     <!-- Terms -->
     <div class="terms">
-      <strong>Payment Terms:</strong> Payment is due by the date shown above. Please use the invoice number as your payment reference.
+      <strong>Payment Terms:</strong> Payment is due by the date shown above. Please use the Payment Reference shown in the bank details box above so we can match your transfer to this invoice.
       Late payments may incur additional charges. If you have any questions regarding this invoice, please contact us at
       <strong>juan@odisea-tours.com</strong>.
       <br><br>
