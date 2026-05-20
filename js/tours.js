@@ -268,8 +268,6 @@ const Tours = {
 
       ${Tours._renderItineraryEditor(t)}
 
-      ${Tours._renderItineraryMap(t)}
-
       ${Tours._renderChecklist(t)}
 
       ${Tours._renderActivityLog(t)}
@@ -304,9 +302,8 @@ const Tours = {
         <button class="btn btn-danger" onclick="if(confirm('Delete this tour?')){Tours.deleteTour(${t.id})}">Delete</button>
         <button class="btn btn-outline" onclick="closeModal('tours-modal')">Close</button>
       </div>`;
-    // Initialize map and load async portal data after innerHTML is set
+    // Load async portal data after innerHTML is set
     setTimeout(() => {
-      this._initMap();
       if (t.accessCode && DB._firebaseReady) {
         this._loadPortalChecklist(t.id);
         this._loadPortalBadges(t.id);
@@ -3190,186 +3187,7 @@ juan@odisea-tours.com`;
     URL.revokeObjectURL(a.href);
   },
 
-  // === Interactive Itinerary Map ===
-  _renderItineraryMap(t) {
-    const hotels = t.hotels || [];
-    const activities = t.activities || [];
 
-    // Collect all locations to geocode
-    const locations = [];
-    const dest = (t.destination || '').split('\u2192').map(d => d.trim()).filter(Boolean);
-    dest.forEach(d => locations.push({ name: d, type: 'destination' }));
-    hotels.forEach(h => { if (h.hotelName) locations.push({ name: h.hotelName + ', ' + (h.city || ''), type: 'hotel', label: h.hotelName }); });
-    activities.forEach(a => { if (a.name && a.destination) locations.push({ name: a.name + ', ' + a.destination, type: 'activity', label: a.name }); });
-
-    if (!locations.length) return '';
-
-    // Store locations on the tour object so _initMap can access them
-    this._pendingMapData = { tourId: t.id, locations };
-
-    return `
-      <h3 style="margin-top:1.5rem">Itinerary Map</h3>
-      <div id="tour-map-${t.id}" style="height:400px;border-radius:var(--radius-lg);overflow:hidden;border:1.5px solid var(--gray-200);margin-bottom:1rem">
-        <div style="padding:2rem;text-align:center;color:var(--gray-400)">Loading map...</div>
-      </div>`;
-  },
-
-  _initMap() {
-    if (!this._pendingMapData) return;
-    const { tourId, locations } = this._pendingMapData;
-    const mapEl = document.getElementById('tour-map-' + tourId);
-
-    if (typeof L === 'undefined') {
-      // Leaflet not loaded yet — retry in 500ms (async script may still be loading)
-      if (!this._mapRetries) this._mapRetries = 0;
-      if (this._mapRetries < 10) {
-        this._mapRetries++;
-        if (mapEl) mapEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--gray-400)">Loading map library...</div>';
-        setTimeout(() => this._initMap(), 500);
-        return;
-      }
-      if (mapEl) mapEl.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--red)">Map library failed to load. Check your internet connection.</div>';
-      this._pendingMapData = null;
-      return;
-    }
-
-    this._pendingMapData = null;
-    this._mapRetries = 0;
-
-    if (!mapEl || mapEl._leaflet_id) return;
-
-    const map = L.map(mapEl).setView([40.4168, -3.7038], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 18
-    }).addTo(map);
-    // Fix tiles not loading when map is inside a modal
-    setTimeout(() => map.invalidateSize(), 200);
-
-    const markers = [];
-    const icons = {
-      destination: L.divIcon({ className: '', html: '<div style="background:#ffb400;color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u{1F4CD}</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
-      hotel: L.divIcon({ className: '', html: '<div style="background:#1a1a2e;color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u{1F3E8}</div>', iconSize: [28, 28], iconAnchor: [14, 14] }),
-      activity: L.divIcon({ className: '', html: '<div style="background:#22c55e;color:white;font-weight:700;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.8rem;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)">\u26BD</div>', iconSize: [28, 28], iconAnchor: [14, 14] })
-    };
-    const coords = [];
-
-    function geocodeNext(idx) {
-      if (idx >= locations.length) {
-        if (coords.length > 1) {
-          L.polyline(coords, { color: '#ffb400', weight: 3, dashArray: '10,10', opacity: 0.7 }).addTo(map);
-        }
-        if (markers.length) {
-          map.fitBounds(L.featureGroup(markers).getBounds().pad(0.2));
-        }
-        return;
-      }
-
-      const loc = locations[idx];
-      Tours._geocode(loc.name).then(result => {
-        if (result) {
-          const marker = L.marker([result.lat, result.lon], { icon: icons[loc.type] || icons.destination })
-            .bindPopup('<strong>' + (loc.label || loc.name) + '</strong><br><span style="font-size:0.82rem;color:gray">' + loc.type + '</span>')
-            .addTo(map);
-          markers.push(marker);
-          if (loc.type === 'destination' || loc.type === 'hotel') coords.push([result.lat, result.lon]);
-        }
-        // 100ms throttle is plenty since cache + static map cover ~all real lookups.
-        setTimeout(() => geocodeNext(idx + 1), 100);
-      });
-    }
-
-    geocodeNext(0);
-  },
-
-  // Static lookup of cities that show up in Odisea itineraries. Saves a network
-  // round-trip for the common case and keeps the map working when offline.
-  _SPAIN_COORDS: {
-    'madrid': [40.4168, -3.7038],
-    'barcelona': [41.3874, 2.1686],
-    'valencia': [39.4699, -0.3763],
-    'sevilla': [37.3886, -5.9823],
-    'seville': [37.3886, -5.9823],
-    'bilbao': [43.2630, -2.9350],
-    'san sebastian': [43.3183, -1.9812],
-    'san sebastián': [43.3183, -1.9812],
-    'donostia': [43.3183, -1.9812],
-    'granada': [37.1773, -3.5986],
-    'malaga': [36.7213, -4.4214],
-    'málaga': [36.7213, -4.4214],
-    'pamplona': [42.8125, -1.6458],
-    'zaragoza': [41.6488, -0.8891],
-    'tenerife': [28.2916, -16.6291],
-    'toledo': [39.8628, -4.0273],
-    'salamanca': [40.9701, -5.6635],
-    'santiago de compostela': [42.8782, -8.5448],
-    'sarria': [42.7773, -7.4144],
-    'logroño': [42.4627, -2.4449],
-    'logrono': [42.4627, -2.4449],
-    'la rioja': [42.2871, -2.5396],
-    'penedes': [41.3833, 1.7000],
-    'penedès': [41.3833, 1.7000],
-    'cordoba': [37.8882, -4.7794],
-    'córdoba': [37.8882, -4.7794],
-    'oviedo': [43.3614, -5.8593],
-    'gijon': [43.5453, -5.6619],
-    'gijón': [43.5453, -5.6619],
-    'girona': [41.9794, 2.8214],
-    'alicante': [38.3452, -0.4810]
-  },
-
-  _GEOCODE_CACHE_KEY: 'odisea_geocode_cache_v1',
-
-  _loadGeocodeCache() {
-    try { return JSON.parse(localStorage.getItem(this._GEOCODE_CACHE_KEY) || '{}'); }
-    catch (e) { return {}; }
-  },
-
-  _saveGeocodeCache(cache) {
-    try { localStorage.setItem(this._GEOCODE_CACHE_KEY, JSON.stringify(cache)); }
-    catch (e) { /* localStorage full or disabled — skip */ }
-  },
-
-  // Resolve a free-text place name to {lat, lon}. Order: localStorage cache,
-  // static Spanish-city table, then Photon (komoot) which permits browser CORS.
-  // Silent on failure — the map drops the marker and moves on.
-  async _geocode(query) {
-    if (!query) return null;
-    const norm = query.trim().toLowerCase();
-    if (!norm) return null;
-
-    const cache = this._loadGeocodeCache();
-    if (cache[norm]) return cache[norm];
-
-    // Try static cities — catches "Barcelona", "Hotel X, Madrid", "Camp Nou, Barcelona", etc.
-    for (const [city, [lat, lon]] of Object.entries(this._SPAIN_COORDS)) {
-      if (norm.includes(city)) {
-        const result = { lat, lon };
-        cache[norm] = result;
-        this._saveGeocodeCache(cache);
-        return result;
-      }
-    }
-
-    // Last resort: Photon. CORS-friendly, free, no API key. Replaces the
-    // previous Nominatim call which started rejecting browser CORS in late 2024.
-    try {
-      const url = 'https://photon.komoot.io/api/?q=' + encodeURIComponent(query) + '&limit=1';
-      const r = await fetch(url);
-      if (!r.ok) return null;
-      const data = await r.json();
-      const feat = data && data.features && data.features[0];
-      if (feat && feat.geometry && feat.geometry.coordinates) {
-        const [lon, lat] = feat.geometry.coordinates;
-        const result = { lat, lon };
-        cache[norm] = result;
-        this._saveGeocodeCache(cache);
-        return result;
-      }
-    } catch (e) { /* offline or service down — silent */ }
-
-    return null;
-  },
 
   // === Feature 1: Duplicate Tour ===
   cloneTour(id) {
