@@ -2809,7 +2809,7 @@ juan@odisea-tours.com`;
     container.innerHTML = `
       <div data-portal-pax-container data-tour-id="${tourIdStrEsc}" style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
         <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
-          <span>Portal Registrations &mdash; ${live.length} live${ghosts.length ? ' &middot; <span style="color:#fca5a5">' + ghosts.length + ' soft-deleted</span>' : ''}</span>
+          <span>Portal Registrations &mdash; ${live.length} live${ghosts.length ? ' &middot; <span style="color:#fca5a5">' + ghosts.length + ' soft-deleted</span>' : ''} <span style="font-size:0.65rem;color:rgba(255,255,255,0.5);font-weight:400;margin-left:6px">build v56</span></span>
           <div style="display:flex;gap:0.5rem;align-items:center">
             <button type="button" class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);padding:0.25rem 0.6rem;font-size:0.78rem" data-action="refresh" title="Re-fetch from server">Refresh</button>
             ${ghosts.length ? `<button type="button" class="btn btn-sm" style="background:#ef4444;color:white;border:none;padding:0.25rem 0.6rem;font-size:0.78rem" data-action="purge">Purge ${ghosts.length} ghost${ghosts.length===1?'':'s'}</button>` : ''}
