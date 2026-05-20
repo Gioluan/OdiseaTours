@@ -1738,12 +1738,14 @@ const Tours = {
   async _loadPortalBadges(tourId) {
     if (!DB._firebaseReady) return;
     try {
-      const [paxSnap, flights] = await Promise.all([
-        DB.firestore.collection('tours').doc(String(tourId)).collection('passengers').get({ source: 'server' }).catch(() => ({ size: 0 })),
+      // Count only live (non-soft-deleted) passengers, otherwise the badge
+      // gets stuck on the pre-deletion total.
+      const [passengers, flights] = await Promise.all([
+        DB.getTourPassengers(String(tourId)).catch(() => []),
         DB.getAllFamilyFlights(String(tourId)).catch(() => [])
       ]);
       const paxBadge = document.getElementById('pax-badge-' + tourId);
-      if (paxBadge && paxSnap.size > 0) { paxBadge.textContent = paxSnap.size; paxBadge.style.display = 'inline-block'; }
+      if (paxBadge && passengers.length > 0) { paxBadge.textContent = passengers.length; paxBadge.style.display = 'inline-block'; }
       const flightBadge = document.getElementById('flight-badge-' + tourId);
       if (flightBadge && flights.length > 0) { flightBadge.textContent = flights.length; flightBadge.style.display = 'inline-block'; }
     } catch (e) {}
@@ -1759,14 +1761,16 @@ const Tours = {
 
     try {
       const tourIdStr = String(tourId);
-      const [paxSnap, flightsDoc, sigDoc] = await Promise.all([
-        DB.firestore.collection('tours').doc(tourIdStr).collection('passengers').get({ source: 'server' }).catch(() => ({ size: 0 })),
+      const [passengers, flightsDoc, sigDoc] = await Promise.all([
+        // Live (non-soft-deleted) roster, so the "Passengers registered"
+        // checklist item is accurate after deletions.
+        DB.getTourPassengers(tourIdStr).catch(() => []),
         DB.firestore.collection('tours').doc(tourIdStr).collection('tourFlights').doc('shared').get({ source: 'server' }).catch(() => ({ exists: false })),
         DB.firestore.collection('tours').doc(tourIdStr).collection('consent').doc('signatures').get({ source: 'server' }).catch(() => ({ exists: false, data: () => ({}) }))
       ]);
 
       const expectedPax = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
-      const paxCount = paxSnap.size || 0;
+      const paxCount = passengers.length;
       const paxOk = paxCount > 0 && (!expectedPax || paxCount >= expectedPax);
 
       const flightsOk = flightsDoc.exists && flightsDoc.data() && flightsDoc.data().arrival && flightsDoc.data().arrival.flightNumber;

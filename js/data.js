@@ -925,13 +925,18 @@ const DB = {
   // Get all passengers from tour subcollection (server-first to avoid stale cache)
   async getTourPassengers(tourId) {
     if (!this._firebaseReady) return [];
+    // Soft-deleted records (_removed: true) must not surface to any caller —
+    // counts, exports, view-registration tables, family portal lists, the
+    // CRM checklist, etc. all want the live roster. If you ever need the
+    // deleted set (e.g. restore UI), add a separate getTourPassengersDeleted.
+    const live = arr => (arr || []).filter(p => !p._removed);
     try {
       // Try server first to get fresh data
       const snapshot = await this.firestore.collection('tours').doc(String(tourId))
         .collection('passengers').orderBy('createdAt', 'desc').get({ source: 'server' });
       const items = [];
       snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
-      return items;
+      return live(items);
     } catch (e) {
       // Fallback to cache if offline
       console.warn('getTourPassengers server fetch failed, trying cache:', e.message);
@@ -940,7 +945,7 @@ const DB = {
           .collection('passengers').orderBy('createdAt', 'desc').get({ source: 'cache' });
         const items = [];
         snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
-        return items;
+        return live(items);
       } catch (e2) {
         console.warn('getTourPassengers cache also failed:', e2.message);
         return [];
