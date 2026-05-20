@@ -2768,31 +2768,83 @@ juan@odisea-tours.com`;
     container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div>';
 
     await DB.resetUnreadCount(String(tourId), 'unreadPassengersCount');
-    const passengers = await DB.getTourPassengers(String(tourId));
+
+    // Pull the raw passenger collection (including soft-deleted records) so
+    // the operator can see ghost docs and hard-delete them. The helper
+    // DB.getTourPassengers filters _removed=true, which is what the portal
+    // and counters want, but the CRM cleanup view needs everything.
+    let allDocs = [];
+    try {
+      const snap = await DB.firestore.collection('tours').doc(String(tourId))
+        .collection('passengers').orderBy('createdAt', 'desc').get({ source: 'server' });
+      snap.forEach(d => allDocs.push({ id: d.id, ...d.data() }));
+    } catch (e) {
+      console.warn('viewPortalPassengers fetch failed:', e.message);
+    }
+
+    const live = allDocs.filter(p => !p._removed);
+    const ghosts = allDocs.filter(p => p._removed);
+
+    const row = (p, isGhost) => `
+      <tr${isGhost ? ' style="opacity:0.55;background:#fff5f5"' : ''}>
+        <td><strong>${p.firstName||''} ${p.lastName||''}</strong>${isGhost ? ' <span style="font-size:0.7rem;background:#fde2e2;color:#a01010;padding:0.05rem 0.4rem;border-radius:3px;font-weight:700">DELETED</span>' : ''}</td>
+        <td>${p.role||'—'}</td>
+        <td>${p.family||'—'}</td>
+        <td>${p.dateOfBirth ? new Date(p.dateOfBirth).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
+        <td>${p.nationality||'—'}</td>
+        <td>${p.passportNumber||'—'}</td>
+        <td>${p.dietary||'—'}</td>
+        <td>${p.emergencyContact||'—'}</td>
+        <td>${p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '—'}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm btn-danger" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.hardDeletePortalPassenger('${String(tourId)}','${p.id}')" title="Permanently delete from Firestore">Hard delete</button>
+        </td>
+      </tr>`;
 
     container.innerHTML = `
       <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
         <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
-          <span>Portal Registrations (${passengers.length})</span>
-          <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">&times; Close</button>
+          <span>Portal Registrations &mdash; ${live.length} live${ghosts.length ? ' &middot; <span style="color:#fca5a5">' + ghosts.length + ' soft-deleted</span>' : ''}</span>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            ${ghosts.length ? `<button class="btn btn-sm" style="background:#ef4444;color:white;border:none;padding:0.25rem 0.6rem;font-size:0.78rem" onclick="Tours.purgeGhostPassengers('${String(tourId)}')">Purge ${ghosts.length} ghost${ghosts.length===1?'':'s'}</button>` : ''}
+            <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">&times; Close</button>
+          </div>
         </div>
         <div style="padding:1rem">
-          ${passengers.length ? `<table class="data-table" style="font-size:0.82rem">
-            <thead><tr><th>Name</th><th>Role</th><th>Family</th><th>DOB</th><th>Nationality</th><th>Passport</th><th>Dietary</th><th>Emergency</th><th>Registered</th></tr></thead>
-            <tbody>${passengers.map(p => `<tr>
-              <td><strong>${p.firstName||''} ${p.lastName||''}</strong></td>
-              <td>${p.role||'—'}</td>
-              <td>${p.family||'—'}</td>
-              <td>${p.dateOfBirth ? new Date(p.dateOfBirth).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
-              <td>${p.nationality||'—'}</td>
-              <td>${p.passportNumber||'—'}</td>
-              <td>${p.dietary||'—'}</td>
-              <td>${p.emergencyContact||'—'}</td>
-              <td>${p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '—'}</td>
-            </tr>`).join('')}</tbody>
+          ${allDocs.length ? `<table class="data-table" style="font-size:0.82rem">
+            <thead><tr><th>Name</th><th>Role</th><th>Family</th><th>DOB</th><th>Nationality</th><th>Passport</th><th>Dietary</th><th>Emergency</th><th>Registered</th><th>Actions</th></tr></thead>
+            <tbody>${live.map(p => row(p, false)).join('')}${ghosts.map(p => row(p, true)).join('')}</tbody>
           </table>` : '<p style="color:var(--gray-400);font-size:0.85rem">No passengers registered through the portal yet.</p>'}
+          ${ghosts.length ? '<p style="color:var(--gray-400);font-size:0.78rem;margin-top:0.8rem"><strong>Note:</strong> soft-deleted records (marked DELETED) are hidden from counters and the portal. Use Hard delete or Purge to remove them from Firestore permanently.</p>' : ''}
         </div>
       </div>`;
+  },
+
+  async hardDeletePortalPassenger(tourId, passengerId) {
+    if (!confirm('Permanently delete this passenger from Firestore? This cannot be undone.')) return;
+    try {
+      await DB.firestore.collection('tours').doc(String(tourId))
+        .collection('passengers').doc(String(passengerId)).delete();
+      this.viewPortalPassengers(tourId);
+    } catch (e) {
+      alert('Delete failed: ' + (e.message || 'Unknown error'));
+    }
+  },
+
+  async purgeGhostPassengers(tourId) {
+    try {
+      const snap = await DB.firestore.collection('tours').doc(String(tourId))
+        .collection('passengers').where('_removed', '==', true).get({ source: 'server' });
+      if (snap.empty) { alert('No soft-deleted passengers to purge.'); return; }
+      if (!confirm('Permanently delete ' + snap.size + ' soft-deleted passenger record(s)? This cannot be undone.')) return;
+      const batch = DB.firestore.batch();
+      snap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      alert('Purged ' + snap.size + ' record(s).');
+      this.viewPortalPassengers(tourId);
+    } catch (e) {
+      alert('Purge failed: ' + (e.message || 'Unknown error'));
+    }
   },
 
   async viewFamilyFlights(tourId, familyId) {
