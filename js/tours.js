@@ -2618,13 +2618,21 @@ juan@odisea-tours.com`;
 
   async viewMessages(tourId) {
     const container = document.getElementById('portal-detail-' + tourId);
-    if (!container) return;
-    container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div></div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+    if (!container) {
+      console.warn('viewMessages: no portal-detail container for tour', tourId);
+      return;
+    }
+    container.innerHTML = '<div style="text-align:center;padding:1rem"><div style="display:inline-block;width:20px;height:20px;border:2.5px solid var(--gray-200);border-top-color:var(--amber);border-radius:50%;animation:spin 0.6s linear infinite"></div><div style="font-size:0.78rem;color:var(--gray-400);margin-top:0.5rem">Loading messages...</div></div><style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+    // The portal-detail div sits below the Family Portal Access table, so
+    // clicking View Messages from the top of the tour modal silently scrolled
+    // the new content off-screen and looked like nothing happened.
+    container.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     await DB.resetUnreadCount(String(tourId), 'unreadMessagesCount');
     await DB.markGuideMessagesRead(String(tourId));
 
     const allMessages = await DB.getTourMessages(String(tourId));
+    console.log('viewMessages: loaded', allMessages.length, 'messages for tour', tourId);
     const t = DB.getTours().find(x => x.id === tourId);
     const families = (t && t.individualClients) || [];
     const activeTab = this._adminMsgTab[tourId] || 'group';
