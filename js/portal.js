@@ -1008,6 +1008,19 @@ const Portal = {
     formContainer.scrollIntoView({ behavior: 'smooth' });
   },
 
+  // Returns true if the current portal session is allowed to mutate the
+  // given passenger record. Tour-mode (group leader) can edit anyone; family
+  // mode can only edit passengers tagged with their familyId (or whose
+  // family name matches their family name as a legacy fallback).
+  _canEditPassenger(passenger) {
+    if (this._portalMode !== 'family' || !this._familyId) return true;
+    if (!passenger) return false;
+    if (passenger.familyId && String(passenger.familyId) === String(this._familyId)) return true;
+    const myFamily = (this._familyData && this._familyData.name || '').toLowerCase().trim();
+    if (myFamily && passenger.family && passenger.family.toLowerCase().trim() === myFamily) return true;
+    return false;
+  },
+
   async savePassenger(event, editId) {
     event.preventDefault();
 
@@ -1020,6 +1033,17 @@ const Portal = {
     if (cancelBtn) cancelBtn.disabled = true;
 
     try {
+      // Block family sessions from editing somebody else's passenger.
+      if (editId) {
+        const existing = this._passengers.find(p => String(p.id) === String(editId));
+        if (!this._canEditPassenger(existing)) {
+          alert('You can only edit passengers in your own family.');
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origLabel; }
+          if (cancelBtn) cancelBtn.disabled = false;
+          return;
+        }
+      }
+
       const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
       const passenger = {
         firstName: val('pf-first').trim(),
@@ -1037,7 +1061,13 @@ const Portal = {
       };
 
       if (this._portalMode === 'family' && this._familyId) {
+        // Pin the new/updated passenger to this family — don't trust the form
+        // input for familyId, and override the family-name field so a family
+        // session can't reassign a passenger to a different family.
         passenger.familyId = this._familyId;
+        if (this._familyData && this._familyData.name) {
+          passenger.family = this._familyData.name;
+        }
       }
 
       if (!passenger.firstName || !passenger.lastName) {
@@ -1087,6 +1117,10 @@ const Portal = {
 
   async deletePassenger(passengerId) {
     const p = this._passengers.find(x => x.id === passengerId);
+    if (!this._canEditPassenger(p)) {
+      alert('You can only remove passengers in your own family.');
+      return;
+    }
     const name = p ? (p.firstName + ' ' + p.lastName).trim() : 'this passenger';
     if (!confirm('Remove ' + name + '? This cannot be undone.')) return;
 
@@ -1172,8 +1206,19 @@ const Portal = {
   },
 
   async deleteSelectedPassengers() {
-    const ids = [...this._selectedPax];
-    if (!ids.length) return;
+    // Filter to only what the current session is allowed to delete — a
+    // family session that somehow selected another family's passengers will
+    // silently skip them instead of nuking the bulk delete entirely.
+    const allIds = [...this._selectedPax];
+    const ids = allIds.filter(id => {
+      const p = this._passengers.find(x => String(x.id) === String(id));
+      return this._canEditPassenger(p);
+    });
+    const skipped = allIds.length - ids.length;
+    if (!ids.length) {
+      alert(skipped ? 'None of the selected passengers belong to your family.' : 'No passengers selected.');
+      return;
+    }
 
     const btn = document.getElementById('pax-confirm-delete-btn');
     const cancelBtn = btn ? btn.previousElementSibling : null;
