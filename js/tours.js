@@ -2785,34 +2785,35 @@ juan@odisea-tours.com`;
     const live = allDocs.filter(p => !p._removed);
     const ghosts = allDocs.filter(p => p._removed);
 
-    const esc = s => String(s == null ? '' : s).replace(/'/g, "\\'");
+    const escHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const row = (p, isGhost) => `
       <tr${isGhost ? ' style="opacity:0.55;background:#fff5f5"' : ''}>
         <td>
-          <strong>${p.firstName||''} ${p.lastName||''}</strong>${isGhost ? ' <span style="font-size:0.7rem;background:#fde2e2;color:#a01010;padding:0.05rem 0.4rem;border-radius:3px;font-weight:700">DELETED</span>' : ''}
-          <div style="font-size:0.68rem;color:var(--gray-400);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin-top:2px">id: ${p.id}</div>
+          <strong>${escHtml(p.firstName)} ${escHtml(p.lastName)}</strong>${isGhost ? ' <span style="font-size:0.7rem;background:#fde2e2;color:#a01010;padding:0.05rem 0.4rem;border-radius:3px;font-weight:700">DELETED</span>' : ''}
+          <div style="font-size:0.68rem;color:var(--gray-400);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin-top:2px">id: ${escHtml(p.id)}</div>
         </td>
-        <td>${p.role||'—'}</td>
-        <td>${p.family||'—'}</td>
+        <td>${escHtml(p.role||'—')}</td>
+        <td>${escHtml(p.family||'—')}</td>
         <td>${p.dateOfBirth ? new Date(p.dateOfBirth).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
-        <td>${p.nationality||'—'}</td>
-        <td>${p.passportNumber||'—'}</td>
-        <td>${p.dietary||'—'}</td>
-        <td>${p.emergencyContact||'—'}</td>
+        <td>${escHtml(p.nationality||'—')}</td>
+        <td>${escHtml(p.passportNumber||'—')}</td>
+        <td>${escHtml(p.dietary||'—')}</td>
+        <td>${escHtml(p.emergencyContact||'—')}</td>
         <td>${p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '—'}</td>
         <td style="white-space:nowrap">
-          <button class="btn btn-sm btn-danger" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.hardDeletePortalPassenger('${String(tourId)}','${esc(p.id)}')" title="Permanently delete from Firestore">Hard delete</button>
+          <button type="button" class="btn btn-sm btn-danger" style="padding:0.15rem 0.4rem;font-size:0.72rem" data-action="hard-delete" data-pax-id="${escHtml(p.id)}" title="Permanently delete from Firestore">Hard delete</button>
         </td>
       </tr>`;
 
+    const tourIdStrEsc = escHtml(String(tourId));
     container.innerHTML = `
-      <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
+      <div data-portal-pax-container data-tour-id="${tourIdStrEsc}" style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
         <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
           <span>Portal Registrations &mdash; ${live.length} live${ghosts.length ? ' &middot; <span style="color:#fca5a5">' + ghosts.length + ' soft-deleted</span>' : ''}</span>
           <div style="display:flex;gap:0.5rem;align-items:center">
-            <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);padding:0.25rem 0.6rem;font-size:0.78rem" onclick="Tours.viewPortalPassengers('${String(tourId)}')" title="Re-fetch from server">Refresh</button>
-            ${ghosts.length ? `<button class="btn btn-sm" style="background:#ef4444;color:white;border:none;padding:0.25rem 0.6rem;font-size:0.78rem" onclick="Tours.purgeGhostPassengers('${String(tourId)}')">Purge ${ghosts.length} ghost${ghosts.length===1?'':'s'}</button>` : ''}
-            <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">&times; Close</button>
+            <button type="button" class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:white;border:1px solid rgba(255,255,255,0.3);padding:0.25rem 0.6rem;font-size:0.78rem" data-action="refresh" title="Re-fetch from server">Refresh</button>
+            ${ghosts.length ? `<button type="button" class="btn btn-sm" style="background:#ef4444;color:white;border:none;padding:0.25rem 0.6rem;font-size:0.78rem" data-action="purge">Purge ${ghosts.length} ghost${ghosts.length===1?'':'s'}</button>` : ''}
+            <button type="button" style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" data-action="close">&times; Close</button>
           </div>
         </div>
         <div style="padding:1rem">
@@ -2824,6 +2825,27 @@ juan@odisea-tours.com`;
           ${ghosts.length ? '<p style="color:var(--gray-400);font-size:0.78rem;margin-top:0.8rem"><strong>Note:</strong> soft-deleted records (marked DELETED) are hidden from counters and the portal. Use Hard delete or Purge to remove them from Firestore permanently.</p>' : ''}
         </div>
       </div>`;
+
+    // Event delegation. Inline onclick has been silently failing for some
+    // operators, so wire one click handler at the container level and route
+    // by data-action. Logs every click so we can see exactly what fired.
+    const root = container.querySelector('[data-portal-pax-container]');
+    if (root) {
+      root.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('button[data-action]');
+        if (!btn) return;
+        const action = btn.getAttribute('data-action');
+        const tId = root.getAttribute('data-tour-id');
+        console.log('[viewPortalPassengers] click', { action, tourId: tId });
+        if (action === 'refresh') return Tours.viewPortalPassengers(tId);
+        if (action === 'close')   { container.innerHTML = ''; return; }
+        if (action === 'purge')   return Tours.purgeGhostPassengers(tId);
+        if (action === 'hard-delete') {
+          const pid = btn.getAttribute('data-pax-id');
+          return Tours.hardDeletePortalPassenger(tId, pid);
+        }
+      });
+    }
   },
 
   async hardDeletePortalPassenger(tourId, passengerId) {
