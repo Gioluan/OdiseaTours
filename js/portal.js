@@ -1089,6 +1089,8 @@ const Portal = {
         this._showToast(editId ? 'Passenger updated!' : 'Passenger saved!');
         const savedId = result.id;
         await this.renderPassengers();
+        // Refresh the Trip Preparation count after add/edit too.
+        this._renderOverviewChecklist();
         // Scroll to and highlight the saved passenger
         if (savedId) {
           const el = document.getElementById('pax-' + savedId);
@@ -1134,7 +1136,11 @@ const Portal = {
         .collection('passengers').doc(passengerId);
       await docRef.update({ _removed: true, _removedAt: new Date().toISOString() });
       this._showToast(name + ' removed');
+      // Drop from the in-memory cache so the next render is correct even if
+      // Firestore lags, and refresh the overview checklist count.
+      this._passengers = (this._passengers || []).filter(x => String(x.id) !== String(passengerId));
       this.renderPassengers();
+      this._renderOverviewChecklist();
     } catch (err) {
       alert('Error removing passenger: ' + (err.message || 'Unknown error'));
       if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
@@ -1244,6 +1250,11 @@ const Portal = {
     }
 
     this._selectedPax.clear();
+    // Drop from the in-memory cache so renders are correct even before
+    // Firestore propagates, and refresh the overview checklist count.
+    const deletedSet = new Set(ids.map(String));
+    this._passengers = (this._passengers || []).filter(x => !deletedSet.has(String(x.id)));
+    this._renderOverviewChecklist();
 
     if (failed > 0 && deleted === 0) {
       alert('Failed to delete passengers. Error: ' + lastError + '\n\nPlease check your connection and try again.');
@@ -2650,6 +2661,11 @@ const Portal = {
         ]);
       }
     } catch (e) {}
+
+    // Soft-deleted passengers (_removed: true) must not count toward the
+    // "all travelers registered" total, otherwise the X/XX number stays
+    // stuck on the pre-deletion value.
+    passengers = (passengers || []).filter(p => !p._removed);
 
     roomPlan = (t && t.roomPlan) || [];
     const assignedCount = new Set();
