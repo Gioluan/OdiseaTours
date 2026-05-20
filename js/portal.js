@@ -1271,33 +1271,48 @@ const Portal = {
       }
     });
 
+    // Family-mode portal sessions get a read-only view: group leader / coach
+    // owns the group room plan, individual families should not be able to
+    // shuffle other people's rooms.
+    const isFamilyMode = this._portalMode === 'family' && this._familyId;
+
     container.innerHTML = `
       <div class="section-header">
         <h2>Room Plan</h2>
-        <p>${this._roomPlan.length} room${this._roomPlan.length!==1?'s':''} &bull; ${passengers.length - unassigned.length} assigned &bull; ${unassigned.length} unassigned</p>
+        <p>${this._roomPlan.length} room${this._roomPlan.length!==1?'s':''} &bull; ${passengers.length - unassigned.length} assigned &bull; ${unassigned.length} unassigned${isFamilyMode ? ' &bull; <span style="color:var(--gray-400)">read-only</span>' : ''}</p>
       </div>
 
-      <div class="rp-actions">
-        <button class="btn-primary btn-sm" onclick="Portal.addRoom()">+ Add Room</button>
-        <button class="btn-outline btn-sm" onclick="Portal.autoAssignRooms()">Auto-Assign</button>
-        ${this._isAdmin ? '<button class="btn-outline btn-sm" style="border-color:#c62828;color:#c62828" onclick="Portal.autoAssignByLastName()" title="Admin only — groups passengers into rooms by last name and downloads Excel">Group by Last Name + Download Excel (Admin)</button>' : ''}
-        ${this._roomPlan.length ? '<button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlan()">Download PDF</button><button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlanExcel()">Download CSV</button>' : ''}
-      </div>
+      ${isFamilyMode ? `
+        <div style="background:#fff8e1;border:1.5px solid #ffe082;border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:1rem;display:flex;gap:0.6rem;align-items:flex-start">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b8860b" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <p style="font-size:0.82rem;color:#5a3d00;line-height:1.5;margin:0">Read-only view. Room assignments are managed by your group leader. To request a change, contact them or use the Messages tab.</p>
+        </div>
+      ` : `
+        <div class="rp-actions">
+          <button class="btn-primary btn-sm" onclick="Portal.addRoom()">+ Add Room</button>
+          <button class="btn-outline btn-sm" onclick="Portal.autoAssignRooms()">Auto-Assign</button>
+          ${this._isAdmin ? '<button class="btn-outline btn-sm" style="border-color:#c62828;color:#c62828" onclick="Portal.autoAssignByLastName()" title="Admin only — groups passengers into rooms by last name and downloads Excel">Group by Last Name + Download Excel (Admin)</button>' : ''}
+          ${this._roomPlan.length ? '<button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlan()">Download PDF</button><button class="btn-outline btn-sm" onclick="Portal.downloadRoomPlanExcel()">Download CSV</button>' : ''}
+        </div>
+      `}
 
-      ${this._roomPlan.length ? `<div class="rp-drag-hint">Tip: drag passengers between rooms to reassign. Drop on the unassigned area to remove.</div><div class="rp-rooms">
+      ${this._roomPlan.length ? `${isFamilyMode ? '' : '<div class="rp-drag-hint">Tip: drag passengers between rooms to reassign. Drop on the unassigned area to remove.</div>'}<div class="rp-rooms">
         ${this._roomPlan.map((room, ri) => {
           const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean);
+          const roomName = Portal._escapeHtml(room.name || 'Room ' + (ri+1));
           return `
             <div class="rp-room" data-room-idx="${ri}">
               <div class="rp-room-header">
                 <div class="rp-room-num">
-                  <input value="${Portal._escapeAttr(room.name || 'Room ' + (ri+1))}" class="rp-room-name-input" onchange="Portal.updateRoomName(${ri},this.value)" onclick="event.stopPropagation()">
+                  ${isFamilyMode
+                    ? `<span class="rp-room-name-static" style="font-weight:600;color:var(--navy)">${roomName}</span>`
+                    : `<input value="${Portal._escapeAttr(room.name || 'Room ' + (ri+1))}" class="rp-room-name-input" onchange="Portal.updateRoomName(${ri},this.value)" onclick="event.stopPropagation()">`}
                 </div>
                 <span class="rp-room-type">${Portal._roomTypeLabel(roomPax.length)}</span>
                 <span class="rp-room-count">${roomPax.length} guest${roomPax.length!==1?'s':''}</span>
-                <button class="rp-room-delete" onclick="Portal.removeRoom(${ri})" title="Remove room">&times;</button>
+                ${isFamilyMode ? '' : `<button class="rp-room-delete" onclick="Portal.removeRoom(${ri})" title="Remove room">&times;</button>`}
               </div>
-              <div class="rp-room-guests rp-droplist" data-room-idx="${ri}">
+              <div class="rp-room-guests${isFamilyMode ? '' : ' rp-droplist'}" data-room-idx="${ri}">
                 ${roomPax.map(p => `
                   <div class="rp-guest" data-pax-id="${p.id}">
                     <div class="rp-guest-avatar">${((p.firstName||'')[0]||'')+((p.lastName||'')[0]||'')}</div>
@@ -1305,17 +1320,19 @@ const Portal = {
                       <div class="rp-guest-name">${p.firstName||''} ${p.lastName||''}</div>
                       <div class="rp-guest-meta">${p.role||''}${p.family?' &bull; '+Portal._escapeHtml(p.family):''}</div>
                     </div>
-                    <button class="rp-guest-remove" onclick="Portal.removeFromRoom(${ri},'${p.id}')" title="Remove from room">&times;</button>
+                    ${isFamilyMode ? '' : `<button class="rp-guest-remove" onclick="Portal.removeFromRoom(${ri},'${p.id}')" title="Remove from room">&times;</button>`}
                   </div>
                 `).join('')}
-                ${!roomPax.length ? '<div class="rp-empty">Drag someone here</div>' : ''}
+                ${!roomPax.length ? `<div class="rp-empty">${isFamilyMode ? 'Empty' : 'Drag someone here'}</div>` : ''}
               </div>
-              <div class="rp-room-add">
-                <select onchange="Portal.assignToRoom(${ri},this.value);this.value=''" class="rp-assign-select">
-                  <option value="">+ Add guest...</option>
-                  ${unassigned.map(p => '<option value="' + p.id + '">' + Portal._escapeAttr((p.firstName||'')+' '+(p.lastName||'')) + (p.family?' ('+Portal._escapeAttr(p.family)+')':'') + (p.role?' - '+p.role:'') + '</option>').join('')}
-                </select>
-              </div>
+              ${isFamilyMode ? '' : `
+                <div class="rp-room-add">
+                  <select onchange="Portal.assignToRoom(${ri},this.value);this.value=''" class="rp-assign-select">
+                    <option value="">+ Add guest...</option>
+                    ${unassigned.map(p => '<option value="' + p.id + '">' + Portal._escapeAttr((p.firstName||'')+' '+(p.lastName||'')) + (p.family?' ('+Portal._escapeAttr(p.family)+')':'') + (p.role?' - '+p.role:'') + '</option>').join('')}
+                  </select>
+                </div>
+              `}
             </div>`;
         }).join('')}
       </div>` : ''}
@@ -1325,20 +1342,22 @@ const Portal = {
         <p style="font-size:0.82rem;color:var(--gray-500);line-height:1.5;margin:0">Odisea Tours will do its best to accommodate the group as required, however final room arrangements depend on hotel characteristics and availability at the time of booking.</p>
       </div>
 
-      <div class="rp-unassigned">
-        <h3 class="rp-unassigned-title">Unassigned Passengers (${unassigned.length})${unassigned.length ? '' : ' &mdash; drop here to unassign'}</h3>
-        <div class="rp-unassigned-list rp-droplist" data-room-idx="-1">
-          ${unassigned.length ? unassigned.map(p => `
-            <div class="rp-unassigned-pax" data-pax-id="${p.id}">
-              <span class="rp-ua-name">${p.firstName||''} ${p.lastName||''}${p.family?' <span style="color:var(--gray-400);font-weight:400">('+Portal._escapeHtml(p.family)+')</span>':''}</span>
-              <span class="pax-tag pax-tag-role-${(p.role||'player').toLowerCase()}">${p.role||'Player'}</span>
-            </div>
-          `).join('') : '<div style="color:var(--gray-400);font-size:0.85rem;padding:0.5rem 0">All passengers assigned. Drag here to unassign.</div>'}
+      ${(!isFamilyMode || unassigned.length) ? `
+        <div class="rp-unassigned">
+          <h3 class="rp-unassigned-title">Unassigned Passengers (${unassigned.length})${unassigned.length || isFamilyMode ? '' : ' &mdash; drop here to unassign'}</h3>
+          <div class="rp-unassigned-list${isFamilyMode ? '' : ' rp-droplist'}" data-room-idx="-1">
+            ${unassigned.length ? unassigned.map(p => `
+              <div class="rp-unassigned-pax" data-pax-id="${p.id}">
+                <span class="rp-ua-name">${p.firstName||''} ${p.lastName||''}${p.family?' <span style="color:var(--gray-400);font-weight:400">('+Portal._escapeHtml(p.family)+')</span>':''}</span>
+                <span class="pax-tag pax-tag-role-${(p.role||'player').toLowerCase()}">${p.role||'Player'}</span>
+              </div>
+            `).join('') : '<div style="color:var(--gray-400);font-size:0.85rem;padding:0.5rem 0">All passengers assigned. Drag here to unassign.</div>'}
+          </div>
         </div>
-      </div>`;
+      ` : ''}`;
 
-    // Wire up drag & drop after the DOM is in place
-    Portal._initRoomPlanDragDrop();
+    // Wire up drag & drop only when the operator/group-leader is in edit mode.
+    if (!isFamilyMode) Portal._initRoomPlanDragDrop();
   },
 
   _initRoomPlanDragDrop() {
@@ -1386,23 +1405,33 @@ const Portal = {
     });
   },
 
+  // Single guard for every room-plan mutator. Returns true if the current
+  // portal session is allowed to edit; false if it's a family-scoped session.
+  _canEditRoomPlan() {
+    return !(this._portalMode === 'family' && this._familyId);
+  },
+
   addRoom() {
+    if (!this._canEditRoomPlan()) return;
     this._roomPlan.push({ name: 'Room ' + (this._roomPlan.length + 1), passengers: [] });
     this._saveRoomPlan();
   },
 
   removeRoom(idx) {
+    if (!this._canEditRoomPlan()) return;
     if (!confirm('Remove this room? Guests will become unassigned.')) return;
     this._roomPlan.splice(idx, 1);
     this._saveRoomPlan();
   },
 
   updateRoomName(idx, name) {
+    if (!this._canEditRoomPlan()) return;
     if (this._roomPlan[idx]) this._roomPlan[idx].name = name;
     this._saveRoomPlan(false);
   },
 
   assignToRoom(roomIdx, passengerId) {
+    if (!this._canEditRoomPlan()) return;
     if (!passengerId || !this._roomPlan[roomIdx]) return;
     // Remove from any other room first
     this._roomPlan.forEach(r => { r.passengers = (r.passengers || []).filter(id => id !== passengerId); });
@@ -1411,12 +1440,14 @@ const Portal = {
   },
 
   removeFromRoom(roomIdx, passengerId) {
+    if (!this._canEditRoomPlan()) return;
     if (!this._roomPlan[roomIdx]) return;
     this._roomPlan[roomIdx].passengers = (this._roomPlan[roomIdx].passengers || []).filter(id => id !== passengerId);
     this._saveRoomPlan();
   },
 
   autoAssignRooms() {
+    if (!this._canEditRoomPlan()) return;
     const passengers = this._passengers;
     if (!passengers.length) return;
 
@@ -1628,6 +1659,7 @@ const Portal = {
   },
 
   async _saveRoomPlan(rerender) {
+    if (!this._canEditRoomPlan()) return;
     this.tourData.roomPlan = this._roomPlan;
     Portal._showSaveStatus('saving');
     let saved = false;
