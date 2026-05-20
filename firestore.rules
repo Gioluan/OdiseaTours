@@ -87,5 +87,12 @@ service cloud.firestore {
     match /tours/{tourId}/guideDocuments/{docId} {
       allow read: if true;
     }
+
+    // ── Invoices: public read so family portal can show balance + schedule ──
+    // Same shared-secret model as tours: the family access code is what gates
+    // access in practice. Write is still admin-only via the catch-all above.
+    match /invoices/{invoiceId} {
+      allow read: if true;
+    }
   }
 }
