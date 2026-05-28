@@ -442,6 +442,11 @@ const Invoicing = {
       i.paymentSchedule[idx][field] = value;
     }
     DB.saveInvoice(i);
+    // Skip re-render for fields with no derived values. Re-rendering the
+    // whole invoice mid-edit destroys the input the user is typing into —
+    // particularly painful on type="date" where the year segment briefly
+    // commits while you're still typing and the field gets ripped out.
+    if (field === 'label' || field === 'dueDate') return;
     this.viewInvoice(id);
   },
 
