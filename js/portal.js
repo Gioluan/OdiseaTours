@@ -799,6 +799,17 @@ const Portal = {
       });
     }
 
+    // Sort alphabetically by last name (then first name) so family members
+    // group together in the list.
+    passengers = passengers.slice().sort((a, b) => {
+      const la = (a.lastName || '').toLowerCase();
+      const lb = (b.lastName || '').toLowerCase();
+      if (la !== lb) return la < lb ? -1 : 1;
+      const fa = (a.firstName || '').toLowerCase();
+      const fb = (b.firstName || '').toLowerCase();
+      return fa < fb ? -1 : fa > fb ? 1 : 0;
+    });
+
     const t = this.tourData;
     const totalExpected = isFamily
       ? ((this._familyData.numStudents || 0) + (this._familyData.numSiblings || 0) + (this._familyData.numAdults || 0))
@@ -819,7 +830,12 @@ const Portal = {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom:2px"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
         ${Portal._t('addPassenger')}
       </button>
-      <div id="pax-form-container"></div>`;
+      <div id="pax-form-container"></div>
+      ${passengers.length ? `<div style="margin:0.6rem 0 0.8rem;position:relative">
+        <input id="pax-search" placeholder="Search by first, last or family name..." oninput="Portal._filterPaxList(this.value)"
+          style="width:100%;padding:0.6rem 0.85rem 0.6rem 2.2rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-size:0.9rem;outline:none;background:#fff">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gray-400)" stroke-width="2" style="position:absolute;left:0.7rem;top:50%;transform:translateY(-50%);pointer-events:none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </div>` : ''}`;
 
     this._selectedPax = new Set();
 
@@ -859,8 +875,9 @@ const Portal = {
           passportTag = '<span class="pax-tag pax-tag-red">No Passport</span>';
         }
 
+        const searchTokens = [p.firstName || '', p.lastName || '', p.family || ''].join(' ');
         return `
-          <div class="pax-card-detail" onclick="Portal.togglePaxDetail('pax-${p.id}')">
+          <div class="pax-card-detail" data-search-tokens="${Portal._escapeAttr(searchTokens)}" onclick="Portal.togglePaxDetail('pax-${p.id}')">
             <div class="pax-card-main">
               <input type="checkbox" class="pax-select-cb" data-pax-id="${p.id}" onclick="event.stopPropagation();Portal.togglePaxSelect('${p.id}',this.checked)" style="width:16px;height:16px;accent-color:var(--navy);flex-shrink:0;cursor:pointer">
               <div class="pax-avatar">${initials.toUpperCase() || '?'}</div>
@@ -869,6 +886,7 @@ const Portal = {
                 <div class="pax-detail">
                   ${p.nationality || 'No nationality'}${p.dateOfBirth ? ' &bull; ' + Portal._fmtDate(p.dateOfBirth) : ''}
                 </div>
+                ${p.groupBreakdown ? '<div class="pax-detail" style="color:var(--gray-400);font-size:0.78rem;margin-top:2px">Group: ' + Portal._escapeHtml(p.groupBreakdown) + '</div>' : ''}
                 <div class="pax-tags">
                   ${p.role ? '<span class="pax-tag pax-tag-role-' + p.role.toLowerCase() + '">' + Portal._escapeHtml(p.role) + '</span>' : ''}
                   ${p.family ? '<span class="pax-tag pax-tag-family">' + Portal._escapeHtml(p.family) + '</span>' : ''}
@@ -896,10 +914,12 @@ const Portal = {
                 <div class="pax-field full-width"><span class="pax-field-label">Emergency Contact</span><span class="pax-field-value">${p.emergencyContact || '\u2014'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Room</span><span class="pax-field-value">${p.room || 'Unassigned'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Registered</span><span class="pax-field-value">${p.createdAt ? Portal._fmtDate(p.createdAt) : '\u2014'}</span></div>
+                ${p.groupBreakdown ? '<div class="pax-field full-width"><span class="pax-field-label">Family Group</span><span class="pax-field-value">' + Portal._escapeHtml(p.groupBreakdown) + '</span></div>' : ''}
               </div>
               <div class="pax-detail-actions">
                 <button class="btn-primary btn-sm" onclick="event.stopPropagation();Portal.showPassengerForm('${p.id}')">Edit</button>
                 <button class="btn-outline btn-sm" style="border-color:var(--red);color:var(--red)" onclick="event.stopPropagation();Portal.deletePassenger('${p.id}')">Remove</button>
+                <button class="btn-outline btn-sm" onclick="event.stopPropagation();Portal.togglePaxDetail('pax-${p.id}')">Close</button>
               </div>
             </div>
           </div>`;
@@ -949,6 +969,30 @@ const Portal = {
     }
   },
 
+  _filterPaxList(query) {
+    const q = (query || '').toLowerCase().trim();
+    document.querySelectorAll('.pax-card-detail').forEach(card => {
+      if (!q) { card.style.display = ''; return; }
+      const tokens = (card.dataset.searchTokens || '').toLowerCase();
+      card.style.display = tokens.includes(q) ? '' : 'none';
+    });
+  },
+
+  _filterRoomPlan(query) {
+    const q = (query || '').toLowerCase().trim();
+    document.querySelectorAll('.rp-guest, .rp-unassigned-pax').forEach(el => {
+      if (!q) { el.style.display = ''; return; }
+      const tokens = (el.dataset.searchTokens || '').toLowerCase();
+      el.style.display = tokens.includes(q) ? '' : 'none';
+    });
+    // Hide rooms with no visible guests when searching
+    document.querySelectorAll('.rp-room').forEach(room => {
+      if (!q) { room.style.display = ''; return; }
+      const visible = room.querySelectorAll('.rp-guest:not([style*="display: none"])').length;
+      room.style.display = visible ? '' : 'none';
+    });
+  },
+
   showPassengerForm(editId) {
     const formContainer = document.getElementById('pax-form-container');
     if (!formContainer) return;
@@ -965,7 +1009,9 @@ const Portal = {
     const families = [...new Set(this._passengers.map(x => x.family).filter(Boolean))];
 
     formContainer.innerHTML = `
-      <form class="pax-form" onsubmit="Portal.savePassenger(event, '${editId || ''}')">
+      <form class="pax-form" style="position:relative" onsubmit="Portal.savePassenger(event, '${editId || ''}')">
+        <button type="button" aria-label="Close" onclick="document.getElementById('pax-form-container').innerHTML=''"
+          style="position:absolute;top:0.6rem;right:0.6rem;background:none;border:none;font-size:1.6rem;line-height:1;color:var(--gray-400);cursor:pointer;padding:0.2rem 0.5rem">&times;</button>
         <h3>${isEdit ? 'Edit Passenger' : 'Register Passenger'}</h3>
         <div class="form-row form-row-2">
           <div class="form-group"><label>First Name *</label><input id="pf-first" required value="${Portal._escapeAttr(p.firstName || '')}"></div>
@@ -1310,7 +1356,15 @@ const Portal = {
     // Load room plan from tour doc
     this._roomPlan = this.tourData.roomPlan || [];
 
-    const passengers = this._passengers;
+    const paxSorter = (a, b) => {
+      const la = (a.lastName || '').toLowerCase();
+      const lb = (b.lastName || '').toLowerCase();
+      if (la !== lb) return la < lb ? -1 : 1;
+      const fa = (a.firstName || '').toLowerCase();
+      const fb = (b.firstName || '').toLowerCase();
+      return fa < fb ? -1 : fa > fb ? 1 : 0;
+    };
+    const passengers = this._passengers.slice().sort(paxSorter);
     const assigned = new Set();
     this._roomPlan.forEach(room => (room.passengers || []).forEach(id => assigned.add(id)));
     const unassigned = passengers.filter(p => !assigned.has(p.id));
@@ -1352,9 +1406,15 @@ const Portal = {
         </div>
       `}
 
+      ${passengers.length ? `<div style="margin:0.4rem 0 1rem;position:relative">
+        <input id="rp-search" placeholder="Search by first, last or family name..." oninput="Portal._filterRoomPlan(this.value)"
+          style="width:100%;padding:0.6rem 0.85rem 0.6rem 2.2rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-size:0.9rem;outline:none;background:#fff">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gray-400)" stroke-width="2" style="position:absolute;left:0.7rem;top:50%;transform:translateY(-50%);pointer-events:none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </div>` : ''}
+
       ${this._roomPlan.length ? `${isFamilyMode ? '' : '<div class="rp-drag-hint">Tip: drag passengers between rooms to reassign. Drop on the unassigned area to remove.</div>'}<div class="rp-rooms">
         ${this._roomPlan.map((room, ri) => {
-          const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean);
+          const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean).sort(paxSorter);
           const roomName = Portal._escapeHtml(room.name || 'Room ' + (ri+1));
           return `
             <div class="rp-room" data-room-idx="${ri}">
@@ -1370,11 +1430,11 @@ const Portal = {
               </div>
               <div class="rp-room-guests${isFamilyMode ? '' : ' rp-droplist'}" data-room-idx="${ri}">
                 ${roomPax.map(p => `
-                  <div class="rp-guest" data-pax-id="${p.id}">
+                  <div class="rp-guest" data-pax-id="${p.id}" data-search-tokens="${Portal._escapeAttr([p.firstName||'', p.lastName||'', p.family||''].join(' '))}">
                     <div class="rp-guest-avatar">${((p.firstName||'')[0]||'')+((p.lastName||'')[0]||'')}</div>
                     <div class="rp-guest-info">
                       <div class="rp-guest-name">${p.firstName||''} ${p.lastName||''}</div>
-                      <div class="rp-guest-meta">${p.role||''}${p.family?' &bull; '+Portal._escapeHtml(p.family):''}</div>
+                      <div class="rp-guest-meta">${p.role||''}${p.family?' &bull; '+Portal._escapeHtml(p.family):''}${p.groupBreakdown?' &bull; '+Portal._escapeHtml(p.groupBreakdown):''}</div>
                     </div>
                     ${isFamilyMode ? '' : `<button class="rp-guest-remove" onclick="Portal.removeFromRoom(${ri},'${p.id}')" title="Remove from room">&times;</button>`}
                   </div>
@@ -1403,8 +1463,8 @@ const Portal = {
           <h3 class="rp-unassigned-title">Unassigned Passengers (${unassigned.length})${unassigned.length || isFamilyMode ? '' : ' &mdash; drop here to unassign'}</h3>
           <div class="rp-unassigned-list${isFamilyMode ? '' : ' rp-droplist'}" data-room-idx="-1">
             ${unassigned.length ? unassigned.map(p => `
-              <div class="rp-unassigned-pax" data-pax-id="${p.id}">
-                <span class="rp-ua-name">${p.firstName||''} ${p.lastName||''}${p.family?' <span style="color:var(--gray-400);font-weight:400">('+Portal._escapeHtml(p.family)+')</span>':''}</span>
+              <div class="rp-unassigned-pax" data-pax-id="${p.id}" data-search-tokens="${Portal._escapeAttr([p.firstName||'', p.lastName||'', p.family||''].join(' '))}">
+                <span class="rp-ua-name">${p.firstName||''} ${p.lastName||''}${p.family?' <span style="color:var(--gray-400);font-weight:400">('+Portal._escapeHtml(p.family)+')</span>':''}${p.groupBreakdown?' <span style="color:var(--gray-400);font-weight:400;font-size:0.78rem"> &bull; '+Portal._escapeHtml(p.groupBreakdown)+'</span>':''}</span>
                 <span class="pax-tag pax-tag-role-${(p.role||'player').toLowerCase()}">${p.role||'Player'}</span>
               </div>
             `).join('') : '<div style="color:var(--gray-400);font-size:0.85rem;padding:0.5rem 0">All passengers assigned. Drag here to unassign.</div>'}
