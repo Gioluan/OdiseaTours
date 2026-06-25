@@ -1582,13 +1582,22 @@ const Portal = {
     this._roomPlan = [];
     let roomNum = 1;
 
-    // Each family gets a room
+    // Each family is split into twin (2) and triple (3) rooms only — never
+    // quads or larger. Rule maximizes triples, then twins, and avoids leaving
+    // a lone single (a family of 4 -> two twins, a family of 7 -> triple+two
+    // twins). Matches the HESA Spain rooming sheet exactly.
     Object.entries(familyGroups).forEach(([family, ids]) => {
-      this._roomPlan.push({ name: family, passengers: ids });
-      roomNum++;
+      const sizes = Portal._splitRoomSizes(ids.length);
+      let cursor = 0;
+      sizes.forEach((size, i) => {
+        const chunk = ids.slice(cursor, cursor + size);
+        cursor += size;
+        this._roomPlan.push({ name: sizes.length > 1 ? family + ' ' + (i + 1) : family, passengers: chunk });
+        roomNum++;
+      });
     });
 
-    // Solo passengers: group by role, 2-3 per room
+    // Solo passengers: group by role, paired into twins (last one a single)
     const roleGroups = {};
     solos.forEach(id => {
       const p = passengers.find(x => x.id === id);
@@ -1606,6 +1615,20 @@ const Portal = {
     });
 
     this._saveRoomPlan();
+  },
+
+  // Split a group of N people into room sizes using twins (2) and triples (3)
+  // only. Maximizes triples, fills the remainder with twins, and never leaves
+  // a lone single when a twin pairing is possible.
+  _splitRoomSizes(n) {
+    if (n <= 0) return [];
+    if (n === 1) return [1];
+    if (n === 2) return [2];
+    const triples = Math.floor(n / 3);
+    const rem = n % 3;
+    if (rem === 0) return Array(triples).fill(3);
+    if (rem === 2) return [...Array(triples).fill(3), 2];
+    return [...Array(triples - 1).fill(3), 2, 2]; // rem === 1
   },
 
   // Admin-only: group passengers into rooms by last name and download Excel/CSV.

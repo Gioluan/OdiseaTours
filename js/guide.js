@@ -444,9 +444,17 @@ const Guide = {
     });
 
     const rooms = [];
-    // Family rooms
+    // Family rooms: split each family into twins (2) and triples (3) only —
+    // never quads or larger. Maximizes triples, fills with twins, avoids a lone
+    // single (family of 7 -> triple + two twins). Matches the HESA rooming rule.
     Object.entries(families).forEach(([name, ids]) => {
-      rooms.push({ name: name, passengers: ids });
+      const sizes = this._splitRoomSizes(ids.length);
+      let cursor = 0;
+      sizes.forEach((size, i) => {
+        const chunk = ids.slice(cursor, cursor + size);
+        cursor += size;
+        rooms.push({ name: sizes.length > 1 ? name + ' ' + (i + 1) : name, passengers: chunk });
+      });
     });
     // Solo rooms (pairs)
     for (let i = 0; i < solos.length; i += 2) {
@@ -458,6 +466,19 @@ const Guide = {
     this._roomPlan = rooms;
     this._saveRoomPlan();
     this.renderRoomPlan();
+  },
+
+  // Split N people into twin (2) and triple (3) rooms only. Maximizes triples,
+  // fills the remainder with twins, never leaves a lone single when avoidable.
+  _splitRoomSizes(n) {
+    if (n <= 0) return [];
+    if (n === 1) return [1];
+    if (n === 2) return [2];
+    const triples = Math.floor(n / 3);
+    const rem = n % 3;
+    if (rem === 0) return Array(triples).fill(3);
+    if (rem === 2) return [...Array(triples).fill(3), 2];
+    return [...Array(triples - 1).fill(3), 2, 2]; // rem === 1
   },
 
   async _saveRoomPlan() {
