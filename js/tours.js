@@ -212,7 +212,10 @@ const Tours = {
       </div>
       <div class="cost-summary" style="margin:1rem 0">
         <h3>Cost Summary</h3>
-        <div class="cost-line"><span>Total Cost</span><span>${fmt(c.grand, t.currency)}</span></div>
+        ${tourHasActuals(t)
+          ? `<div class="cost-line"><span>Total Cost <span style="font-size:0.72rem;color:var(--green);font-weight:600">(actual)</span></span><span>${fmt(tourEffectiveCost(t), t.currency)}</span></div>
+             <div class="cost-line" style="opacity:0.6;font-size:0.85rem"><span>Quote estimate</span><span>${fmt(c.grand, t.currency)}</span></div>`
+          : `<div class="cost-line"><span>Total Cost</span><span>${fmt(c.grand, t.currency)}</span></div>`}
         <div class="cost-line"><span>Cost Per Person</span><span>${fmt(c.costPerPerson, t.currency)}</span></div>
       </div>
       <div class="pricing-cards" style="margin-bottom:1rem">
@@ -406,7 +409,8 @@ const Tours = {
     const revenueSiblings = (t.priceSibling||0) * (t.numSiblings||0);
     const revenueAdults = (t.priceAdult||0) * (t.numAdults||0);
     const totalRevenue = revenueStudents + revenueSiblings + revenueAdults;
-    const totalCost = c.grand || 0;
+    const isActual = tourHasActuals(t);
+    const totalCost = isActual ? tourEffectiveCost(t) : (c.grand || 0);
     const profit = totalRevenue - totalCost;
     const margin = totalRevenue > 0 ? ((profit / totalRevenue) * 100).toFixed(1) : 0;
     const paying = (t.numStudents||0) + (t.numSiblings||0) + (t.numAdults||0);
@@ -436,7 +440,7 @@ const Tours = {
             <span>Total Revenue</span><span>${fmt(totalRevenue, cur)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;padding:0.3rem 0;font-weight:700;color:var(--red)">
-            <span>Total Costs</span><span>${fmt(totalCost, cur)}</span>
+            <span>Total Costs${isActual ? ' <span style="font-size:0.72rem;color:var(--green);font-weight:600">(actual)</span>' : ''}</span><span>${fmt(totalCost, cur)}</span>
           </div>
           <div style="display:flex;justify-content:space-between;padding:0.5rem 0;font-weight:700;font-size:1.05rem;color:${profit>=0?'var(--green)':'var(--red)'}">
             <span>Net Profit</span><span>${fmt(profit, cur)}</span>

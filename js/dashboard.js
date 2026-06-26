@@ -73,8 +73,8 @@ const Dashboard = {
     tours.forEach(t => {
       if (t.costs) {
         totalRevenue += normalize(t.costs.totalRevenue || 0, t.currency);
-        totalCosts += normalize(t.costs.grand || 0, t.currency);
-        expectedProfit += normalize(t.costs.profit || 0, t.currency);
+        totalCosts += normalize(tourEffectiveCost(t), t.currency);
+        expectedProfit += normalize(tourEffectiveProfit(t), t.currency);
       }
     });
 
@@ -380,25 +380,29 @@ const Dashboard = {
           const adults = t.numAdults || 0;
           const foc = t.numFOC || 0;
           const groupSize = students + siblings + adults + foc;
-          const profit = c.profit || 0;
-          const margin = c.margin || 0;
+          const isActual = tourHasActuals(t);
+          const cost = tourEffectiveCost(t);
+          const rev = c.totalRevenue || 0;
+          const profit = rev - cost;
+          const margin = rev > 0 ? (profit / rev * 100) : 0;
+          const actualTag = isActual ? ' <span style="font-size:0.7rem;color:var(--green);font-weight:600" title="Actual provider costs (estimate ' + fmt(c.grand || 0, t.currency) + ')">●act</span>' : '';
           return `<tr class="row-clickable" ondblclick="App.switchTab('tours');setTimeout(()=>Tours.viewTour(${t.id}),100)">
             <td><strong>${t.tourName || '—'}</strong></td>
             <td>${t.clientName || '—'}</td>
             <td>${fmtDate(t.startDate)} — ${fmtDate(t.endDate)}</td>
             <td title="${students} students, ${siblings} siblings, ${adults} adults, ${foc} FOC">${groupSize}</td>
-            <td>${fmt(c.grand || 0, t.currency)}</td>
-            <td>${fmt(c.totalRevenue || 0, t.currency)}</td>
+            <td>${fmt(cost, t.currency)}${actualTag}</td>
+            <td>${fmt(rev, t.currency)}</td>
             <td style="color:${profit >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:600">${fmt(profit, t.currency)}</td>
             <td style="color:${margin >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:600">${margin.toFixed(1)}%</td>
           </tr>`;
         }).join('')}</tbody>
         <tfoot><tr style="font-weight:700;border-top:2px solid var(--gray-200)">
           <td colspan="4">TOTALS</td>
-          <td>${fmt(tours.reduce((s, t) => s + ((t.costs && t.costs.grand) || 0), 0))}</td>
+          <td>${fmt(tours.reduce((s, t) => s + tourEffectiveCost(t), 0))}</td>
           <td>${fmt(tours.reduce((s, t) => s + ((t.costs && t.costs.totalRevenue) || 0), 0))}</td>
-          <td style="color:${tours.reduce((s, t) => s + ((t.costs && t.costs.profit) || 0), 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(tours.reduce((s, t) => s + ((t.costs && t.costs.profit) || 0), 0))}</td>
-          <td>${(() => { const rev = tours.reduce((s, t) => s + ((t.costs && t.costs.totalRevenue) || 0), 0); const prof = tours.reduce((s, t) => s + ((t.costs && t.costs.profit) || 0), 0); return rev > 0 ? (prof / rev * 100).toFixed(1) + '%' : '—'; })()}</td>
+          <td style="color:${tours.reduce((s, t) => s + tourEffectiveProfit(t), 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${fmt(tours.reduce((s, t) => s + tourEffectiveProfit(t), 0))}</td>
+          <td>${(() => { const rev = tours.reduce((s, t) => s + ((t.costs && t.costs.totalRevenue) || 0), 0); const prof = tours.reduce((s, t) => s + tourEffectiveProfit(t), 0); return rev > 0 ? (prof / rev * 100).toFixed(1) + '%' : '—'; })()}</td>
         </tr></tfoot>
       </table>`;
   },

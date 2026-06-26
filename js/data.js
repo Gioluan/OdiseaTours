@@ -1348,6 +1348,21 @@ function fmtDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+// Sum of tracked actual provider expenses for a tour (0 if none tracked)
+function tourActualCost(t) {
+  return ((t && t.providerExpenses) || []).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+}
+// Effective cost: actual provider costs when expenses are tracked, else the quote estimate
+function tourEffectiveCost(t) {
+  const a = tourActualCost(t);
+  return a > 0 ? a : ((t && t.costs && t.costs.grand) || 0);
+}
+function tourHasActuals(t) { return tourActualCost(t) > 0; }
+// Effective profit/margin using effective cost
+function tourEffectiveProfit(t) {
+  const rev = (t && t.costs && t.costs.totalRevenue) || 0;
+  return rev - tourEffectiveCost(t);
+}
 function isOverdue(dateStr) {
   if (!dateStr) return false;
   return new Date(dateStr) < new Date(new Date().toDateString());
