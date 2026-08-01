@@ -1,9 +1,13 @@
 /* === ODISEA DECK · hoja de estilo del deck de itinerarios ===
    Portada literal del <style> de tools/odisea-itinerary-template/template.html
    (1920x1080, paleta y tipografia de marca). NO tocar salvo cambio de marca.
-   Los 4 valores que variaban por tour ahora son variables que js/deck.js
-   sobreescribe en un <style> inline: --client-accent, --client-accent-deep,
-   --cover-photo, --closing-photo. */
+   Lo unico que varia por tour son dos variables que js/deck.js sobreescribe en
+   un <style> del documento: --client-accent y --client-accent-deep.
+
+   Las fotos NO van en variables. Chrome resuelve una url() relativa metida en
+   una variable contra el fichero donde se USA la variable (este), no contra
+   donde se declara el valor, y las fotos se pedian en /css/assets/... -> 404.
+   Las pone js/deck.js en el style de cada elemento, con Deck.bgImage(). */
   :root {
     --paper: #F6F6F6;
     --paper-warm: #EFECE4;
