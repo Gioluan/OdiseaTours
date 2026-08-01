@@ -1,5 +1,5 @@
 /* === SERVICE WORKER — Odisea Tours PWA === */
-const CACHE_NAME = 'odisea-tours-v59';
+const CACHE_NAME = 'odisea-tours-v60';
 const ASSETS = [
   './',
   './index.html',
@@ -22,6 +22,16 @@ const ASSETS = [
   './js/providers.js',
   './js/pdf-quote.js',
   './js/pdf-itinerary.js',
+  // Generador de decks. Las fotos de assets/ NO se precachean a proposito: son
+  // 13 MB y solo hacen falta al generar un deck, no para que el CRM arranque.
+  './js/deck.js',
+  './js/deck-lint.js',
+  './js/deck-costing.js',
+  './js/deck-picker.js',
+  './js/deck-editor.js',
+  './js/deck-stage.js',
+  './css/deck.css',
+  './assets/photos.json',
   './js/portal.js',
   './js/guide.js',
   './js/app.js',

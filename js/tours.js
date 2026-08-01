@@ -1296,7 +1296,9 @@ const Tours = {
         </div>
         <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-top:0.3rem" onclick="Tours.addInclusion(${t.id})">+ Add Item</button>
         ${!inclusions.length ? `<button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-top:0.3rem;margin-left:0.3rem;border-color:var(--amber);color:var(--amber)" onclick="Tours.addDefaultInclusions(${t.id})">Add Default Items</button>` : ''}
-      </div>`;
+      </div>
+
+      ${typeof DeckEditor !== 'undefined' ? DeckEditor.render(t) : ''}`;
   },
 
   addItineraryDay(tourId) {

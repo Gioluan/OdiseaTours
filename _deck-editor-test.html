@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- Banco de pruebas del editor de deck fuera del CRM.
+     Monta un DB/Tours falsos con la forma real del documento de tour y pinta
+     DeckEditor.render() para poder ver y clicar el selector de imagenes sin
+     tener que entrar con usuario en el CRM. No se despliega. -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Prueba · editor de deck</title>
+<link rel="stylesheet" href="css/styles.css">
+<style>body{padding:2rem;background:#fff;font-family:system-ui,sans-serif}</style>
+</head>
+<body>
+<div id="out"></div>
+
+<script>
+const TOUR = {
+  id: 1,
+  tourName: 'Spain Tour 2027',
+  clientName: 'Portage Soccer Club',
+  destination: 'Barcelona',
+  destinations: ['Barcelona', 'Costa Brava'],
+  startDate: '2027-07-27', endDate: '2027-08-04', nights: 8, currency: 'EUR',
+  numStudents: 25, numSiblings: 5, numAdults: 20, numFOC: 2,
+  priceStudent: 2200, priceSibling: 2000, priceAdult: 1800,
+  costs: { grand: 90000, costPerPerson: 1700 },
+  inclusions: ['Alojamiento: hotel 3★ media pensión'],
+  itinerary: [
+    { day: 1, date: '2027-07-27', title: 'Llegada|a Barcelona', city: 'Barcelona',
+      items: [{ time: '1430', description: 'Recepción en el aeropuerto', highlight: true }] },
+    { day: 2, date: '2027-07-28', title: 'Primera|sesión', city: 'Barcelona',
+      items: [{ time: '1030', description: 'Sesión de tecnificación', highlight: true }] },
+    { day: 3, date: '2027-07-29', title: 'A la costa', city: 'Barcelona → Roses',
+      items: [{ time: '0900', description: 'Salida hacia la Costa Brava', highlight: true }] }
+  ],
+  deck: { lang: 'es', clientLocation: 'Michigan · Portage SC', coverPhoto: 'cover-floodlights.jpg',
+          crests: [{ logo: 'fc-barcelona.png', top: 'La Liga', name: 'FC Barcelona', sub: 'Barcelona' }] }
+};
+
+const DB = {
+  _firebaseReady: false, storage: null, firestore: null,
+  getTours: () => [TOUR],
+  saveTour: (t) => { console.log('[saveTour]', JSON.parse(JSON.stringify(t.deck))); }
+};
+const Tours = { viewTour: () => { draw(); } };
+function draw() { document.getElementById('out').innerHTML = DeckEditor.render(TOUR); }
+</script>
+
+<script src="js/deck.js"></script>
+<script src="js/deck-lint.js"></script>
+<script src="js/deck-costing.js"></script>
+<script src="js/deck-picker.js"></script>
+<script src="js/deck-editor.js"></script>
+<script>
+DeckEditor.loadPhotos().then(() => {
+  draw();
+  console.log('listo');
+  // #picker abre el selector directamente, para poder verlo sin clicar.
+  if (location.hash === '#picker') DeckPicker.open(1, 'coverPhoto', 'photo');
+  if (location.hash === '#logos') DeckPicker.open(1, 'clientLogo', 'logo');
+});
+</script>
+</body>
+</html>
