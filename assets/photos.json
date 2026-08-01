@@ -23,9 +23,14 @@
     "bernabeu.jpg":                 { "label": "Santiago Bernabéu", "verified": false, "credit": "" },
     "camp-nou.jpg":                 { "label": "Spotify Camp Nou", "verified": false, "credit": "" },
     "celebration.jpg":              { "label": "Celebración de equipo", "verified": false, "credit": "" },
-    "closing-fcb-group.jpg":        { "label": "Grupo en el FC Barcelona · foto de cierre", "verified": false, "credit": "" },
+    "closing-fcb-group.jpg": {
+      "label": "Grupo en el FC Barcelona · foto de cierre",
+      "verified": false,
+      "note": "El rótulo 'Audi Premium Partner del FCB' sale muy grande. No es una afirmación de Odisea, pero en un deck que cuida no insinuar partenariado conviene mirarlo dos veces.",
+      "credit": ""
+    },
     "coast-sitges.jpg":             { "label": "Costa de Sitges", "verified": false, "credit": "" },
-    "cover-floodlights.jpg":        { "label": "Focos de campo de noche · portada", "verified": false, "credit": "" },
+    "cover-floodlights.jpg":        { "label": "Equipo posando bajo los focos · portada", "verified": false, "credit": "" },
     "donosti-cup-action-hi.jpg":    { "label": "Donosti Cup · acción (alta resolución)", "verified": false, "credit": "" },
     "donosti-cup-action.jpg":       { "label": "Donosti Cup · acción", "verified": false, "credit": "" },
     "donosti-cup-finals-hi.jpg":    { "label": "Donosti Cup · finales (alta resolución)", "verified": false, "credit": "" },

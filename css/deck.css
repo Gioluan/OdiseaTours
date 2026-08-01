@@ -18,9 +18,6 @@
     --client-accent: #FFB400;
     --client-accent-deep: #C98A00;
 
-    /* Fotos de portada y de cierre. Las pone js/deck.js como url(...). */
-    --cover-photo: none;
-    --closing-photo: none;
 
     --f-display: "Archivo", system-ui, sans-serif;
     --f-mark: "Archivo Black", "Archivo", sans-serif;
@@ -112,12 +109,13 @@
     height: 100%;
     overflow: hidden;
   }
+  /* background-image lo pone js/deck.js en el style del propio elemento, con el
+     degradado incluido. NO usar una variable CSS con un url() relativo dentro:
+     Chrome resuelve esa url contra el fichero donde se USA la variable (este),
+     no contra donde se declara, y la foto se pedia en /css/assets/... -> 404. */
   .cover .cover-img {
     position: absolute;
     inset: 0;
-    background-image:
-      linear-gradient(180deg, rgba(10,8,6,0.55) 0%, rgba(10,8,6,0.45) 40%, rgba(10,8,6,0.92) 100%),
-      var(--cover-photo);
     background-size: cover;
     background-position: center;
   }
@@ -827,9 +825,9 @@
     overflow: hidden;
     background: #0a0a0a;
   }
+  /* background-image en el style del elemento, por el mismo motivo que .cover-img */
   .closing .col-right .photo {
     position: absolute; inset: 0;
-    background-image: var(--closing-photo);
     background-size: cover;
     background-position: center 30%;
     filter: saturate(0.92) contrast(1.02);

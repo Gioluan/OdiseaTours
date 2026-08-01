@@ -271,24 +271,28 @@ const Deck = {
     const base = location.href.replace(/[^\/]*(\?.*)?$/, '');
     const title = this.esc(t.tourName || t.clientName || 'Odisea Tours');
 
+    // El orden y qué slides salen es editable (pestaña Deck). 'itinerary' es el
+    // hueco donde se meten los capítulos y sus días, tantos como haya.
     const sections = [];
-    sections.push(this.slideCover(m));
-    sections.push(this.slideWelcome(m));
-    sections.push(this.slideOverview(m));
-
-    m.chapters.forEach(c => {
-      sections.push(this.slideChapter(m, c));
-      for (let i = c.from; i <= c.to && i < m.days.length; i++) {
-        sections.push(this.slideDay(m, i));
+    this.slideList(t).filter(s => s.on !== false).forEach(s => {
+      switch (s.type) {
+        case 'cover':      sections.push(this.slideCover(m)); break;
+        case 'welcome':    sections.push(this.slideWelcome(m)); break;
+        case 'overview':   sections.push(this.slideOverview(m)); break;
+        case 'inclusions': sections.push(this.slideInclusions(m)); break;
+        case 'payment':    sections.push(this.slidePayment(m)); break;
+        case 'closing':    sections.push(this.slideClosing(m)); break;
+        case 'custom':     sections.push(this.slideCustom(m, s)); break;
+        case 'itinerary':
+          m.chapters.forEach(c => {
+            sections.push(this.slideChapter(m, c));
+            for (let i = c.from; i <= c.to && i < m.days.length; i++) {
+              sections.push(this.slideDay(m, i));
+            }
+          });
+          break;
       }
     });
-
-    sections.push(this.slideInclusions(m));
-    sections.push(this.slidePayment(m));
-    sections.push(this.slideClosing(m));
-
-    const coverPhoto = this.photo(m, m.d.coverPhoto, 'cover-floodlights.jpg');
-    const closingPhoto = this.photo(m, m.d.closingPhoto, 'closing-fcb-group.jpg');
 
     return '<!doctype html>\n' +
       '<html lang="' + m.lang + '">\n<head>\n' +
@@ -303,14 +307,73 @@ const Deck = {
       '<style>\n  :root {\n' +
       '    --client-accent: ' + this.esc(m.accent) + ';\n' +
       '    --client-accent-deep: ' + this.esc(m.accentDeep) + ';\n' +
-      '    --cover-photo: url("' + this.esc(coverPhoto) + '");\n' +
-      '    --closing-photo: url("' + this.esc(closingPhoto) + '");\n' +
       '  }\n</style>\n' +
       '<script src="js/deck-stage.js"><\/script>\n' +
       '</head>\n<body>\n\n' +
       '<deck-stage width="1920" height="1080" autotag>\n\n' +
       sections.join('\n\n') +
       '\n\n</deck-stage>\n\n</body>\n</html>\n';
+  },
+
+  /* Las slides fijas del deck y su orden. Un tour que nunca lo ha tocado usa el
+   * orden de siempre; en cuanto se edita en la pestaña Deck manda t.deck.slides.
+   * 'itinerary' no es una slide: es el hueco de los capítulos y los días. */
+  DEFAULT_SLIDES: [
+    { type: 'cover', on: true },
+    { type: 'welcome', on: true },
+    { type: 'overview', on: true },
+    { type: 'itinerary', on: true },
+    { type: 'inclusions', on: true },
+    { type: 'payment', on: true },
+    { type: 'closing', on: true }
+  ],
+
+  SLIDE_LABELS: {
+    cover: 'Portada', welcome: 'Bienvenida', overview: 'Resumen y ruta',
+    itinerary: 'Capítulos y días', inclusions: 'Qué incluye y precios',
+    payment: 'Calendario de pagos', closing: 'Cierre y contacto',
+    custom: 'Slide libre'
+  },
+
+  slideList(t) {
+    const saved = t.deck && t.deck.slides;
+    if (!saved || !saved.length) return this.DEFAULT_SLIDES.map(s => Object.assign({}, s));
+    // Si en el futuro se añade una slide fija nueva al motor, se cuela al final
+    // de los decks ya guardados en vez de desaparecer sin avisar.
+    const out = saved.map(s => Object.assign({}, s));
+    this.DEFAULT_SLIDES.forEach(def => {
+      if (!out.some(s => s.type === def.type)) out.push(Object.assign({}, def));
+    });
+    return out;
+  },
+
+  /* Slide libre: un titular, un texto y una foto opcional. Para lo que no cabe
+   * en las fijas (una nota sobre vuelos, un torneo, condiciones especiales). */
+  slideCustom(m, s) {
+    const E = this.esc.bind(this);
+    const photo = this.photo(m, s.photo, '');
+    const right = photo
+      ? '      <div class="right has-photo">\n' +
+        '        <div class="photo-area" style="' + this.bgImage(photo) + '">\n' +
+        '          <div class="photo-cap">' + E(s.photoCap || '') + '</div>\n' +
+        '        </div>\n      </div>\n'
+      : '';
+    const body = String(s.body || '').split(/\n+/).filter(Boolean)
+      .map(p => '          <p class="body-text" style="max-width:820px;margin:0 0 20px 0;">' + E(p) + '</p>')
+      .join('\n');
+
+    return this.section('Custom · ' + (s.title || ''),
+      '    <div class="day">\n' +
+      '      <div class="left">\n' +
+      '        <div>\n' +
+      '          <div class="chapter-label">' + E(s.eyebrow || '') + '</div>\n' +
+      '          <h1>' + E(s.title || '') + (s.title2 ? '<br/>' + E(s.title2) : '') + '</h1>\n' +
+      '          <div class="gold-rule" style="margin-bottom: 28px;"></div>\n' +
+      body + '\n' +
+      '        </div>\n' +
+      '      </div>\n' +
+      right +
+      '    </div>');
   },
 
   /* Resuelve una referencia de foto. Acepta un nombre del banco
@@ -320,6 +383,19 @@ const Deck = {
     if (!v) return '';
     if (/^(https?:)?\/\//.test(v) || v.indexOf('assets/') === 0 || v.indexOf('data:') === 0) return v;
     return 'assets/photos/' + v;
+  },
+
+  /* Valor listo para un atributo style. Va en el elemento y no en una variable
+   * CSS a proposito: dentro de una variable, Chrome resuelve las url()
+   * relativas contra el fichero .css donde se usa la variable, y las fotos se
+   * pedian en /css/assets/... Aqui la url la resuelve el documento, que es lo
+   * que queremos. */
+  bgImage(url, gradient) {
+    const layers = [];
+    if (gradient) layers.push(gradient);
+    if (url) layers.push("url('" + String(url).replace(/'/g, "%27") + "')");
+    if (!layers.length) return '';
+    return 'background-image: ' + layers.join(', ') + ';';
   },
 
   logo(ref) {
@@ -364,9 +440,13 @@ const Deck = {
     const stat = (k, v) => '          <div class="stat">\n            <div class="k">' + E(k) +
       '</div>\n            <div class="v">' + E(v) + '</div>\n          </div>';
 
+    const COVER_GRADIENT =
+      'linear-gradient(180deg, rgba(10,8,6,0.55) 0%, rgba(10,8,6,0.45) 40%, rgba(10,8,6,0.92) 100%)';
+
     return this.section('01 Cover',
       '    <div class="cover">\n' +
-      '      <div class="cover-img"></div>\n' +
+      '      <div class="cover-img" style="' +
+      this.bgImage(this.photo(m, d.coverPhoto, 'cover-floodlights.jpg'), COVER_GRADIENT) + '"></div>\n' +
       '      <div class="cover-content">\n\n' +
       '        <div class="cover-top">\n' +
       '          <div class="left-mark">\n' +
@@ -531,7 +611,7 @@ const Deck = {
 
     return this.section(this.pad2(c.index + 1) + ' Chapter ' + (c.index + 1),
       '    <div class="chapter">\n' +
-      '      <div class="bg-img" style="background-image: url(\'' + E(this.photo(m, c.photo, '')) + '\');"></div>\n' +
+      '      <div class="bg-img" style="' + this.bgImage(this.photo(m, c.photo, '')) + '"></div>\n' +
       '      <div>\n' +
       '        <div class="num">' + E(partLabel) + '</div>\n' +
       '        <h2 style="margin-top: 32px;">' + E(pre) + '<span class="accent">' + E(acc) + '</span>' + E(post) + '.</h2>\n' +
@@ -598,7 +678,7 @@ const Deck = {
     const photoSrc = this.photo(m, dd.photo, '');
     const right = photoSrc
       ? '      <div class="right has-photo">\n' +
-        '        <div class="photo-area" style="background-image: url(\'' + E(photoSrc) + '\');">\n' +
+        '        <div class="photo-area" style="' + this.bgImage(photoSrc) + '">\n' +
         '          <div class="photo-cap">' + E(dd.photoCap || city) + '</div>\n' +
         '        </div>\n' +
         '        <div class="schedule-wrap">\n'
@@ -727,27 +807,34 @@ const Deck = {
     ].filter(x => m.noPricing || (x.price != null && x.price !== '' && +x.price > 0));
   },
 
-  /* -- Calendario de pagos ---------------------------------------------------- */
-  slidePayment(m) {
-    const d = m.d, ui = m.ui, E = this.esc.bind(this);
+  /* Calendario 25 / 35 / 40 contando hacia atrás desde la salida. Es solo el
+   * punto de partida: en cuanto se toca en la pestaña Deck, manda lo editado. */
+  defaultPayments(m) {
+    const ui = m.ui;
     const start = this.parseDate(m.t.startDate);
     const minus = (days) => {
       if (!start) return '';
       const x = new Date(start.getTime());
       x.setDate(x.getDate() - days);
-      return x.toLocaleDateString(m.ui.locale, { day: 'numeric', month: 'long', year: 'numeric' });
+      return x.toLocaleDateString(ui.locale, { day: 'numeric', month: 'long', year: 'numeric' });
     };
-
-    const lead = m.tiers ? null : null;
     const base = +m.t.priceStudent || 0;
-    const pay = d.payments || [
-      { due: d.reserveBy || minus(300), amount: base ? Math.round(base * 0.25) : null,
-        desc: ui.firstComeFirstServed },
-      { due: minus(120), amount: base ? Math.round(base * 0.35) : null,
+    const p1 = base ? Math.round(base * 0.25) : null;
+    const p2 = base ? Math.round(base * 0.35) : null;
+    return [
+      { due: m.d.reserveBy || minus(300), amount: p1, desc: ui.firstComeFirstServed },
+      { due: minus(120), amount: p2,
         desc: m.lang === 'es' ? 'Con el grupo ya cerrado' : 'Once the group is confirmed' },
-      { due: minus(45), amount: base ? base - Math.round(base * 0.25) - Math.round(base * 0.35) : null,
+      { due: minus(45), amount: base ? base - p1 - p2 : null,
         desc: m.lang === 'es' ? 'Resto del importe' : 'Balance of the package' }
     ];
+  },
+
+  /* -- Calendario de pagos ---------------------------------------------------- */
+  slidePayment(m) {
+    const d = m.d, ui = m.ui, E = this.esc.bind(this);
+
+    const pay = (d.payments && d.payments.length) ? d.payments : this.defaultPayments(m);
     const labels = [ui.deposit, ui.secondPayment, ui.finalPayment];
 
     const rows = pay.slice(0, 3).map((p, i) =>
@@ -823,7 +910,8 @@ const Deck = {
       '        </div>\n' +
       '      </div>\n\n' +
       '      <div class="col-right">\n' +
-      '        <div class="photo"></div>\n' +
+      '        <div class="photo" style="' +
+      this.bgImage(this.photo(m, d.closingPhoto, 'closing-fcb-group.jpg')) + '"></div>\n' +
       '        <div class="grad"></div>\n' +
       '        <div class="frame"></div>\n' +
       '        <div class="corner tl"></div>\n' +

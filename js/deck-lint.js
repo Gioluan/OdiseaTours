@@ -230,6 +230,18 @@ const DeckLint = {
       }
     },
     {
+      id: 'fotos-con-nota',
+      run(ctx) {
+        // Aviso blando: la foto se puede usar, pero hay algo que mirar.
+        const con = ctx.usedPhotos
+          .map(f => ({ f: f, meta: (ctx.manifest.photos || {})[f] }))
+          .filter(x => x.meta && x.meta.note);
+        if (con.length) {
+          return { level: 'warn', msg: con.map(x => x.f + ': ' + x.meta.note).join(' | ') };
+        }
+      }
+    },
+    {
       id: 'fotos-que-faltan',
       run(ctx) {
         const noPhoto = ctx.m.chapters.filter(c => !c.photo).length;

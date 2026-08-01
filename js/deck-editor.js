@@ -116,6 +116,7 @@ const DeckEditor = {
         <button class="btn btn-sm btn-outline" onclick="Deck.generate(${id},{noPricing:true})">Deck sin precios</button>
         <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="DeckCosting.export(${id})">Excel de costes</button>
         <button class="btn btn-sm btn-outline" onclick="DeckEditor.lint(${id})">Revisar reglas</button>
+        <button class="btn btn-sm btn-outline" style="border-color:var(--gray-400);color:var(--gray-500)" onclick="DeckEditor.duplicate(${id})">Duplicar este tour</button>
       </div>
 
       <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:0.8rem">
@@ -170,6 +171,9 @@ const DeckEditor = {
       ${chapterRows || '<p style="color:var(--gray-400);font-size:0.82rem">Añade días al itinerario y aquí aparecerá el reparto por ciudad.</p>'}
       <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-bottom:0.8rem" onclick="DeckEditor.addChapter(${id})">+ Añadir capítulo</button>
 
+      ${this.renderSlides(t)}
+      ${this.renderPricing(t)}
+
       <h4 style="font-size:0.88rem;margin:0.8rem 0 0.4rem">Escudos de portada
         <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— dónde entrena el grupo. Nunca lenguaje de "partner oficial"</span></h4>
       ${(d.crests || []).map((c, i) => `
@@ -200,6 +204,244 @@ const DeckEditor = {
           ${this.field(id, 'leadPhone', d.leadPhone || '+34 670 059 797', 'Teléfono')}
         </div>
       </div>`;
+  },
+
+  /* -- Duplicar --------------------------------------------------------------
+   * Empezar un tour desde otro que ya funcionó, en vez de desde un folio en
+   * blanco. Se copia la parte reutilizable (itinerario, capítulos, fotos,
+   * textos, estructura de costes) y se deja fuera lo que pertenece SOLO al tour
+   * original: pasajeros, facturas, costes reales, código de acceso.
+   *
+   * Las fechas se recalculan manteniendo la separación entre días, así que un
+   * itinerario de 2027 sirve para 2028 sin repasar día por día. */
+  DONT_COPY: ['id', 'createdAt', 'updatedAt', 'accessCode', 'passengers',
+              'providerExpenses', 'documents', 'invoices', 'messages',
+              'guideExpenses', 'guideNotes', 'roomPlan', '_deleted'],
+
+  duplicate(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+
+    const nombre = prompt('Nombre del tour nuevo:', (t.tourName || 'Tour') + ' (copia)');
+    if (!nombre) return;
+    const nuevaFecha = prompt(
+      'Fecha de salida del tour nuevo (AAAA-MM-DD).\n\n' +
+      'Las fechas del itinerario se recalculan manteniendo los días de separación.\n' +
+      'Déjalo vacío para conservar las fechas originales.',
+      t.startDate || '');
+
+    const copia = JSON.parse(JSON.stringify(t));
+    this.DONT_COPY.forEach(k => { delete copia[k]; });
+    copia.tourName = nombre;
+    copia.status = 'Preparing';
+
+    if (nuevaFecha && /^\d{4}-\d{2}-\d{2}$/.test(nuevaFecha)) {
+      const vieja = Deck.parseDate(t.startDate);
+      const nueva = Deck.parseDate(nuevaFecha);
+      if (vieja && nueva) {
+        const dias = Math.round((nueva - vieja) / 86400000);
+        const corre = (iso) => {
+          const d0 = Deck.parseDate(iso);
+          if (!d0) return iso;
+          const d1 = new Date(d0.getTime());
+          d1.setDate(d1.getDate() + dias);
+          return d1.getFullYear() + '-' +
+                 String(d1.getMonth() + 1).padStart(2, '0') + '-' +
+                 String(d1.getDate()).padStart(2, '0');
+        };
+        copia.startDate = corre(t.startDate);
+        copia.endDate = corre(t.endDate);
+        (copia.itinerary || []).forEach(d => { if (d.date) d.date = corre(d.date); });
+        // Las fechas de pago del deck eran texto ya formateado de las fechas
+        // viejas: se borran para que se recalculen solas con las nuevas.
+        if (copia.deck) delete copia.deck.payments;
+      }
+    }
+
+    const guardado = DB.saveTour(copia);
+    alert('Creado "' + nombre + '".\n\nLos pasajeros, las facturas y los costes reales NO se han copiado: son del tour original.');
+    Tours.viewTour(guardado.id);
+  },
+
+  /* -- Slides ---------------------------------------------------------------
+   * Qué slides salen, en qué orden, y slides libres para lo que no cabe en las
+   * fijas. "Capítulos y días" no es una slide: es el hueco donde se meten. */
+  renderSlides(t) {
+    const id = t.id;
+    const E = this.esc.bind(this);
+    const slides = Deck.slideList(t);
+
+    const rows = slides.map((s, i) => {
+      const label = s.type === 'custom'
+        ? (s.title || 'Slide libre')
+        : (Deck.SLIDE_LABELS[s.type] || s.type);
+      const fixed = s.type === 'cover' || s.type === 'itinerary';
+      const count = s.type === 'itinerary'
+        ? ' <span style="color:var(--gray-400);font-weight:400">(' +
+          (t.itinerary || []).length + ' días + ' + Deck.chapters(t, t.itinerary || [], 'es').length + ' capítulos)</span>'
+        : '';
+      return `
+        <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.3rem;background:#fff;border:1.5px solid var(--gray-200);border-radius:var(--radius);padding:0.3rem 0.5rem">
+          <label style="display:flex;align-items:center;gap:0.35rem;cursor:${fixed ? 'not-allowed' : 'pointer'};flex:1;font-size:0.82rem">
+            <input type="checkbox" ${s.on !== false ? 'checked' : ''} ${fixed ? 'disabled' : ''}
+                   onchange="DeckEditor.toggleSlide(${id},${i},this.checked)">
+            <span style="${s.on === false ? 'opacity:0.45;text-decoration:line-through' : 'font-weight:600'}">${E(label)}</span>${count}
+          </label>
+          <button title="Subir" ${i === 0 ? 'disabled' : ''} style="background:none;border:none;cursor:pointer;color:var(--gray-400);padding:0 0.25rem" onclick="DeckEditor.moveSlide(${id},${i},-1)">&#9650;</button>
+          <button title="Bajar" ${i === slides.length - 1 ? 'disabled' : ''} style="background:none;border:none;cursor:pointer;color:var(--gray-400);padding:0 0.25rem" onclick="DeckEditor.moveSlide(${id},${i},1)">&#9660;</button>
+          ${s.type === 'custom' ? `<button style="background:none;border:none;color:var(--red);cursor:pointer" onclick="DeckEditor.removeSlide(${id},${i})">&#10005;</button>` : '<span style="width:14px"></span>'}
+        </div>
+        ${s.type === 'custom' ? `
+        <div style="margin:0 0 0.5rem 1.6rem;padding:0.5rem 0.6rem;background:var(--gray-50);border-radius:var(--radius)">
+          <div style="display:flex;gap:0.4rem;margin-bottom:0.3rem">
+            <input value="${E(s.eyebrow || '')}" placeholder="Sobretítulo" style="width:150px;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'slides.${i}.eyebrow',this.value)">
+            <input value="${E(s.title || '')}" placeholder="Titular" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;font-weight:600;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'slides.${i}.title',this.value)">
+            <input value="${E(s.title2 || '')}" placeholder="Segunda línea" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'slides.${i}.title2',this.value)">
+            <div style="width:150px">${this.photoSelect(id, 'slides.' + i + '.photo', s.photo, '')}</div>
+          </div>
+          <textarea rows="2" placeholder="Texto. Un párrafo por línea." style="width:100%;padding:0.3rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:inherit" onchange="DeckEditor.save(${id},'slides.${i}.body',this.value)">${E(s.body || '')}</textarea>
+        </div>` : ''}`;
+    }).join('');
+
+    return `
+      <h4 style="font-size:0.88rem;margin:0.8rem 0 0.4rem">Slides
+        <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— qué sale, en qué orden. Portada y días no se pueden quitar</span></h4>
+      ${rows}
+      <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-bottom:0.8rem" onclick="DeckEditor.addSlide(${id})">+ Añadir slide libre</button>`;
+  },
+
+  /* La primera edición congela la lista por defecto, para que a partir de ahí
+   * mande lo que hay guardado y no el orden del motor. */
+  _slides(t) {
+    if (!t.deck) t.deck = {};
+    if (!t.deck.slides || !t.deck.slides.length) t.deck.slides = Deck.slideList(t);
+    return t.deck.slides;
+  },
+
+  toggleSlide(tourId, i, on) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const s = this._slides(t);
+    if (!s[i]) return;
+    s[i].on = !!on;
+    DB.saveTour(t);
+    Tours.viewTour(tourId);
+  },
+
+  moveSlide(tourId, i, delta) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const s = this._slides(t);
+    const j = i + delta;
+    if (j < 0 || j >= s.length) return;
+    const tmp = s[i]; s[i] = s[j]; s[j] = tmp;
+    DB.saveTour(t);
+    Tours.viewTour(tourId);
+  },
+
+  addSlide(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const s = this._slides(t);
+    // Antes del cierre, que es donde casi siempre se quiere.
+    const at = s.map(x => x.type).lastIndexOf('closing');
+    const nueva = { type: 'custom', on: true, eyebrow: '', title: '', title2: '', body: '', photo: '' };
+    if (at >= 0) s.splice(at, 0, nueva); else s.push(nueva);
+    DB.saveTour(t);
+    Tours.viewTour(tourId);
+  },
+
+  removeSlide(tourId, i) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const s = this._slides(t);
+    if (!s[i] || s[i].type !== 'custom') return;
+    s.splice(i, 1);
+    DB.saveTour(t);
+    Tours.viewTour(tourId);
+  },
+
+  /* -- Precios y pagos -------------------------------------------------------
+   * Por defecto salen de los precios del tour y de un calendario 25/35/40. En
+   * cuanto se toca algo aquí, manda lo de aquí. */
+  renderPricing(t) {
+    const id = t.id;
+    const d = t.deck || {};
+    const E = this.esc.bind(this);
+    const m = Deck.model(t, {});
+    const tiers = (d.tiers && d.tiers.length) ? d.tiers : Deck.tiers(m);
+    const pagos = d.payments || Deck.defaultPayments(m);
+
+    const tierRows = tiers.map((x, i) => `
+      <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.3rem">
+        <input value="${E(x.label || '')}" placeholder="Concepto" style="width:150px;padding:0.28rem 0.45rem;font-size:0.8rem;font-weight:600;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveTier(${id},${i},'label',this.value)">
+        <input value="${E(x.desc || '')}" placeholder="Descripción" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveTier(${id},${i},'desc',this.value)">
+        <input type="number" value="${x.price != null ? x.price : ''}" placeholder="0" style="width:95px;padding:0.28rem 0.45rem;font-size:0.8rem;text-align:right;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveTier(${id},${i},'price',this.value)">
+        <button style="background:none;border:none;color:var(--red);cursor:pointer" onclick="DeckEditor.removeTier(${id},${i})">&#10005;</button>
+      </div>`).join('');
+
+    const pagoRows = pagos.slice(0, 3).map((p, i) => `
+      <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.3rem">
+        <span style="width:22px;font-size:0.78rem;color:var(--gray-400)">${i + 1}</span>
+        <input value="${E(p.desc || '')}" placeholder="Descripción" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.savePayment(${id},${i},'desc',this.value)">
+        <input value="${E(p.due || '')}" placeholder="Vence" style="width:170px;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.savePayment(${id},${i},'due',this.value)">
+        <input type="number" value="${p.amount != null ? p.amount : ''}" placeholder="0" style="width:95px;padding:0.28rem 0.45rem;font-size:0.8rem;text-align:right;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.savePayment(${id},${i},'amount',this.value)">
+      </div>`).join('');
+
+    return `
+      <h4 style="font-size:0.88rem;margin:0.8rem 0 0.4rem">Precios
+        <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— por defecto los del tour; edítalos para que manden estos</span></h4>
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.6rem 0.8rem;margin-bottom:0.5rem">
+        ${tierRows || '<p style="color:var(--gray-400);font-size:0.8rem;margin:0">Sin precios. El deck saldrá "a consultar".</p>'}
+        <button class="btn btn-sm btn-outline" style="font-size:0.72rem;padding:0.15rem 0.45rem;margin-top:0.3rem" onclick="DeckEditor.addTier(${id})">+ Añadir línea</button>
+        ${this.field(id, 'pricingNote', d.pricingNote, 'Nota bajo la tabla de precios', 'Precio por persona, basado en el grupo confirmado')}
+      </div>
+
+      <h4 style="font-size:0.88rem;margin:0.8rem 0 0.4rem">Calendario de pagos</h4>
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.6rem 0.8rem;margin-bottom:0.8rem">
+        ${pagoRows}
+        ${this.field(id, 'paymentNote', d.paymentNote, 'Nota bajo el calendario', '')}
+        ${this.field(id, 'reservationIntro', d.reservationIntro, 'Texto de la página de reservas', '', 'textarea')}
+      </div>`;
+  },
+
+  saveTier(tourId, i, field, value) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    if (!t.deck) t.deck = {};
+    if (!t.deck.tiers || !t.deck.tiers.length) t.deck.tiers = Deck.tiers(Deck.model(t, {}));
+    if (!t.deck.tiers[i]) t.deck.tiers[i] = { label: '', desc: '', price: null };
+    t.deck.tiers[i][field] = field === 'price' ? (value === '' ? null : +value) : value;
+    DB.saveTour(t);
+  },
+
+  addTier(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    if (!t.deck) t.deck = {};
+    if (!t.deck.tiers || !t.deck.tiers.length) t.deck.tiers = Deck.tiers(Deck.model(t, {}));
+    t.deck.tiers.push({ label: '', desc: '', price: null });
+    DB.saveTour(t);
+    Tours.viewTour(tourId);
+  },
+
+  removeTier(tourId, i) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !t.deck) return;
+    if (!t.deck.tiers || !t.deck.tiers.length) t.deck.tiers = Deck.tiers(Deck.model(t, {}));
+    t.deck.tiers.splice(i, 1);
+    DB.saveTour(t);
+    Tours.viewTour(tourId);
+  },
+
+  savePayment(tourId, i, field, value) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    if (!t.deck) t.deck = {};
+    if (!t.deck.payments || !t.deck.payments.length) t.deck.payments = Deck.defaultPayments(Deck.model(t, {}));
+    if (!t.deck.payments[i]) t.deck.payments[i] = { desc: '', due: '', amount: null };
+    t.deck.payments[i][field] = field === 'amount' ? (value === '' ? null : +value) : value;
+    DB.saveTour(t);
   },
 
   /* -- Guardado --------------------------------------------------------------
