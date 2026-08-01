@@ -46,10 +46,10 @@ const DeckLint = {
         // mediodia por cuenta propia. Vender pension completa compromete un
         // coste que no esta comprado.
         if (/pension completa|full board|three meals|tres comidas/.test(ctx.flat)) {
-          return { level: 'error', msg: 'Aparece pensión completa. Odisea vende SIEMPRE media pensión: la comida del mediodía va por cuenta propia.' };
+          return { level: 'error', msg: 'Full board appears in the deck. Odisea always sells half board: lunch is at own cost.' };
         }
         if (/(comidas?|almuerzos?|lunch(es)?) incluid|included lunch|lunch included/.test(ctx.flat)) {
-          return { level: 'error', msg: 'La comida del mediodía figura como incluida. Va siempre por cuenta propia.' };
+          return { level: 'error', msg: 'Lunch is listed as included. It is always at own cost.' };
         }
       }
     },
@@ -60,13 +60,13 @@ const DeckLint = {
         // El sitio web dijo lo contrario en 17 sitios hasta julio de 2026.
         const mentions = /seguro|insurance/.test(ctx.flat);
         if (!mentions) {
-          return { level: 'error', msg: 'El deck no dice nada del seguro. Tiene que constar como NO incluido y obligatorio, lo aporta cada club.' };
+          return { level: 'error', msg: 'The deck says nothing about insurance. It must appear as NOT included and mandatory, arranged by each club.' };
         }
         if (/seguro (de viaje |medico |)incluid|insurance included|includes? (travel |medical )?insurance/.test(ctx.flat)) {
-          return { level: 'error', msg: 'El seguro aparece como incluido. Odisea NO lo incluye: es obligatorio y lo trae cada club.' };
+          return { level: 'error', msg: 'Insurance appears as included. Odisea does NOT include it: it is mandatory and each club brings their own.' };
         }
         if (!/obligatori|mandatory|required/.test(ctx.flat)) {
-          return { level: 'warn', msg: 'El seguro se menciona pero no queda marcado como obligatorio.' };
+          return { level: 'warn', msg: 'Insurance is mentioned but not flagged as mandatory.' };
         }
       }
     },
@@ -74,7 +74,7 @@ const DeckLint = {
       id: 'partner-oficial',
       run(ctx) {
         if (/partner oficial|socio oficial|official partner|officially partnered|partner of fc barcelona|partner del/.test(ctx.flat)) {
-          return { level: 'error', msg: 'Hay lenguaje de "partner oficial". Odisea no es partner oficial del FCB, del Valencia CF ni de la RFEF. Describe dónde entrena el grupo, no una alianza.' };
+          return { level: 'error', msg: '"Official partner" language found. Odisea is not an official partner of FCB, Valencia CF or the RFEF. Describe where the group trains, not a partnership.' };
         }
       }
     },
@@ -82,7 +82,7 @@ const DeckLint = {
       id: 'grabacion-partidos',
       run(ctx) {
         if (/grabacion de (los )?partidos|match filming|film(ing|ed) (the |every |each )?match|video analysis per player|etiquetado por jugador|per-player tagging/.test(ctx.flat)) {
-          return { level: 'error', msg: 'Se promete grabación de partidos o etiquetado por jugador. Eso no es un servicio de Odisea.' };
+          return { level: 'error', msg: 'Match filming or per-player tagging is being promised. That is not an Odisea service.' };
         }
       }
     },
@@ -92,7 +92,7 @@ const DeckLint = {
         // No prometer entrenamiento con academias de La Liga en grupos
         // masculinos: no esta comprado y no siempre se consigue.
         if (/(academia|academy) (de |del |of )?(la liga|laliga)/.test(ctx.flat)) {
-          return { level: 'error', msg: 'Se promete academia de La Liga. En grupos masculinos no se compromete: usa "club español de categoría equivalente".' };
+          return { level: 'error', msg: 'A La Liga academy is being promised. Never committed for boys\' groups: use "Spanish club of equivalent level".' };
         }
       }
     },
@@ -100,7 +100,7 @@ const DeckLint = {
       id: 'rival-local',
       run(ctx) {
         if (/strong local (team|side|opposition)|equipo local fuerte/.test(ctx.flat)) {
-          return { level: 'warn', msg: 'Dice "strong local team". La fórmula de casa es "competitive game vs Spanish opposition".' };
+          return { level: 'warn', msg: 'Says "strong local team". The house wording is "competitive game vs Spanish opposition".' };
         }
       }
     },
@@ -108,7 +108,7 @@ const DeckLint = {
       id: 'certificacion-menores',
       run(ctx) {
         if (/certificad[oa] (oficial )?(de |para )?(trabajo con )?menores|minors certification|certificate of insurance/.test(ctx.flat)) {
-          return { level: 'error', msg: 'Se afirma una certificación española de trabajo con menores o un certificate of insurance. Odisea no tiene esas acreditaciones que reclamar.' };
+          return { level: 'error', msg: 'Claims a Spanish minors-certification or a certificate of insurance. Odisea has no such accreditation to claim.' };
         }
       }
     },
@@ -118,7 +118,7 @@ const DeckLint = {
       id: 'raya-larga',
       run(ctx) {
         if (ctx.text.indexOf('—') !== -1) {
-          return { level: 'error', msg: 'Hay una raya larga (—) en el texto. En los materiales de Odisea no se usan.' };
+          return { level: 'error', msg: 'There is an em dash (—) in the text. Odisea materials do not use them.' };
         }
       }
     },
@@ -132,15 +132,15 @@ const DeckLint = {
         // como se llama el club, no una decision de idioma nuestra.
         const s = ctx.flatNoNames;
         if (ctx.lang === 'es' && /\bsoccer\b/.test(s)) {
-          return { level: 'error', msg: 'El deck está en castellano y aparece "soccer" fuera del nombre del club.' };
+          return { level: 'error', msg: 'The deck is in Spanish but "soccer" appears outside the club name.' };
         }
         if (ctx.lang !== 'es') {
           const aud = ctx.audience;
           if (aud === 'us' && /\bfootball\b/.test(s) && !/\bsoccer\b/.test(s)) {
-            return { level: 'warn', msg: 'Cliente de EE.UU. y el deck dice "football". Para público estadounidense se escribe "soccer".' };
+            return { level: 'warn', msg: 'US client but the deck says "football". For a US audience it should be "soccer".' };
           }
           if ((aud === 'uk' || aud === 'au' || aud === 'ie') && /\bsoccer\b/.test(s)) {
-            return { level: 'warn', msg: 'Cliente de UK/Irlanda/Australia y el deck dice "soccer". Ahí se escribe "football".' };
+            return { level: 'warn', msg: 'UK/Ireland/Australia client but the deck says "soccer". There it should be "football".' };
           }
         }
       }
@@ -151,7 +151,7 @@ const DeckLint = {
         if (ctx.lang !== 'es') return;
         const m = ctx.flat.match(/\b(uds\.|ustedes van|acomodacion|boletos|remera|pileta|cancha de futbol 11|celular)\b/);
         if (m) {
-          return { level: 'warn', msg: 'Vocabulario no peninsular: "' + m[0] + '". Los decks en español van en castellano de España aunque el cliente sea de LatAm.' };
+          return { level: 'warn', msg: 'Non-peninsular wording: "' + m[0] + '". Spanish decks use Castilian Spanish even when the client is from Latin America.' };
         }
       }
     },
@@ -162,7 +162,7 @@ const DeckLint = {
       run(ctx) {
         const days = ctx.m.days.length, nights = ctx.m.nights;
         if (days && nights && nights !== days - 1) {
-          return { level: 'warn', msg: 'El itinerario tiene ' + days + ' días y el tour ' + nights + ' noches. Lo normal es ' + (days - 1) + '. Revisa si falta un día o sobra una noche.' };
+          return { level: 'warn', msg: 'The itinerary has ' + days + ' days and the tour ' + nights + ' nights. Normally it would be ' + (days - 1) + '. Check for a missing day or an extra night.' };
         }
       }
     },
@@ -173,7 +173,7 @@ const DeckLint = {
           .map((d, i) => ({ n: i + 1, items: (d.items || []).filter(x => x.description) }))
           .filter(x => !x.items.length);
         if (empty.length) {
-          return { level: 'error', msg: 'Días sin agenda: ' + empty.map(x => x.n).join(', ') + '. Saldrían con el horario en blanco.' };
+          return { level: 'error', msg: 'Days with no schedule: ' + empty.map(x => x.n).join(', ') + '. They would come out blank.' };
         }
       }
     },
@@ -184,7 +184,7 @@ const DeckLint = {
           .map((d, i) => ({ n: i + 1, t: (((ctx.m.d.days || [])[i] || {}).titleLine1 || d.title || '').trim() }))
           .filter(x => !x.t);
         if (missing.length) {
-          return { level: 'warn', msg: 'Días sin titular: ' + missing.map(x => x.n).join(', ') + '. La slide sale con el hueco del titular vacío.' };
+          return { level: 'warn', msg: 'Days with no headline: ' + missing.map(x => x.n).join(', ') + '. The slide comes out with an empty headline.' };
         }
       }
     },
@@ -194,7 +194,7 @@ const DeckLint = {
         if (ctx.noPricing) return;
         const tiers = Deck.tiers(ctx.m);
         if (!tiers.length) {
-          return { level: 'error', msg: 'No hay ningún precio cargado y el deck no es la versión "a consultar". Pon precios o genera la versión sin precios.' };
+          return { level: 'error', msg: 'No pricing set and this is not the "On request" version. Add prices or generate the deck without pricing.' };
         }
       }
     },
@@ -209,10 +209,10 @@ const DeckLint = {
         if (ctx.noPricing || !c.costPerPerson || !price) return;
         const margin = (price - c.costPerPerson) / price;
         if (margin < 0) {
-          return { level: 'error', msg: 'El precio por jugador (' + price + ') está POR DEBAJO del coste por persona (' + Math.round(c.costPerPerson) + ').' };
+          return { level: 'error', msg: 'The player price (' + price + ') is BELOW the cost per person (' + Math.round(c.costPerPerson) + ').' };
         }
         if (margin < 0.15) {
-          return { level: 'warn', msg: 'Margen del ' + Math.round(margin * 100) + '% sobre el precio de jugador. Por debajo del 15% conviene revisarlo antes de enviar.' };
+          return { level: 'warn', msg: 'Margin is ' + Math.round(margin * 100) + '% on the player price. Below 15% is worth a second look before sending.' };
         }
       }
     },
@@ -246,7 +246,7 @@ const DeckLint = {
       run(ctx) {
         const noPhoto = ctx.m.chapters.filter(c => !c.photo).length;
         if (noPhoto) {
-          return { level: 'warn', msg: noPhoto + ' capítulo(s) sin foto de fondo. La slide de capítulo sale en negro.' };
+          return { level: 'warn', msg: noPhoto + ' chapter(s) with no background photo. The chapter slide comes out black.' };
         }
       }
     }
@@ -296,7 +296,7 @@ const DeckLint = {
     this.RULES.forEach(rule => {
       let r;
       try { r = rule.run(ctx); }
-      catch (e) { r = { level: 'warn', msg: 'La regla "' + rule.id + '" falló: ' + e.message }; }
+      catch (e) { r = { level: 'warn', msg: 'Rule "' + rule.id + '" failed: ' + e.message }; }
       if (r) { r.id = rule.id; out.push(r); }
     });
     // Errores primero.

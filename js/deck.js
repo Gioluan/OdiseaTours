@@ -129,16 +129,16 @@ const Deck = {
       if (problems.length) {
         const lines = problems.map(p => (p.level === 'error' ? '✖  ' : '⚠  ') + p.msg);
         const msg = blocking.length
-          ? 'El deck incumple reglas de Odisea:\n\n' + lines.join('\n') +
-            '\n\nCorrigelo antes de enviarlo al cliente. ¿Generar igualmente?'
-          : 'Avisos:\n\n' + lines.join('\n') + '\n\n¿Generar?';
+          ? 'This deck breaks Odisea rules:\n\n' + lines.join('\n') +
+            '\n\nFix it before sending it to the client. Generate anyway?'
+          : 'Warnings:\n\n' + lines.join('\n') + '\n\nGenerate?';
         if (!confirm(msg)) return;
       }
     }
 
     const html = this.buildHTML(t, opts);
     const w = window.open('', '_blank');
-    if (!w) { alert('El navegador bloqueo la ventana emergente. Permitela y vuelve a intentarlo.'); return; }
+    if (!w) { alert('The browser blocked the pop-up window. Allow it and try again.'); return; }
     w.document.open();
     w.document.write(html);
     w.document.close();
@@ -329,10 +329,10 @@ const Deck = {
   ],
 
   SLIDE_LABELS: {
-    cover: 'Portada', welcome: 'Bienvenida', overview: 'Resumen y ruta',
-    itinerary: 'Capítulos y días', inclusions: 'Qué incluye y precios',
-    payment: 'Calendario de pagos', closing: 'Cierre y contacto',
-    custom: 'Slide libre'
+    cover: 'Cover', welcome: 'Welcome', overview: 'Overview & route',
+    itinerary: 'Chapters & days', inclusions: 'Inclusions & pricing',
+    payment: 'Payment schedule', closing: 'Closing & contact',
+    custom: 'Custom slide'
   },
 
   slideList(t) {

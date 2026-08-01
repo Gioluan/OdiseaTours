@@ -62,7 +62,7 @@ const DeckPicker = {
     const fromUpload = (this._uploaded || [])
       .filter(a => a.kind === kind)
       .map(a => ({
-        value: a.url, url: a.url, label: a.label || a.name || 'Subida',
+        value: a.url, url: a.url, label: a.label || a.name || 'Uploaded',
         caution: '', verified: true, source: 'upload', id: a.id
       }));
 
@@ -90,7 +90,7 @@ const DeckPicker = {
     this._filter = '';
     this.ensureModal().style.display = 'flex';
     document.getElementById(this.MODAL_ID + '-content').innerHTML =
-      '<p style="padding:1rem;color:var(--gray-400)">Cargando el banco de imágenes…</p>';
+      '<p style="padding:1rem;color:var(--gray-400)">Loading the image bank…</p>';
 
     Promise.all([DeckEditor.loadPhotos(), this.loadUploaded()]).then(() => this.render());
   },
@@ -126,7 +126,7 @@ const DeckPicker = {
         '<div style="width:100%;height:110px;background-image:url(\'' + E(x.url) + '\');background-size:' +
         (isLogo ? 'contain' : 'cover') + ';background-position:center;background-repeat:no-repeat"></div>' +
         (x.caution ? '<div style="position:absolute;top:4px;right:4px;background:var(--red);color:#fff;font-size:0.65rem;font-weight:700;padding:1px 5px;border-radius:3px">⚠</div>' : '') +
-        (x.source === 'upload' ? '<div style="position:absolute;top:4px;left:4px;background:var(--green);color:#fff;font-size:0.6rem;font-weight:700;padding:1px 5px;border-radius:3px">SUBIDA</div>' : '') +
+        (x.source === 'upload' ? '<div style="position:absolute;top:4px;left:4px;background:var(--green);color:#fff;font-size:0.6rem;font-weight:700;padding:1px 5px;border-radius:3px">UPLOADED</div>' : '') +
         '<div style="padding:0.3rem 0.4rem;font-size:0.7rem;background:#fff;color:#111;line-height:1.25;height:2.6em;overflow:hidden">' + E(x.label) + '</div>' +
         '</div>';
     }).join('');
@@ -136,26 +136,26 @@ const DeckPicker = {
 
     document.getElementById(this.MODAL_ID + '-content').innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
-        <h3 style="margin:0">${c.kind === 'logo' ? 'Elegir logo' : 'Elegir foto'}</h3>
+        <h3 style="margin:0">${c.kind === 'logo' ? 'Choose logo' : 'Choose photo'}</h3>
         <button style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)" onclick="DeckPicker.close()">&times;</button>
       </div>
 
       <div style="display:flex;gap:0.5rem;margin-bottom:0.7rem;flex-wrap:wrap">
-        <input id="deck-picker-search" value="${E(this._filter)}" placeholder="Buscar…" style="flex:1;min-width:180px;padding:0.4rem 0.6rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" oninput="DeckPicker.filter(this.value)">
-        <button class="btn btn-sm btn-outline" onclick="document.getElementById('deck-picker-file').click()">Subir ${c.kind === 'logo' ? 'logo' : 'foto'}</button>
-        <button class="btn btn-sm btn-outline" onclick="DeckPicker.fromUrl()">Pegar URL</button>
-        ${current ? '<button class="btn btn-sm btn-outline" style="border-color:var(--red);color:var(--red)" onclick="DeckPicker.clear()">Quitar</button>' : ''}
+        <input id="deck-picker-search" value="${E(this._filter)}" placeholder="Search…" style="flex:1;min-width:180px;padding:0.4rem 0.6rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" oninput="DeckPicker.filter(this.value)">
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('deck-picker-file').click()">Upload ${c.kind === 'logo' ? 'logo' : 'photo'}</button>
+        <button class="btn btn-sm btn-outline" onclick="DeckPicker.fromUrl()">Paste URL</button>
+        ${current ? '<button class="btn btn-sm btn-outline" style="border-color:var(--red);color:var(--red)" onclick="DeckPicker.clear()">Remove</button>' : ''}
         <input type="file" id="deck-picker-file" accept="image/*" style="display:none" onchange="DeckPicker.upload(this.files[0])">
       </div>
 
       <div id="deck-picker-status" style="font-size:0.8rem;color:var(--gray-400);margin-bottom:0.5rem"></div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0.6rem;max-height:60vh;overflow-y:auto;padding:0.2rem">
-        ${tiles || '<p style="color:var(--gray-400);font-size:0.85rem">Nada coincide con la búsqueda.</p>'}
+        ${tiles || '<p style="color:var(--gray-400);font-size:0.85rem">Nothing matches that search.</p>'}
       </div>
 
       <p style="font-size:0.75rem;color:var(--gray-400);margin-top:0.7rem;margin-bottom:0">
-        Las marcadas con ⚠ tienen un aviso registrado y piden confirmación. Lo que subas queda en el banco para los próximos tours.
+        Images marked ⚠ have a recorded warning and ask for confirmation. Anything you upload stays in the bank for future tours.
       </p>`;
 
     const s = document.getElementById('deck-picker-search');
@@ -179,7 +179,7 @@ const DeckPicker = {
     const x = (this._visible || [])[i];
     const c = this._ctx;
     if (!x || !c) return;
-    if (x.caution && !confirm('AVISO sobre esta imagen:\n\n' + x.caution + '\n\n¿Usarla de todas formas?')) return;
+    if (x.caution && !confirm('WARNING about this image:\n\n' + x.caution + '\n\nUse it anyway?')) return;
     DeckEditor.save(c.tourId, c.path, x.value);
     this.close();
     Tours.viewTour(c.tourId);
@@ -196,9 +196,9 @@ const DeckPicker = {
   fromUrl() {
     const c = this._ctx;
     if (!c) return;
-    const url = prompt('Pega la URL de la imagen:');
+    const url = prompt('Paste the image URL:');
     if (!url) return;
-    if (!/^https?:\/\//i.test(url)) { alert('Tiene que ser una URL http(s).'); return; }
+    if (!/^https?:\/\//i.test(url)) { alert('It has to be an http(s) URL.'); return; }
     DeckEditor.save(c.tourId, c.path, url);
     this.close();
     Tours.viewTour(c.tourId);
@@ -214,17 +214,17 @@ const DeckPicker = {
   upload(file) {
     const c = this._ctx;
     if (!file || !c) return;
-    if (!/^image\//.test(file.type)) { alert('Eso no es una imagen.'); return; }
+    if (!/^image\//.test(file.type)) { alert('That is not an image.'); return; }
     if (file.size > 8 * 1024 * 1024) {
-      alert('La imagen pesa ' + Math.round(file.size / 1024 / 1024) + ' MB. Máximo 8 MB: un deck con fotos de 10 MB tarda una eternidad en abrir.');
+      alert('That image is ' + Math.round(file.size / 1024 / 1024) + ' MB. Maximum is 8 MB: a deck with 10 MB photos takes forever to open.');
       return;
     }
     if (!DB._firebaseReady || !DB.storage) {
-      alert('No hay conexión con Firebase, así que no se puede subir ahora. Puedes pegar una URL o elegir del banco.');
+      alert('No Firebase connection, so uploading is not possible right now. You can paste a URL or pick from the bank.');
       return;
     }
 
-    this.status('Subiendo ' + file.name + '…');
+    this.status('Uploading ' + file.name + '…');
     const clean = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
     const path = 'deck/' + c.kind + 's/' + Date.now() + '_' + clean;
     const ref = DB.storage.ref(path);
@@ -249,7 +249,7 @@ const DeckPicker = {
       .catch(e => {
         console.warn('deck upload failed:', e);
         this.status('');
-        alert('No se pudo subir: ' + (e.code ? e.code + ' — ' : '') + (e.message || 'error desconocido'));
+        alert('Upload failed: ' + (e.code ? e.code + ' — ' : '') + (e.message || 'unknown error'));
       });
   }
 };
