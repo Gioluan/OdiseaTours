@@ -550,10 +550,9 @@ const CRM = {
       guideFlights: q.guideFlights || 0,
       guideAccommodation: q.guideAccommodation || 0,
       guideMeals: q.guideMeals || 0,
-      // El itinerario, las inclusiones y los ajustes del deck se hacen para
-      // VENDER el tour, antes de que exista. Si no se copian aquí, todo ese
-      // trabajo se pierde justo en el momento de ganar al cliente y hay que
-      // rehacerlo desde cero.
+      // The itinerary, the inclusions and the deck settings are built to SELL
+      // the tour, before it exists. If they are not copied here, all that work
+      // is lost at the exact moment the client is won, and has to be redone.
       itinerary: q.itinerary ? JSON.parse(JSON.stringify(q.itinerary)) : [],
       inclusions: q.inclusions ? JSON.parse(JSON.stringify(q.inclusions)) : [],
       deck: q.deck ? JSON.parse(JSON.stringify(q.deck)) : undefined

@@ -1,22 +1,24 @@
-/* === ODISEA DECK · editor de los campos de presentación =======================
+/* === ODISEA DECK · presentation field editor =================================
  *
- * El CRM ya sabe las fechas, el grupo, los precios y la agenda día a día. Lo que
- * no sabe es lo editorial: qué foto va en cada capítulo, cómo se llama el
- * capítulo, el color del club, el texto de bienvenida. Eso se edita aquí y se
- * guarda en t.deck.
+ * The CRM already knows the dates, the group, the prices and the day-by-day
+ * schedule. What it does not know is the editorial part: which photo goes on
+ * each chapter, what the chapter is called, the club colour, the welcome copy.
+ * That is edited here and stored in t.deck.
  *
- * Todo es opcional. Un tour sin nada de esto genera igualmente un deck
- * presentable; lo que se rellena aquí es lo que lo convierte en el deck de ESE
- * club y no en una plantilla.
+ * All of it is optional. A record with none of this still generates a
+ * presentable deck; what is filled in here is what turns it into THAT club's
+ * deck rather than a template.
  *
- * DeckEditor.render(t)  -> HTML de la sección, se inyecta desde tours.js
+ * DeckEditor.render(rec, kind)  -> section HTML. kind: 'tour' | 'quote'.
+ * Injected from tours.js and from crm.js, because the deck is sales material
+ * and has to exist before the tour does.
  */
 const DeckEditor = {
 
   _photos: null,
 
-  /* El banco de fotos se lee una vez y se cachea. Si no carga, los selectores
-   * pasan a ser campos de texto libres: nunca bloquea la edición. */
+  /* The photo bank is read once and cached. If it fails to load, the pickers
+   * fall back to free text: it never blocks editing. */
   loadPhotos() {
     if (this._photos) return Promise.resolve(this._photos);
     return fetch('assets/photos.json')
@@ -30,8 +32,8 @@ const DeckEditor = {
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   },
 
-  /* Botón con la miniatura de lo que hay elegido. Abre el selector visual.
-   * Un desplegable de nombres de fichero no sirve para elegir una imagen. */
+  /* A button showing a thumbnail of what is selected. Opens the visual picker.
+   * A dropdown of filenames is no way to choose an image. */
   photoSelect(ref, path, value, label, kind) {
     kind = kind || 'photo';
     const url = this.resolve(value, kind);
@@ -52,7 +54,7 @@ const DeckEditor = {
       (meta.caution ? '⚠ ' : '') + this.esc(caption) + '</span></button>';
   },
 
-  /* Un valor guardado puede ser un nombre del banco o una URL ya completa. */
+  /* A stored value can be a name from the bank or an already-complete URL. */
   resolve(v, kind) {
     if (!v) return '';
     if (/^(https?:)?\/\//.test(v) || v.indexOf('assets/') === 0 || v.indexOf('data:') === 0) return v;
@@ -68,9 +70,8 @@ const DeckEditor = {
       '</div>';
   },
 
-  /* kind: 'tour' (por defecto) o 'quote'. El deck es material de venta, así que
-   * esta misma sección se pinta en la ficha del presupuesto, antes de que el
-   * tour exista. */
+  /* kind: 'tour' (default) or 'quote'. The deck is sales material, so this same
+   * section is rendered on the quote record, before the tour exists. */
   render(t, kind) {
     const d = t.deck || {};
     const ref = (kind === 'quote' ? 'quote:' : 'tour:') + t.id;
@@ -78,8 +79,8 @@ const DeckEditor = {
     const days = Deck.normalizeDays(t);
     const E = this.esc.bind(this);
 
-    // Capítulos: si no se han definido, se muestra el reparto que el motor
-    // deduciría, para poder ajustarlo en vez de escribirlo de cero.
+    // Chapters: if none are defined, the split the engine would infer is shown,
+    // so it can be adjusted rather than written from scratch.
     const chapters = (d.chapters && d.chapters.length)
       ? d.chapters
       : (typeof Deck !== 'undefined' ? Deck.chapters(t, days, d.lang || 'en') : []);
@@ -101,10 +102,9 @@ const DeckEditor = {
         </div>
       </div>`).join('');
 
-    // El día completo: cabecera, agenda y lo editorial. Un presupuesto guarda
-    // los días como {day, title, description}; aquí se le puede poner ya la
-    // agenda con horas, que es lo que el deck necesita, sin esperar a que el
-    // tour exista.
+    // The whole day: header, schedule and the editorial bits. A quote stores
+    // days as {day, title, description}; here the timed schedule the deck needs
+    // can already be added, without waiting for the tour to exist.
     const raw = t.itinerary || [];
     const dayRows = days.map((day, i) => {
       const dd = (d.days && d.days[i]) || {};
@@ -241,14 +241,14 @@ const DeckEditor = {
       </div>`;
   },
 
-  /* -- Duplicar --------------------------------------------------------------
-   * Empezar un tour desde otro que ya funcionó, en vez de desde un folio en
-   * blanco. Se copia la parte reutilizable (itinerario, capítulos, fotos,
-   * textos, estructura de costes) y se deja fuera lo que pertenece SOLO al tour
-   * original: pasajeros, facturas, costes reales, código de acceso.
+  /* -- Duplicate -------------------------------------------------------------
+   * Start from one that already worked instead of from a blank page. The
+   * reusable part is copied (itinerary, chapters, photos, copy, cost structure)
+   * and what belongs ONLY to the original is left out: passengers, invoices,
+   * actual costs, access code.
    *
-   * Las fechas se recalculan manteniendo la separación entre días, así que un
-   * itinerario de 2027 sirve para 2028 sin repasar día por día. */
+   * Dates are recalculated keeping the gaps between days, so a 2027 itinerary
+   * works for 2028 without going through it day by day. */
   DONT_COPY: ['id', 'createdAt', 'updatedAt', 'accessCode', 'passengers',
               'providerExpenses', 'documents', 'invoices', 'messages',
               'guideExpenses', 'guideNotes', 'roomPlan', '_deleted'],
@@ -287,8 +287,8 @@ const DeckEditor = {
         copia.startDate = corre(t.startDate);
         copia.endDate = corre(t.endDate);
         (copia.itinerary || []).forEach(d => { if (d.date) d.date = corre(d.date); });
-        // Las fechas de pago del deck eran texto ya formateado de las fechas
-        // viejas: se borran para que se recalculen solas con las nuevas.
+        // The deck payment dates were text already formatted from the old
+        // dates: they are dropped so they recompute from the new ones.
         if (copia.deck) delete copia.deck.payments;
       }
     }
@@ -300,8 +300,9 @@ const DeckEditor = {
   },
 
   /* -- Slides ---------------------------------------------------------------
-   * Qué slides salen, en qué orden, y slides libres para lo que no cabe en las
-   * fijas. "Capítulos y días" no es una slide: es el hueco donde se meten. */
+   * Which slides appear, in what order, plus custom slides for whatever does
+   * not fit the fixed ones. "Chapters & days" is not a slide: it is the slot
+   * they go into. */
   renderSlides(t, ref) {
     const id = ref;
     const E = this.esc.bind(this);
@@ -346,8 +347,8 @@ const DeckEditor = {
       <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-bottom:0.8rem" onclick="DeckEditor.addSlide('${ref}')">+ Add custom slide</button>`;
   },
 
-  /* La primera edición congela la lista por defecto, para que a partir de ahí
-   * mande lo que hay guardado y no el orden del motor. */
+  /* The first edit freezes the default list, so from then on what is stored
+   * wins over the engine's order. */
   _slides(t) {
     if (!t.deck) t.deck = {};
     if (!t.deck.slides || !t.deck.slides.length) t.deck.slides = Deck.slideList(t);
@@ -379,7 +380,7 @@ const DeckEditor = {
     const t = this.rec(ref).rec;
     if (!t) return;
     const s = this._slides(t);
-    // Antes del cierre, que es donde casi siempre se quiere.
+    // Before the closing slide, which is nearly always where it is wanted.
     const at = s.map(x => x.type).lastIndexOf('closing');
     const nueva = { type: 'custom', on: true, eyebrow: '', title: '', title2: '', body: '', photo: '' };
     if (at >= 0) s.splice(at, 0, nueva); else s.push(nueva);
@@ -397,9 +398,9 @@ const DeckEditor = {
     this.refresh(ref);
   },
 
-  /* -- Precios y pagos -------------------------------------------------------
-   * Por defecto salen de los precios del tour y de un calendario 25/35/40. En
-   * cuanto se toca algo aquí, manda lo de aquí. */
+  /* -- Pricing and payments --------------------------------------------------
+   * These default to the record's prices and a 25/35/40 schedule. As soon as
+   * anything here is touched, what is here wins. */
   renderPricing(t, ref) {
     const id = ref;
     const d = t.deck || {};
@@ -480,23 +481,23 @@ const DeckEditor = {
     this.commit(ref, t);
   },
 
-  /* -- Acceso al registro ----------------------------------------------------
-   * Todo pasa por aqui, para que el editor funcione igual sobre un presupuesto
-   * (antes de vender) que sobre un tour confirmado. La referencia lleva el tipo
-   * dentro ('quote:12'), asi que no hay estado que se pueda quedar viejo. */
+  /* -- Record access ---------------------------------------------------------
+   * Everything goes through here, so the editor behaves the same on a quote
+   * (before selling) as on a confirmed tour. The reference carries the kind
+   * inside it ('quote:12'), so there is no state that can go stale. */
   rec(ref) { return Deck.resolve(ref); },
 
   commit(ref, rec) { Deck.save(ref, rec); },
 
-  /* Vuelve a pintar la ficha que corresponda. */
+  /* Re-renders whichever record view applies. */
   refresh(ref) {
     const r = Deck.resolve(ref);
     if (r.kind === 'quote') { if (typeof CRM !== 'undefined') CRM.viewQuote(r.id); }
     else if (typeof Tours !== 'undefined') Tours.viewTour(r.id);
   },
 
-  /* -- Guardado --------------------------------------------------------------
-   * Un solo punto de escritura. path admite 'campo' y 'coleccion.N.campo'. */
+  /* -- Saving ----------------------------------------------------------------
+   * A single write point. path accepts 'field' and 'collection.N.field'. */
   save(ref, path, value) {
     const r = this.rec(ref);
     const t = r.rec;
@@ -519,8 +520,8 @@ const DeckEditor = {
     const t = this.rec(ref).rec;
     if (!t) return;
     if (!t.deck) t.deck = {};
-    // La primera edición congela el reparto que el motor había deducido, para
-    // que tocar una ciudad no reordene todo lo demás.
+    // The first edit freezes the split the engine had inferred, so touching one
+    // city does not reshuffle everything else.
     if (!t.deck.chapters || !t.deck.chapters.length) {
       t.deck.chapters = Deck.chapters(t, t.itinerary || [], t.deck.lang || 'en')
         .map(c => ({ city: c.city, from: c.from, to: c.to, lede: c.lede || '', highlights: c.highlights || '', photo: c.photo || '' }));
@@ -555,11 +556,11 @@ const DeckEditor = {
     this.save(ref, 'days.' + i + '.' + field, value);
   },
 
-  /* -- Itinerario ------------------------------------------------------------
-   * Escribe en rec.itinerary, el mismo campo que usan el editor de tours y el
-   * asistente de presupuestos. Un presupuesto guarda los días con title y
-   * description; aquí se les añade items[] con horas, que es lo que el deck
-   * necesita. Es aditivo: no rompe lo que ya escribía el asistente. */
+  /* -- Itinerary -------------------------------------------------------------
+   * Writes to rec.itinerary, the same field the tour editor and the quote
+   * wizard use. A quote stores days with title and description; here items[]
+   * with times is added on top, which is what the deck needs. It is additive:
+   * it does not break what the wizard already writes. */
   _itin(t) {
     if (!t.itinerary) t.itinerary = [];
     return t.itinerary;

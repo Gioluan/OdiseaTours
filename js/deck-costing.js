@@ -1,45 +1,43 @@
-/* === ODISEA · hoja de costes ==================================================
+/* === ODISEA · cost sheet =====================================================
  *
- * Sustituye a los _make_costing_xlsx.py escritos a mano por tour. Aquellos
- * llevaban las tarifas tecleadas DENTRO del script (65 EUR de media pension,
- * 82 EUR netos de Castelldefels, 750 EUR/dia de autocar), copiadas a ojo del
- * cost book. Cuando una tarifa cambiaba, cambiaba en un script y en ninguno
- * mas.
+ * Replaces the _make_costing_xlsx.py scripts hand-written per tour. Those had
+ * the rates typed INSIDE the script (65 EUR half board, 82 EUR net for
+ * Castelldefels, 750 EUR/day for the coach), copied by eye from the cost book.
+ * When a rate changed, it changed in one script and in none of the others.
  *
- * Aqui los numeros salen del presupuesto que ya esta en el CRM (t.hotels,
- * t.activities, t.coachHire...), es decir del mismo sitio del que sale el
- * precio que se le da al cliente. No hay dos verdades.
+ * Here the numbers come from the quote already in the CRM (t.hotels,
+ * t.activities, t.coachHire...), that is, from the same place the client's
+ * price comes from. There are no two versions of the truth.
  *
- * Dos hojas:
- *   "Quote"        lo que se estimo al cotizar, linea a linea, con margen
- *   "Actual cost"  t.providerExpenses: lo que se ha facturado y pagado
+ * Two sheets:
+ *   "Quote"        what was estimated when quoting, line by line, with margin
+ *   "Actual cost"  t.providerExpenses: what has been invoiced and paid
  *
- * Cada linea lleva su origen, que es lo que distingue un presupuesto
- * defendible de una lista de numeros:
- *   VERIFIED    hay factura del proveedor (invoiceReceived)
- *   RATE CARD   sale de una tarifa escrita del proveedor
- *   ESTIMATE    precio de mercado, hay que pedirlo antes de cerrar
+ * Every line carries its source, which is what separates a defensible quote
+ * from a list of numbers:
+ *   VERIFIED    a supplier invoice exists (invoiceReceived)
+ *   RATE CARD   comes from a written supplier rate
+ *   ESTIMATE    market price, must be confirmed before closing
  *
- * La hoja va en ingles, como el resto del CRM. Los comentarios de este fichero
- * siguen en castellano; los nombres de bloque (ACCOMMODATION, TRANSPORT...) no
- * son decorativos: tienen que cuadrar entre VAT_DEFAULT, origin() y
- * quoteLines(), o el IVA y la marca de origen dejan de aplicarse.
+ * The block names (ACCOMMODATION, TRANSPORT...) are not decorative: they have
+ * to line up across VAT_DEFAULT, origin() and quoteLines(), or the VAT and the
+ * source flag stop being applied.
  *
- * DeckCosting.export(ref)   ref: id de tour, 'tour:3' o 'quote:12'
+ * DeckCosting.export(ref)   ref: a tour id, 'tour:3' or 'quote:12'
  *
- * Depende de js/deck.js (Deck.resolve). index.html y sw.js lo cargan antes; si
- * alguna vez se reordenan los <script>, esto revienta con "Deck is not defined".
+ * Depends on js/deck.js (Deck.resolve). index.html and sw.js load it first; if
+ * the <script> order is ever changed, this breaks with "Deck is not defined".
  */
 const DeckCosting = {
 
-  /* IVA por bloque. Se puede sobreescribir por tour en t.costing.iva.
-   * Por defecto 0: los importes del CRM se toman tal cual se metieron, y la
-   * hoja lo dice. Inventar un IVA sobre una cifra que ya lo llevaba dentro es
-   * peor que no ponerlo. */
+  /* VAT per block. Can be overridden per record in t.costing.vat.
+   * Zero by default: CRM amounts are taken exactly as they were entered, and
+   * the sheet says so. Inventing VAT on top of a figure that already included
+   * it is worse than leaving it out. */
   VAT_DEFAULT: { ACCOMMODATION: 0, MEALS: 0, TRANSPORT: 0, ACTIVITIES: 0, GUIDE: 0, COMMISSION: 0 },
 
-  /* ref admite un id de tour, 'tour:3' o 'quote:12': la hoja de costes hace
-   * falta antes de confirmar, que es cuando se decide el precio. */
+  /* ref accepts a tour id, 'tour:3' or 'quote:12': the cost sheet is needed
+   * before confirming, which is when the price is decided. */
   export(ref) {
     if (typeof XLSX === 'undefined') {
       alert('The Excel library (SheetJS) has not loaded yet. Wait a second and try again.');
@@ -79,8 +77,8 @@ const DeckCosting = {
     return cfg[block] != null ? this.num(cfg[block]) : (this.VAT_DEFAULT[block] || 0);
   },
 
-  /* Origen de una linea. Si el tour ya tiene un gasto real del mismo bloque con
-   * factura recibida, esa parte esta verificada. */
+  /* Source of a line. If the record already has an actual expense in the same
+   * block with an invoice received, that part is verified. */
   origin(t, block, hint) {
     if (hint) return hint;
     const cat = { ACCOMMODATION: 'Hotel', TRANSPORT: 'Transport', ACTIVITIES: 'Activity', GUIDE: 'Guide' }[block];
@@ -88,7 +86,7 @@ const DeckCosting = {
     return has ? 'VERIFIED' : 'ESTIMATE';
   },
 
-  /* -- Hoja 1 · presupuesto --------------------------------------------------- */
+  /* -- Sheet 1 · quote ------------------------------------------------------- */
 
   sheetQuote(t) {
     const p = this.pax(t);
@@ -143,7 +141,7 @@ const DeckCosting = {
          p.paying ? totalCost / p.paying : 0);
     push('');
 
-    // -- Ingresos y margen ---------------------------------------------------
+    // -- Revenue and margin --------------------------------------------------
     push('SELLING PRICE AND MARGIN');
     push('Item', 'Pax', 'Price', 'Revenue');
     const tiers = [
@@ -169,7 +167,7 @@ const DeckCosting = {
                    { wch: 12 }, { wch: 13 }, { wch: 7 }, { wch: 11 },
                    { wch: 13 }, { wch: 12 }];
 
-    // Formato de numero: importes con dos decimales, IVA y margen en porcentaje.
+    // Number formats: amounts to two decimals, VAT and margin as percentages.
     const money = '#,##0.00';
     for (let r = firstLine; r <= lastLine + 6; r++) {
       ['E', 'F', 'H', 'I'].forEach(col => {
@@ -185,9 +183,9 @@ const DeckCosting = {
     return ws;
   },
 
-  /* Convierte el presupuesto del CRM en lineas de coste con su detalle. Es la
-   * misma aritmetica que Quote.calculateCosts(), desglosada para que la hoja
-   * explique de donde sale cada euro en vez de dar un total. */
+  /* Turns the CRM quote into cost lines with their detail. Same arithmetic as
+   * Quote.calculateCosts(), broken out so the sheet explains where every euro
+   * comes from instead of handing over a total. */
   quoteLines(t, p, nights, days) {
     const L = [];
 
@@ -281,7 +279,7 @@ const DeckCosting = {
     return L;
   },
 
-  /* -- Hoja 2 · coste real ---------------------------------------------------- */
+  /* -- Sheet 2 · actual cost -------------------------------------------------- */
 
   sheetActual(t) {
     const rows = [];

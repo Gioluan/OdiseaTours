@@ -1,37 +1,37 @@
-/* === ODISEA DECK · generador de itinerarios de presentacion ==================
+/* === ODISEA DECK · itinerary presentation generator ==========================
  *
- * Sustituye a los scripts _fill_<cliente>.py de
- * tools/odisea-itinerary-template/. Aquellos eran ~1.000 lineas escritas a mano
- * por tour; de esas, la mitad era siempre lo mismo (constructor de filas, borrar
- * ranuras de dia sobrantes, variante sin precios, retoques de maquetacion y unos
- * 40 asserts de reglas de Odisea). Esa mitad vive aqui una sola vez.
+ * Replaces the _fill_<client>.py scripts in tools/odisea-itinerary-template/.
+ * Those were ~1,000 hand-written lines per tour, and half of them were always
+ * the same thing (the schedule-row builder, deleting unused day slots, the
+ * no-pricing variant, layout patches and some 40 asserts for the Odisea rules).
+ * That half now lives here once.
  *
- * Lee el MISMO documento de tour que ya usa el CRM. Nada que teclear dos veces:
- *   t.itinerary[].items{time, description, highlight}  ->  filas del horario
- *   t.destinations / t.hotels                          ->  capitulos y estancias
- *   t.priceStudent / Sibling / Adult                   ->  tabla de precios
- *   t.inclusions                                       ->  que incluye
+ * Reads the SAME tour document the CRM already uses. Nothing typed twice:
+ *   t.itinerary[].items{time, description, highlight}  ->  schedule rows
+ *   t.destinations / t.hotels                          ->  chapters and stays
+ *   t.priceStudent / Sibling / Adult                   ->  pricing table
+ *   t.inclusions                                       ->  what's included
  *
- * Lo que el CRM no sabe (fotos, ledes, color del club, copy de portada y cierre)
- * vive en t.deck, y se edita en la pestana Deck de la ficha del tour.
+ * What the CRM does not know (photos, ledes, club colour, cover and closing
+ * copy) lives in t.deck and is edited in the Deck section of the record.
  *
- * A diferencia de la plantilla original, aqui NO hay 10 ranuras de dia fijas:
- * se generan tantas diapositivas como dias tenga el itinerario. Hawaii con 11
- * noches deja de ser un problema.
+ * Unlike the original template there are NO 10 fixed day slots here: as many
+ * slides are generated as the itinerary has days. Hawaii with 11 nights stops
+ * being a problem.
  *
- * Salida: una ventana nueva con el deck a 1920x1080. Se navega con las flechas
- * y con Imprimir -> Guardar como PDF sale el entregable, una slide por pagina
- * (de eso se encarga deck-stage.js, que es el mismo componente de la plantilla).
+ * Output: a new window with the deck at 1920x1080. Arrow keys navigate, and
+ * Print -> Save as PDF produces the deliverable, one slide per page (that is
+ * deck-stage.js, the same component the template used).
  *
- * Deck.generate(tourId)              deck con precios
- * Deck.generate(tourId, {noPricing:true})   version "a consultar"
+ * Deck.generate(ref)                     deck with pricing
+ * Deck.generate(ref, {noPricing:true})   "On request" version
  */
 const Deck = {
 
-  /* -- Textos fijos ---------------------------------------------------------
-   * Todo el texto que no sale del tour. El primer deck en castellano (BHM,
-   * agosto 2026) se hizo traduciendo la plantilla a mano; esto lo hace
-   * innecesario. Para anadir un idioma, se copia el bloque y se traduce. */
+  /* -- Fixed strings --------------------------------------------------------
+   * Every string that does not come from the tour. The first Spanish deck (BHM,
+   * August 2026) was produced by translating the template by hand; this makes
+   * that unnecessary. To add a language, copy the block and translate it. */
   UI: {
     en: {
       chapterCover: 'Chapter I', itinerary: 'Itinerary',
@@ -95,8 +95,8 @@ const Deck = {
     }
   },
 
-  /* Coordenadas para la etiqueta de capitulo ("Parte Uno · Madrid · 40.4168° N").
-   * Un detalle de la plantilla original que da caracter de cuaderno de viaje. */
+  /* Coordinates for the chapter label ("Part One · Madrid · 40.4168° N").
+   * A detail from the original template that gives it a travel-log character. */
   COORDS: {
     'madrid': '40.4168° N', 'barcelona': '41.3874° N',
     'valencia': '39.4699° N', 'sevilla': '37.3891° N',
@@ -112,16 +112,15 @@ const Deck = {
 
   /* ======================================================================== */
 
-  /* -- De donde sale el registro --------------------------------------------
-   * El deck es material de VENTA: tiene que poder salir de un presupuesto,
-   * antes de que el tour exista. Quotes y tours comparten casi todo el esquema
-   * (destinos, hoteles, actividades, precios, itinerario), asi que el motor
-   * trabaja indistintamente sobre los dos.
+  /* -- Where the record comes from ------------------------------------------
+   * The deck is SALES material: it has to be produced from a quote, before the
+   * tour exists. Quotes and tours share almost the whole schema (destinations,
+   * hotels, activities, prices, itinerary), so the engine works on both.
    *
-   * ref admite:
-   *   3            un tour, por compatibilidad con las llamadas de siempre
-   *   'tour:3'     lo mismo, explicito
-   *   'quote:12'   un presupuesto
+   * ref accepts:
+   *   3            a tour, for compatibility with the original calls
+   *   'tour:3'     the same, explicit
+   *   'quote:12'   a quote
    */
   resolve(ref) {
     const s = String(ref);
@@ -138,10 +137,11 @@ const Deck = {
     return r.kind === 'quote' ? DB.saveQuote(rec) : DB.saveTour(rec);
   },
 
-  /* Un presupuesto guarda los dias como {day, title, description}; un tour como
-   * {day, date, items:[{time, description, highlight}]}. El deck necesita filas
-   * de horario, asi que se normalizan los dos a la misma forma sin tocar lo
-   * guardado: una descripcion suelta se parte por lineas y se usa de agenda. */
+  /* A quote stores days as {day, title, description}; a tour as
+   * {day, date, items:[{time, description, highlight}]}. The deck needs
+   * schedule rows, so both are normalised to the same shape without touching
+   * what is stored: a loose description is split by lines and used as the
+   * schedule. */
   normalizeDays(rec) {
     return (rec.itinerary || []).slice()
       .sort((a, b) => (a.day || 0) - (b.day || 0))
@@ -150,7 +150,7 @@ const Deck = {
         if (!items || !items.length) {
           const lines = String(d.description || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
           items = lines.map(x => {
-            // "09:30 Llegada al estadio" -> hora + texto. Sin hora, fila sin hora.
+            // "09:30 Arrive at the stadium" -> time + text. No time, no time.
             const m = x.match(/^(\d{1,2}\s*[:.]\s*\d{2}|\d{3,4})\s+(.*)$/);
             return m ? { time: m[1], description: m[2] } : { time: '', description: x };
           });
@@ -170,8 +170,8 @@ const Deck = {
     }
     opts = Object.assign({}, opts, { kind: r.kind });
 
-    // El linter avisa antes de generar. Es la red que antes eran los asserts
-    // al final de cada script de Python.
+    // The linter warns before generating. It is the safety net that used to be
+    // the asserts at the bottom of every Python script.
     if (typeof DeckLint !== 'undefined' && !opts.skipLint) {
       const problems = DeckLint.check(t, opts);
       const blocking = problems.filter(p => p.level === 'error');
@@ -201,8 +201,8 @@ const Deck = {
       .replace(/"/g, '&quot;');
   },
 
-  /* Las fechas del CRM son 'YYYY-MM-DD'. new Date() las lee como UTC y en
-   * husos negativos se van un dia atras, asi que se construyen en local. */
+  /* CRM dates are 'YYYY-MM-DD'. new Date() reads them as UTC and in negative
+   * offsets they slip back a day, so they are built in local time. */
   parseDate(s) {
     if (!s) return null;
     if (s instanceof Date) return s;
@@ -218,7 +218,7 @@ const Deck = {
     return d.toLocaleDateString(this.UI[lang].locale, o);
   },
 
-  /* '0900' | '9:00' | '9am' -> '09:00'. Igual que el itinerario del CRM. */
+  /* '0900' | '9:00' | '9am' -> '09:00'. Same as the CRM itinerary. */
   fmtTime(v) {
     if (!v) return '';
     const s = String(v).trim();
@@ -245,10 +245,10 @@ const Deck = {
     return (+t.numStudents || 0) + (+t.numSiblings || 0) + (+t.numAdults || 0) + (+t.numFOC || 0);
   },
 
-  /* -- Normalizacion del tour ------------------------------------------------
-   * Une lo que hay en el doc del tour con lo editado en la pestana Deck y
-   * rellena por defecto todo lo que falte, para que un tour a medio configurar
-   * genere igualmente un deck presentable. */
+  /* -- Record normalisation --------------------------------------------------
+   * Merges what is in the record with what was edited in the Deck section and
+   * fills in defaults for everything missing, so that a half-configured record
+   * still produces a presentable deck. */
   model(t, opts) {
     const d = t.deck || {};
     const lang = d.lang === 'es' ? 'es' : 'en';
@@ -270,9 +270,9 @@ const Deck = {
     };
   },
 
-  /* Reparte los dias en capitulos. Si el tour no los define, agrupa dias
-   * consecutivos por ciudad; y si tampoco hay ciudad por dia, cae al destino
-   * del tour y hace un unico capitulo. */
+  /* Splits the days into chapters. If the record does not define them, it
+   * groups consecutive days by city; and if there is no per-day city either, it
+   * falls back to the destination and makes a single chapter. */
   chapters(t, days, lang) {
     const d = t.deck || {};
     const dayCity = (day, i) => {
@@ -286,8 +286,8 @@ const Deck = {
     } else {
       chs = [];
       days.forEach((day, i) => {
-        // El nombre de la ciudad del dia de traslado ("Valencia -> Barcelona")
-        // abre capitulo con la ciudad de destino.
+        // A transfer day's city ("Valencia -> Barcelona") opens the chapter
+        // with the destination city.
         const raw = dayCity(day, i);
         const city = (raw.split(/→|->/).pop() || '').trim();
         const last = chs[chs.length - 1];
@@ -320,8 +320,9 @@ const Deck = {
     const base = location.href.replace(/[^\/]*(\?.*)?$/, '');
     const title = this.esc(t.tourName || t.clientName || 'Odisea Tours');
 
-    // El orden y qué slides salen es editable (pestaña Deck). 'itinerary' es el
-    // hueco donde se meten los capítulos y sus días, tantos como haya.
+    // Which slides appear and in what order is editable (Deck section).
+    // 'itinerary' is the slot where the chapters and their days go, as many as
+    // there are.
     const sections = [];
     this.slideList(t).filter(s => s.on !== false).forEach(s => {
       switch (s.type) {
@@ -364,9 +365,9 @@ const Deck = {
       '\n\n</deck-stage>\n\n</body>\n</html>\n';
   },
 
-  /* Las slides fijas del deck y su orden. Un tour que nunca lo ha tocado usa el
-   * orden de siempre; en cuanto se edita en la pestaña Deck manda t.deck.slides.
-   * 'itinerary' no es una slide: es el hueco de los capítulos y los días. */
+  /* The fixed slides and their order. A record that has never touched this uses
+   * the usual order; once edited in the Deck section, t.deck.slides wins.
+   * 'itinerary' is not a slide: it is the slot for the chapters and days. */
   DEFAULT_SLIDES: [
     { type: 'cover', on: true },
     { type: 'welcome', on: true },
@@ -387,8 +388,8 @@ const Deck = {
   slideList(t) {
     const saved = t.deck && t.deck.slides;
     if (!saved || !saved.length) return this.DEFAULT_SLIDES.map(s => Object.assign({}, s));
-    // Si en el futuro se añade una slide fija nueva al motor, se cuela al final
-    // de los decks ya guardados en vez de desaparecer sin avisar.
+    // If a new fixed slide is added to the engine later, it slips in at the end
+    // of already-saved decks instead of silently disappearing.
     const out = saved.map(s => Object.assign({}, s));
     this.DEFAULT_SLIDES.forEach(def => {
       if (!out.some(s => s.type === def.type)) out.push(Object.assign({}, def));
@@ -396,8 +397,9 @@ const Deck = {
     return out;
   },
 
-  /* Slide libre: un titular, un texto y una foto opcional. Para lo que no cabe
-   * en las fijas (una nota sobre vuelos, un torneo, condiciones especiales). */
+  /* Custom slide: a headline, some text and an optional photo. For whatever
+   * does not fit the fixed ones (a note on flights, a tournament, special
+   * conditions). */
   slideCustom(m, s) {
     const E = this.esc.bind(this);
     const photo = this.photo(m, s.photo, '');
@@ -425,8 +427,8 @@ const Deck = {
       '    </div>');
   },
 
-  /* Resuelve una referencia de foto. Acepta un nombre del banco
-   * (assets/photos/), una ruta ya completa o una URL externa. */
+  /* Resolves a photo reference. Accepts a name from the bank (assets/photos/),
+   * an already-complete path, or an external URL. */
   photo(m, ref, fallback) {
     const v = ref || fallback || '';
     if (!v) return '';
@@ -434,11 +436,11 @@ const Deck = {
     return 'assets/photos/' + v;
   },
 
-  /* Valor listo para un atributo style. Va en el elemento y no en una variable
-   * CSS a proposito: dentro de una variable, Chrome resuelve las url()
-   * relativas contra el fichero .css donde se usa la variable, y las fotos se
-   * pedian en /css/assets/... Aqui la url la resuelve el documento, que es lo
-   * que queremos. */
+  /* A value ready for a style attribute. It goes on the element and NOT in a
+   * CSS variable, deliberately: inside a variable, Chrome resolves relative
+   * url() against the .css file where the variable is USED, and the photos were
+   * being requested from /css/assets/... Here the document resolves the url,
+   * which is what we want. */
   bgImage(url, gradient) {
     const layers = [];
     if (gradient) layers.push(gradient);
@@ -458,7 +460,7 @@ const Deck = {
     return '  <section data-label="' + this.esc(label) + '">\n' + inner + '\n  </section>';
   },
 
-  /* -- 1 · Portada ----------------------------------------------------------- */
+  /* -- 1 · Cover ------------------------------------------------------------- */
   slideCover(m) {
     const t = m.t, d = m.d, ui = m.ui, E = this.esc.bind(this);
     const client = t.clientName || t.tourName || '';
@@ -547,7 +549,7 @@ const Deck = {
     return (m.t.destinations || [m.t.destination || '']).join(' · ');
   },
 
-  /* -- 2 · Bienvenida -------------------------------------------------------- */
+  /* -- 2 · Welcome ----------------------------------------------------------- */
   slideWelcome(m) {
     const d = m.d, ui = m.ui, E = this.esc.bind(this);
     const g = d.glance || [];
@@ -589,7 +591,7 @@ const Deck = {
       '    </div>');
   },
 
-  /* -- 3 · Resumen y ruta ---------------------------------------------------- */
+  /* -- 3 · Overview and route ------------------------------------------------ */
   slideOverview(m) {
     const t = m.t, d = m.d, ui = m.ui, E = this.esc.bind(this);
     const kv = (k, v) => '          <div>\n            <div class="k">' + E(k) +
@@ -638,12 +640,12 @@ const Deck = {
     return this.COORDS[key] || '';
   },
 
-  /* -- Capitulo -------------------------------------------------------------- */
+  /* -- Chapter --------------------------------------------------------------- */
   slideChapter(m, c) {
     const ui = m.ui, E = this.esc.bind(this);
     const city = (c.city || '').toUpperCase();
-    // Una letra en color dentro del nombre de la ciudad. Por defecto la
-    // primera; c.accentIndex la mueve.
+    // One accented letter inside the city name. First by default;
+    // c.accentIndex moves it.
     const ai = Math.max(0, Math.min(city.length - 1, c.accentIndex == null ? 0 : c.accentIndex));
     const pre = city.slice(0, ai), acc = city.slice(ai, ai + 1), post = city.slice(ai + 1);
 
@@ -688,10 +690,10 @@ const Deck = {
     return fa + ' ' + to + ' ' + db.toLocaleDateString(m.ui.locale, { day: 'numeric', month: 'long', year: 'numeric' });
   },
 
-  /* -- Dia -------------------------------------------------------------------
-   * Aqui es donde el CRM ya tenia hecho el trabajo: t.itinerary[i].items es
-   * exactamente lo que la plantilla llamaba sched-row, y el flag highlight es
-   * la clase feature. */
+  /* -- Day -------------------------------------------------------------------
+   * This is where the CRM had already done the work: t.itinerary[i].items is
+   * exactly what the template called sched-row, and the highlight flag is the
+   * feature class. */
   slideDay(m, i) {
     const ui = m.ui, E = this.esc.bind(this);
     const day = m.days[i];
@@ -705,8 +707,8 @@ const Deck = {
       '<div class="what">' + E(it.description || '') + '</div></div>'
     ).join('\n');
 
-    // El titular del dia: si el CRM trae title, se parte en dos lineas por la
-    // barra vertical; si no, se usa el que se haya escrito en la pestana Deck.
+    // The day headline: if the record has a title it is split into two lines on
+    // the pipe character; otherwise the one written in the Deck section is used.
     const rawTitle = dd.titleLine1 ? null : (day.title || '');
     let l1 = dd.titleLine1 || '', l2 = dd.titleLine2 || '';
     if (rawTitle) {
@@ -720,7 +722,7 @@ const Deck = {
     const metaK = dd.metaK || (isTransfer ? ui.transfer : ui.stay);
     const metaV = dd.metaV || city;
 
-    // Lo destacado sale solo de la primera fila marcada como feature.
+    // The highlight is taken from the first row flagged as a feature.
     const firstFeature = items.filter(x => x.highlight)[0];
     const highlight = dd.highlight || (firstFeature ? firstFeature.description : '');
 
@@ -764,12 +766,12 @@ const Deck = {
     return c ? c.city : '';
   },
 
-  /* -- Que incluye y precios -------------------------------------------------- */
+  /* -- Inclusions and pricing ------------------------------------------------- */
   slideInclusions(m) {
     const t = m.t, d = m.d, ui = m.ui, E = this.esc.bind(this);
 
-    // t.inclusions es una lista plana de textos. La plantilla quiere pares
-    // clave/valor, asi que se parte por el primer ':' cuando lo hay.
+    // t.inclusions is a flat list of strings. The template wants key/value
+    // pairs, so it is split on the first ':' when there is one.
     const raw = (d.inclusions && d.inclusions.length)
       ? d.inclusions
       : (t.inclusions || []).map(s => {
@@ -828,8 +830,8 @@ const Deck = {
       '    </div>');
   },
 
-  /* Media pension SIEMPRE y seguro NUNCA incluido: las dos reglas duras de
-   * Odisea. Si nadie escribe nada, el deck las dice bien por defecto. */
+  /* Half board ALWAYS and insurance NEVER included: the two hard Odisea rules.
+   * If nobody writes anything, the deck states them correctly by default. */
   defaultNotIncluded(m) {
     return m.lang === 'es'
       ? 'Vuelos internacionales · comidas del mediodía (por cuenta propia) · seguro de viaje y médico, obligatorio, que aporta cada club · gastos personales'
@@ -856,8 +858,8 @@ const Deck = {
     ].filter(x => m.noPricing || (x.price != null && x.price !== '' && +x.price > 0));
   },
 
-  /* Calendario 25 / 35 / 40 contando hacia atrás desde la salida. Es solo el
-   * punto de partida: en cuanto se toca en la pestaña Deck, manda lo editado. */
+  /* A 25 / 35 / 40 schedule counted back from departure. Only a starting
+   * point: once touched in the Deck section, the edited values win. */
   defaultPayments(m) {
     const ui = m.ui;
     const start = this.parseDate(m.t.startDate);
@@ -879,7 +881,7 @@ const Deck = {
     ];
   },
 
-  /* -- Calendario de pagos ---------------------------------------------------- */
+  /* -- Payment schedule ------------------------------------------------------- */
   slidePayment(m) {
     const d = m.d, ui = m.ui, E = this.esc.bind(this);
 
@@ -929,7 +931,7 @@ const Deck = {
       '    </div>');
   },
 
-  /* -- Cierre ----------------------------------------------------------------- */
+  /* -- Closing ---------------------------------------------------------------- */
   slideClosing(m) {
     const d = m.d, ui = m.ui, E = this.esc.bind(this);
     const ct = d.closingTitle || [m.lang === 'es' ? 'Vamos,' : 'Vamos,', (m.t.clientName || '') + '.'];

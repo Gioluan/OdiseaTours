@@ -1,13 +1,15 @@
-/* === ODISEA DECK · hoja de estilo del deck de itinerarios ===
-   Portada literal del <style> de tools/odisea-itinerary-template/template.html
-   (1920x1080, paleta y tipografia de marca). NO tocar salvo cambio de marca.
-   Lo unico que varia por tour son dos variables que js/deck.js sobreescribe en
-   un <style> del documento: --client-accent y --client-accent-deep.
+/* === ODISEA DECK · itinerary deck stylesheet ===
+   A verbatim lift of the <style> block from
+   tools/odisea-itinerary-template/template.html (1920x1080, brand palette and
+   typography). Do NOT touch unless the brand changes.
 
-   Las fotos NO van en variables. Chrome resuelve una url() relativa metida en
-   una variable contra el fichero donde se USA la variable (este), no contra
-   donde se declara el valor, y las fotos se pedian en /css/assets/... -> 404.
-   Las pone js/deck.js en el style de cada elemento, con Deck.bgImage(). */
+   The only things that vary per record are two variables that js/deck.js
+   overrides in a document <style>: --client-accent and --client-accent-deep.
+
+   Photos do NOT go in variables. Chrome resolves a relative url() placed inside
+   a variable against the file where the variable is USED (this one), not where
+   the value is declared, so photos were being requested from /css/assets/...
+   -> 404. js/deck.js puts them in each element's style, via Deck.bgImage(). */
   :root {
     --paper: #F6F6F6;
     --paper-warm: #EFECE4;
@@ -17,8 +19,8 @@
     --gold: #FFB400;
     --gold-deep: #C98A00;
 
-    /* Por defecto el oro de Odisea. js/deck.js los reescribe con el color del
-       club cuando el tour lo trae. */
+    /* Odisea gold by default. js/deck.js overrides these with the club colour
+       when the record carries one. */
     --client-accent: #FFB400;
     --client-accent-deep: #C98A00;
 
@@ -113,10 +115,11 @@
     height: 100%;
     overflow: hidden;
   }
-  /* background-image lo pone js/deck.js en el style del propio elemento, con el
-     degradado incluido. NO usar una variable CSS con un url() relativo dentro:
-     Chrome resuelve esa url contra el fichero donde se USA la variable (este),
-     no contra donde se declara, y la foto se pedia en /css/assets/... -> 404. */
+  /* background-image is set by js/deck.js on the element itself, gradient
+     included. Do NOT use a CSS variable with a relative url() inside: Chrome
+     resolves that url against the file where the variable is USED (this one),
+     not where it is declared, and the photo was requested from
+     /css/assets/... -> 404. */
   .cover .cover-img {
     position: absolute;
     inset: 0;
@@ -829,7 +832,7 @@
     overflow: hidden;
     background: #0a0a0a;
   }
-  /* background-image en el style del elemento, por el mismo motivo que .cover-img */
+  /* background-image on the element's style, for the same reason as .cover-img */
   .closing .col-right .photo {
     position: absolute; inset: 0;
     background-size: cover;

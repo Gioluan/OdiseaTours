@@ -1,23 +1,23 @@
-/* === ODISEA DECK · selector visual de imágenes ================================
+/* === ODISEA DECK · visual image picker =======================================
  *
- * Un desplegable con nombres de fichero no sirve para elegir una foto: nadie
- * recuerda qué se ve en "aerial-pitches.jpg". Esto abre una rejilla con las
- * miniaturas de verdad.
+ * A dropdown of filenames is no way to choose a photo: nobody remembers what is
+ * in "aerial-pitches.jpg". This opens a grid of real thumbnails.
  *
- * Tres orígenes en la misma rejilla:
- *   1. El banco del repo    assets/photos/ + assets/logos/, descrito en photos.json
- *   2. Lo subido            Firebase Storage, indexado en la colección deckAssets
- *   3. Una URL pegada       para una foto que el club manda por correo
+ * Three sources in the same grid:
+ *   1. The repo bank    assets/photos/ + assets/logos/, described in photos.json
+ *   2. Uploads          Firebase Storage, indexed in the deckAssets collection
+ *   3. A pasted URL     for a photo the club sends over by email
  *
- * Lo que se sube se queda en el banco para los siguientes tours. Es la
- * diferencia entre una carpeta y una biblioteca: cada tour deja el sitio mejor
- * de como lo encontró.
+ * Whatever is uploaded stays in the bank for the next tours. That is the
+ * difference between a folder and a library: every tour leaves the place better
+ * than it found it.
  *
- * Las fotos con aviso (el caso de fcb-stadium.jpg, que NO es el Camp Nou) salen
- * marcadas en rojo y piden confirmación al elegirlas. La advertencia deja de
- * depender de que alguien se acuerde.
+ * Photos carrying a warning (the fcb-stadium.jpg case, which is NOT the Camp
+ * Nou) are outlined in red and ask for confirmation when picked. The warning
+ * stops depending on somebody remembering it.
  *
- * DeckPicker.open(tourId, path, kind)   kind: 'photo' | 'logo'
+ * DeckPicker.open(ref, path, kind)   ref: 'quote:12' | 'tour:3'
+ *                                    kind: 'photo' | 'logo'
  */
 const DeckPicker = {
 
@@ -27,10 +27,10 @@ const DeckPicker = {
 
   MODAL_ID: 'deck-picker-modal',
 
-  /* -- Datos ----------------------------------------------------------------- */
+  /* -- Data ------------------------------------------------------------------ */
 
-  /* Lo subido vive en Firestore para que el banco crezca entre tours. Si no hay
-   * conexión se sigue pudiendo elegir del banco del repo. */
+  /* Uploads live in Firestore so the bank grows between tours. With no
+   * connection, picking from the repo bank still works. */
   loadUploaded() {
     if (this._uploaded) return Promise.resolve(this._uploaded);
     if (!DB._firebaseReady || !DB.firestore) { this._uploaded = []; return Promise.resolve([]); }
@@ -44,7 +44,7 @@ const DeckPicker = {
       .catch(e => { console.warn('deckAssets:', e.message); this._uploaded = []; return []; });
   },
 
-  /* Todo lo elegible para este tipo, ya normalizado. */
+  /* Everything selectable for this kind, already normalised. */
   items(kind) {
     const bank = (DeckEditor._photos) || { photos: {}, logos: {} };
     const src = kind === 'logo' ? (bank.logos || {}) : (bank.photos || {});
@@ -69,7 +69,7 @@ const DeckPicker = {
     return fromRepo.concat(fromUpload);
   },
 
-  /* -- Modal ------------------------------------------------------------------ */
+  /* -- Modal ----------------------------------------------------------------- */
 
   ensureModal() {
     let el = document.getElementById(this.MODAL_ID);
@@ -131,7 +131,7 @@ const DeckPicker = {
         '</div>';
     }).join('');
 
-    // El índice del tile tiene que corresponder con la lista filtrada.
+    // The tile index has to match the filtered list.
     this._visible = list;
 
     document.getElementById(this.MODAL_ID + '-content').innerHTML = `
@@ -209,7 +209,7 @@ const DeckPicker = {
     if (el) el.textContent = msg || '';
   },
 
-  /* -- Subida ---------------------------------------------------------------- */
+  /* -- Upload ---------------------------------------------------------------- */
 
   upload(file) {
     const c = this._ctx;

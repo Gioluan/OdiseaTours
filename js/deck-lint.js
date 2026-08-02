@@ -1,26 +1,29 @@
-/* === ODISEA DECK · linter de reglas ==========================================
+/* === ODISEA DECK · rule linter ===============================================
  *
- * Las reglas de Odisea que hasta ahora vivian en la cabeza de quien escribia el
- * deck, y en unos 40 assert al final de cada _fill_<cliente>.py. Un assert que
- * hay que reescribir en cada tour no es una regla: es una costumbre. Esto si es
- * una regla.
+ * The Odisea rules that until now lived in the head of whoever wrote the deck,
+ * and in some 40 asserts at the bottom of every _fill_<client>.py. An assert
+ * that has to be rewritten for each tour is not a rule: it is a habit. This is
+ * a rule.
  *
- * Cada entrada de RULES mira el texto plano del deck ya generado, o el modelo
- * del tour, y devuelve un problema o nada.
+ * Each RULES entry looks at the plain text of the generated deck, or at the
+ * model, and returns a problem or nothing.
  *
- *   level 'error'  no puede salir asi hacia un cliente
- *   level 'warn'   probablemente esta mal, pero puede haber motivo
+ *   level 'error'  cannot go out to a client like this
+ *   level 'warn'   probably wrong, but there may be a reason
  *
- * DeckLint.check(tour, opts) -> [{level, msg}]
+ * DeckLint.check(record, opts) -> [{level, msg}]
  *
- * Anadir una regla nueva: una entrada mas en RULES. No hay que tocar nada mas,
- * y a partir de ese momento aplica a TODOS los decks, tambien a los antiguos
- * cuando se regeneran.
+ * To add a rule: one more entry in RULES. Nothing else to touch, and from that
+ * moment it applies to EVERY deck, including old ones when regenerated.
+ *
+ * The rules search in BOTH languages on purpose: a Spanish deck has to catch
+ * "pension completa" exactly as an English one catches "full board". Only the
+ * messages are in English.
  */
 const DeckLint = {
 
-  /* Texto visible del deck, sin etiquetas, en minusculas y sin acentos, para
-   * poder buscar sin preocuparse de como se escribio. */
+  /* The visible text of the deck, without tags, lowercased and unaccented, so
+   * searching does not depend on how something was typed. */
   plainText(html) {
     const txt = String(html)
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -38,13 +41,12 @@ const DeckLint = {
 
   RULES: [
 
-    /* -- Reglas duras de producto -------------------------------------------- */
+    /* -- Hard product rules --------------------------------------------------- */
     {
-      id: 'media-pension',
+      id: 'half-board',
       run(ctx) {
-        // Media pension SIEMPRE: desayuno y cena en el alojamiento, comida del
-        // mediodia por cuenta propia. Vender pension completa compromete un
-        // coste que no esta comprado.
+        // Half board ALWAYS: breakfast and dinner at the accommodation, lunch
+        // at own cost. Selling full board commits a cost that was never bought.
         if (/pension completa|full board|three meals|tres comidas/.test(ctx.flat)) {
           return { level: 'error', msg: 'Full board appears in the deck. Odisea always sells half board: lunch is at own cost.' };
         }
@@ -54,10 +56,11 @@ const DeckLint = {
       }
     },
     {
-      id: 'seguro',
+      id: 'insurance',
       run(ctx) {
-        // El seguro NO lo pone Odisea, lo trae cada club, y es obligatorio.
-        // El sitio web dijo lo contrario en 17 sitios hasta julio de 2026.
+        // Odisea does NOT provide insurance, each club brings their own, and
+        // it is mandatory. The website said otherwise in 17 places until July
+        // 2026.
         const mentions = /seguro|insurance/.test(ctx.flat);
         if (!mentions) {
           return { level: 'error', msg: 'The deck says nothing about insurance. It must appear as NOT included and mandatory, arranged by each club.' };
@@ -71,7 +74,7 @@ const DeckLint = {
       }
     },
     {
-      id: 'partner-oficial',
+      id: 'official-partner',
       run(ctx) {
         if (/partner oficial|socio oficial|official partner|officially partnered|partner of fc barcelona|partner del/.test(ctx.flat)) {
           return { level: 'error', msg: '"Official partner" language found. Odisea is not an official partner of FCB, Valencia CF or the RFEF. Describe where the group trains, not a partnership.' };
@@ -79,7 +82,7 @@ const DeckLint = {
       }
     },
     {
-      id: 'grabacion-partidos',
+      id: 'match-filming',
       run(ctx) {
         if (/grabacion de (los )?partidos|match filming|film(ing|ed) (the |every |each )?match|video analysis per player|etiquetado por jugador|per-player tagging/.test(ctx.flat)) {
           return { level: 'error', msg: 'Match filming or per-player tagging is being promised. That is not an Odisea service.' };
@@ -87,17 +90,17 @@ const DeckLint = {
       }
     },
     {
-      id: 'academia-la-liga',
+      id: 'la-liga-academy',
       run(ctx) {
-        // No prometer entrenamiento con academias de La Liga en grupos
-        // masculinos: no esta comprado y no siempre se consigue.
+        // Never promise training with La Liga academies for boys' groups: it
+        // is not bought and cannot always be arranged.
         if (/(academia|academy) (de |del |of )?(la liga|laliga)/.test(ctx.flat)) {
           return { level: 'error', msg: 'A La Liga academy is being promised. Never committed for boys\' groups: use "Spanish club of equivalent level".' };
         }
       }
     },
     {
-      id: 'rival-local',
+      id: 'local-opposition',
       run(ctx) {
         if (/strong local (team|side|opposition)|equipo local fuerte/.test(ctx.flat)) {
           return { level: 'warn', msg: 'Says "strong local team". The house wording is "competitive game vs Spanish opposition".' };
@@ -105,7 +108,7 @@ const DeckLint = {
       }
     },
     {
-      id: 'certificacion-menores',
+      id: 'minors-certification',
       run(ctx) {
         if (/certificad[oa] (oficial )?(de |para )?(trabajo con )?menores|minors certification|certificate of insurance/.test(ctx.flat)) {
           return { level: 'error', msg: 'Claims a Spanish minors-certification or a certificate of insurance. Odisea has no such accreditation to claim.' };
@@ -113,9 +116,9 @@ const DeckLint = {
       }
     },
 
-    /* -- Estilo de casa ------------------------------------------------------ */
+    /* -- House style ---------------------------------------------------------- */
     {
-      id: 'raya-larga',
+      id: 'em-dash',
       run(ctx) {
         if (ctx.text.indexOf('—') !== -1) {
           return { level: 'error', msg: 'There is an em dash (—) in the text. Odisea materials do not use them.' };
@@ -125,11 +128,11 @@ const DeckLint = {
     {
       id: 'soccer-football',
       run(ctx) {
-        // soccer para publico de EE.UU., football para el resto. En un deck en
-        // castellano no pinta ninguna de las dos.
+        // soccer for a US audience, football for everyone else. In a Spanish
+        // deck neither belongs.
         //
-        // Se mira sobre el texto SIN nombres propios: "Portage Soccer Club" es
-        // como se llama el club, no una decision de idioma nuestra.
+        // Checked against the text WITHOUT proper nouns: "Portage Soccer Club"
+        // is what the club is called, not a language decision of ours.
         const s = ctx.flatNoNames;
         if (ctx.lang === 'es' && /\bsoccer\b/.test(s)) {
           return { level: 'error', msg: 'The deck is in Spanish but "soccer" appears outside the club name.' };
@@ -146,7 +149,7 @@ const DeckLint = {
       }
     },
     {
-      id: 'castellano-no-rioplatense',
+      id: 'castilian-not-latam',
       run(ctx) {
         if (ctx.lang !== 'es') return;
         const m = ctx.flat.match(/\b(uds\.|ustedes van|acomodacion|boletos|remera|pileta|cancha de futbol 11|celular)\b/);
@@ -156,9 +159,9 @@ const DeckLint = {
       }
     },
 
-    /* -- Coherencia de los datos --------------------------------------------- */
+    /* -- Data coherence ------------------------------------------------------- */
     {
-      id: 'dias-noches',
+      id: 'days-vs-nights',
       run(ctx) {
         const days = ctx.m.days.length, nights = ctx.m.nights;
         if (days && nights && nights !== days - 1) {
@@ -167,7 +170,7 @@ const DeckLint = {
       }
     },
     {
-      id: 'dias-vacios',
+      id: 'empty-days',
       run(ctx) {
         const empty = ctx.m.days
           .map((d, i) => ({ n: i + 1, items: (d.items || []).filter(x => x.description) }))
@@ -178,7 +181,7 @@ const DeckLint = {
       }
     },
     {
-      id: 'titulares-dia',
+      id: 'day-headlines',
       run(ctx) {
         const missing = ctx.m.days
           .map((d, i) => ({ n: i + 1, t: (((ctx.m.d.days || [])[i] || {}).titleLine1 || d.title || '').trim() }))
@@ -189,7 +192,7 @@ const DeckLint = {
       }
     },
     {
-      id: 'precios',
+      id: 'pricing',
       run(ctx) {
         if (ctx.noPricing) return;
         const tiers = Deck.tiers(ctx.m);
@@ -199,10 +202,10 @@ const DeckLint = {
       }
     },
     {
-      id: 'margen',
+      id: 'margin',
       run(ctx) {
-        // Aviso comercial, no de producto: un deck que se manda por debajo del
-        // coste es un error caro y silencioso.
+        // A commercial warning, not a product one: a deck sent out below cost
+        // is an expensive, silent mistake.
         const t = ctx.m.t, c = t.costs || {};
         const paying = (+t.numStudents || 0) + (+t.numSiblings || 0) + (+t.numAdults || 0);
         const price = +t.priceStudent || 0;
@@ -217,9 +220,9 @@ const DeckLint = {
       }
     },
 
-    /* -- Fotos ---------------------------------------------------------------- */
+    /* -- Photos --------------------------------------------------------------- */
     {
-      id: 'fotos-con-aviso',
+      id: 'photos-with-warning',
       run(ctx) {
         const bad = ctx.usedPhotos
           .map(f => ({ f: f, meta: (ctx.manifest.photos || {})[f] }))
@@ -230,9 +233,9 @@ const DeckLint = {
       }
     },
     {
-      id: 'fotos-con-nota',
+      id: 'photos-with-note',
       run(ctx) {
-        // Aviso blando: la foto se puede usar, pero hay algo que mirar.
+        // Soft warning: the photo is usable, but there is something to check.
         const con = ctx.usedPhotos
           .map(f => ({ f: f, meta: (ctx.manifest.photos || {})[f] }))
           .filter(x => x.meta && x.meta.note);
@@ -242,7 +245,7 @@ const DeckLint = {
       }
     },
     {
-      id: 'fotos-que-faltan',
+      id: 'missing-photos',
       run(ctx) {
         const noPhoto = ctx.m.chapters.filter(c => !c.photo).length;
         if (noPhoto) {
@@ -252,7 +255,7 @@ const DeckLint = {
     }
   ],
 
-  /* Cache del manifiesto: se lee una vez por sesion. */
+  /* Manifest cache: read once per session. */
   _manifest: null,
   loadManifest() {
     if (this._manifest) return Promise.resolve(this._manifest);
@@ -268,15 +271,15 @@ const DeckLint = {
     const html = Deck.buildHTML(t, opts);
     const text = this.plainText(html);
 
-    // Fotos realmente usadas en este deck, por nombre de fichero.
+    // Photos actually used in this deck, by filename.
     const used = [];
     (html.match(/assets\/photos\/([^"')]+)/g) || []).forEach(u => {
       const f = u.split('/').pop();
       if (used.indexOf(f) === -1) used.push(f);
     });
 
-    // Los nombres propios (club, tour) se apartan para las reglas de idioma:
-    // el club se llama como se llama y eso no lo decide Odisea.
+    // Proper nouns (club, tour) are set aside for the language rules: the club
+    // is called what it is called and Odisea does not decide that.
     const flat = this.fold(text);
     let flatNoNames = flat;
     [t.clientName, t.tourName].filter(Boolean).forEach(n => {
@@ -299,11 +302,11 @@ const DeckLint = {
       catch (e) { r = { level: 'warn', msg: 'Rule "' + rule.id + '" failed: ' + e.message }; }
       if (r) { r.id = rule.id; out.push(r); }
     });
-    // Errores primero.
+    // Errors first.
     return out.sort((a, b) => (a.level === b.level) ? 0 : (a.level === 'error' ? -1 : 1));
   },
 
-  /* Sin campo explicito, se deduce del pais o la ubicacion del cliente. */
+  /* With no explicit field, inferred from the client's country or location. */
   guessAudience(t) {
     const s = this.fold([(t.deck && t.deck.clientLocation) || '', t.clientCountry || '', t.clientName || ''].join(' '));
     if (/\b(usa|u\.s\.|united states|america|texas|california|florida|michigan|new jersey|hawaii)\b/.test(s)) return 'us';
