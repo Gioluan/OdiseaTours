@@ -116,6 +116,7 @@ const CRM = {
         <div class="price-card"><div class="pc-label">Adult</div><div class="pc-price">${fmt(q.priceAdult, q.currency)}</div></div>
       </div>
       ${CRM._renderRFQTracker(q)}
+      ${typeof DeckEditor !== 'undefined' ? DeckEditor.render(q, 'quote') : ''}
       <div class="modal-actions" style="flex-wrap:wrap">
         <button class="btn btn-primary" onclick="CRM.editQuote(${q.id})">Edit Quote</button>
         <button class="btn btn-outline" onclick="PDFQuote.generate(${q.id})" style="border-color:#111;color:#111">PDF Quote</button>
@@ -548,8 +549,16 @@ const CRM = {
       guideDailyRate: q.guideDailyRate || 0,
       guideFlights: q.guideFlights || 0,
       guideAccommodation: q.guideAccommodation || 0,
-      guideMeals: q.guideMeals || 0
+      guideMeals: q.guideMeals || 0,
+      // El itinerario, las inclusiones y los ajustes del deck se hacen para
+      // VENDER el tour, antes de que exista. Si no se copian aquí, todo ese
+      // trabajo se pierde justo en el momento de ganar al cliente y hay que
+      // rehacerlo desde cero.
+      itinerary: q.itinerary ? JSON.parse(JSON.stringify(q.itinerary)) : [],
+      inclusions: q.inclusions ? JSON.parse(JSON.stringify(q.inclusions)) : [],
+      deck: q.deck ? JSON.parse(JSON.stringify(q.deck)) : undefined
     };
+    if (!tour.deck) delete tour.deck;
     DB.saveTour(tour);
     q.status = 'Confirmed';
     DB.saveQuote(q);

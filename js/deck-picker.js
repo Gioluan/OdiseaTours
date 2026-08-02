@@ -84,9 +84,9 @@ const DeckPicker = {
     return el;
   },
 
-  open(tourId, path, kind) {
+  open(ref, path, kind) {
     kind = kind || 'photo';
-    this._ctx = { tourId: tourId, path: path, kind: kind };
+    this._ctx = { ref: ref, path: path, kind: kind };
     this._filter = '';
     this.ensureModal().style.display = 'flex';
     document.getElementById(this.MODAL_ID + '-content').innerHTML =
@@ -114,7 +114,7 @@ const DeckPicker = {
     const f = this._filter.toLowerCase();
     const list = f ? all.filter(x => (x.label + ' ' + x.value).toLowerCase().indexOf(f) !== -1) : all;
 
-    const t = DB.getTours().find(x => x.id === c.tourId);
+    const t = Deck.resolve(c.ref).rec;
     const current = this.currentValue(t, c.path);
 
     const tiles = list.map((x, i) => {
@@ -180,17 +180,17 @@ const DeckPicker = {
     const c = this._ctx;
     if (!x || !c) return;
     if (x.caution && !confirm('WARNING about this image:\n\n' + x.caution + '\n\nUse it anyway?')) return;
-    DeckEditor.save(c.tourId, c.path, x.value);
+    DeckEditor.save(c.ref, c.path, x.value);
     this.close();
-    Tours.viewTour(c.tourId);
+    DeckEditor.refresh(c.ref);
   },
 
   clear() {
     const c = this._ctx;
     if (!c) return;
-    DeckEditor.save(c.tourId, c.path, '');
+    DeckEditor.save(c.ref, c.path, '');
     this.close();
-    Tours.viewTour(c.tourId);
+    DeckEditor.refresh(c.ref);
   },
 
   fromUrl() {
@@ -199,9 +199,9 @@ const DeckPicker = {
     const url = prompt('Paste the image URL:');
     if (!url) return;
     if (!/^https?:\/\//i.test(url)) { alert('It has to be an http(s) URL.'); return; }
-    DeckEditor.save(c.tourId, c.path, url);
+    DeckEditor.save(c.ref, c.path, url);
     this.close();
-    Tours.viewTour(c.tourId);
+    DeckEditor.refresh(c.ref);
   },
 
   status(msg) {
@@ -242,9 +242,9 @@ const DeckPicker = {
       })
       .then(url => {
         this.status('');
-        DeckEditor.save(c.tourId, c.path, url);
+        DeckEditor.save(c.ref, c.path, url);
         this.close();
-        Tours.viewTour(c.tourId);
+        DeckEditor.refresh(c.ref);
       })
       .catch(e => {
         console.warn('deck upload failed:', e);

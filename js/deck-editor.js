@@ -32,7 +32,7 @@ const DeckEditor = {
 
   /* Botón con la miniatura de lo que hay elegido. Abre el selector visual.
    * Un desplegable de nombres de fichero no sirve para elegir una imagen. */
-  photoSelect(tourId, path, value, label, kind) {
+  photoSelect(ref, path, value, label, kind) {
     kind = kind || 'photo';
     const url = this.resolve(value, kind);
     const bank = (this._photos && (kind === 'logo' ? this._photos.logos : this._photos.photos)) || {};
@@ -42,7 +42,7 @@ const DeckEditor = {
       : 'Choose…';
 
     return (label ? '<label style="font-size:0.75rem;color:var(--gray-400);display:block;margin-bottom:0.15rem">' + this.esc(label) + '</label>' : '') +
-      '<button type="button" onclick="DeckPicker.open(' + tourId + ',\'' + path + '\',\'' + kind + '\')" ' +
+      '<button type="button" onclick="DeckPicker.open(&quot;' + ref + '&quot;,&quot;' + path + '&quot;,&quot;' + kind + '&quot;)" ' +
       'style="width:100%;display:flex;align-items:center;gap:0.5rem;padding:0.25rem 0.4rem;background:#fff;' +
       'border:1.5px solid ' + (meta.caution ? 'var(--red)' : 'var(--gray-200)') + ';border-radius:var(--radius);cursor:pointer;text-align:left">' +
       '<span style="width:42px;height:30px;flex-shrink:0;border-radius:3px;background:' +
@@ -59,19 +59,23 @@ const DeckEditor = {
     return (kind === 'logo' ? 'assets/logos/' : 'assets/photos/') + v;
   },
 
-  field(tourId, path, value, label, placeholder, type) {
+  field(ref, path, value, label, placeholder, type) {
     return '<div class="form-group" style="margin-bottom:0.6rem">' +
       '<label style="font-size:0.75rem;color:var(--gray-400)">' + this.esc(label) + '</label>' +
       (type === 'textarea'
-        ? '<textarea rows="2" placeholder="' + this.esc(placeholder || '') + '" style="width:100%;padding:0.35rem 0.5rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:inherit" onchange="DeckEditor.save(' + tourId + ',\'' + path + '\',this.value)">' + this.esc(value) + '</textarea>'
-        : '<input type="' + (type || 'text') + '" value="' + this.esc(value) + '" placeholder="' + this.esc(placeholder || '') + '" style="width:100%;padding:0.35rem 0.5rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(' + tourId + ',\'' + path + '\',this.value)">') +
+        ? '<textarea rows="2" placeholder="' + this.esc(placeholder || '') + '" style="width:100%;padding:0.35rem 0.5rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:inherit" onchange="DeckEditor.save(&quot;' + ref + '&quot;,&quot;' + path + '&quot;,this.value)">' + this.esc(value) + '</textarea>'
+        : '<input type="' + (type || 'text') + '" value="' + this.esc(value) + '" placeholder="' + this.esc(placeholder || '') + '" style="width:100%;padding:0.35rem 0.5rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(&quot;' + ref + '&quot;,&quot;' + path + '&quot;,this.value)">') +
       '</div>';
   },
 
-  render(t) {
+  /* kind: 'tour' (por defecto) o 'quote'. El deck es material de venta, así que
+   * esta misma sección se pinta en la ficha del presupuesto, antes de que el
+   * tour exista. */
+  render(t, kind) {
     const d = t.deck || {};
-    const id = t.id;
-    const days = t.itinerary || [];
+    const ref = (kind === 'quote' ? 'quote:' : 'tour:') + t.id;
+    const id = ref;
+    const days = Deck.normalizeDays(t);
     const E = this.esc.bind(this);
 
     // Capítulos: si no se han definido, se muestra el reparto que el motor
@@ -84,27 +88,52 @@ const DeckEditor = {
       <div style="background:#fff;border:1.5px solid var(--gray-200);border-radius:var(--radius);padding:0.6rem;margin-bottom:0.5rem">
         <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.4rem">
           <span style="background:var(--amber);color:#111;font-weight:700;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.75rem;flex-shrink:0">${i + 1}</span>
-          <input value="${E(c.city)}" placeholder="City" style="flex:1;padding:0.3rem 0.45rem;font-weight:600;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveChapter(${id},${i},'city',this.value)">
-          <input type="number" min="1" value="${(c.from || 0) + 1}" title="First day" style="width:52px;padding:0.3rem;font-size:0.8rem;text-align:center;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveChapter(${id},${i},'from',this.value-1)">
+          <input value="${E(c.city)}" placeholder="City" style="flex:1;padding:0.3rem 0.45rem;font-weight:600;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveChapter('${ref}',${i},'city',this.value)">
+          <input type="number" min="1" value="${(c.from || 0) + 1}" title="First day" style="width:52px;padding:0.3rem;font-size:0.8rem;text-align:center;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveChapter('${ref}',${i},'from',this.value-1)">
           <span style="color:var(--gray-400);font-size:0.8rem">→</span>
-          <input type="number" min="1" value="${(c.to != null ? c.to : 0) + 1}" title="Last day" style="width:52px;padding:0.3rem;font-size:0.8rem;text-align:center;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveChapter(${id},${i},'to',this.value-1)">
-          <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.85rem" onclick="DeckEditor.removeChapter(${id},${i})">&#10005;</button>
+          <input type="number" min="1" value="${(c.to != null ? c.to : 0) + 1}" title="Last day" style="width:52px;padding:0.3rem;font-size:0.8rem;text-align:center;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveChapter('${ref}',${i},'to',this.value-1)">
+          <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.85rem" onclick="DeckEditor.removeChapter('${ref}',${i})">&#10005;</button>
         </div>
-        <input value="${E(c.lede || '')}" placeholder="One sentence about the city" style="width:100%;padding:0.3rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);margin-bottom:0.35rem" onchange="DeckEditor.saveChapter(${id},${i},'lede',this.value)">
+        <input value="${E(c.lede || '')}" placeholder="One sentence about the city" style="width:100%;padding:0.3rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);margin-bottom:0.35rem" onchange="DeckEditor.saveChapter('${ref}',${i},'lede',this.value)">
         <div style="display:flex;gap:0.4rem">
-          <input value="${E(c.highlights || '')}" placeholder="Highlights · separated by ·" style="flex:1;padding:0.3rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveChapter(${id},${i},'highlights',this.value)">
+          <input value="${E(c.highlights || '')}" placeholder="Highlights · separated by ·" style="flex:1;padding:0.3rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveChapter('${ref}',${i},'highlights',this.value)">
           <div style="flex:1">${this.photoSelect(id, 'chapters.' + i + '.photo', c.photo, '')}</div>
         </div>
       </div>`).join('');
 
+    // El día completo: cabecera, agenda y lo editorial. Un presupuesto guarda
+    // los días como {day, title, description}; aquí se le puede poner ya la
+    // agenda con horas, que es lo que el deck necesita, sin esperar a que el
+    // tour exista.
+    const raw = t.itinerary || [];
     const dayRows = days.map((day, i) => {
       const dd = (d.days && d.days[i]) || {};
+      const items = (raw[i] && raw[i].items) || day.items || [];
+      const itemRows = items.map((it, j) => `
+          <div style="display:flex;gap:0.35rem;align-items:center;margin-bottom:0.2rem">
+            <input value="${E(it.time || '')}" placeholder="0900" style="width:52px;padding:0.22rem;font-size:0.78rem;text-align:center;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveItem('${ref}',${i},${j},'time',this.value)">
+            <input value="${E(it.description || '')}" placeholder="What happens" style="flex:1;padding:0.22rem 0.4rem;font-size:0.78rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);${it.highlight ? 'font-weight:600;background:rgba(255,180,0,0.08)' : ''}" onchange="DeckEditor.saveItem('${ref}',${i},${j},'description',this.value)">
+            <label style="font-size:0.72rem;white-space:nowrap;cursor:pointer;color:${it.highlight ? 'var(--amber)' : 'var(--gray-400)'}"><input type="checkbox" ${it.highlight ? 'checked' : ''} onchange="DeckEditor.saveItem('${ref}',${i},${j},'highlight',this.checked)"> Bold</label>
+            <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.8rem" onclick="DeckEditor.removeItem('${ref}',${i},${j})">&#10005;</button>
+          </div>`).join('');
+
       return `
-      <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.3rem">
-        <span style="width:22px;font-size:0.78rem;color:var(--gray-400);flex-shrink:0">${day.day || i + 1}</span>
-        <input value="${E(dd.summary || '')}" placeholder="Day summary (one sentence)" style="flex:2;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveDay(${id},${i},'summary',this.value)">
-        <input value="${E(dd.city || day.city || '')}" placeholder="City" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveDay(${id},${i},'city',this.value)">
-        <div style="flex:1">${this.photoSelect(id, 'days.' + i + '.photo', dd.photo, '')}</div>
+      <div style="background:#fff;border:1.5px solid var(--gray-200);border-radius:var(--radius);padding:0.5rem 0.6rem;margin-bottom:0.5rem">
+        <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.35rem">
+          <span style="background:var(--amber);color:#111;font-weight:700;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.72rem;flex-shrink:0">${day.day || i + 1}</span>
+          <input value="${E(day.title || '')}" placeholder="Day headline · use | to split two lines" style="flex:2;padding:0.28rem 0.45rem;font-weight:600;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveItinDay('${ref}',${i},'title',this.value)">
+          <input type="date" value="${E(day.date || '')}" style="padding:0.24rem;font-size:0.78rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveItinDay('${ref}',${i},'date',this.value)">
+          <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.85rem" onclick="DeckEditor.removeItinDay('${ref}',${i})">&#10005;</button>
+        </div>
+        <div style="padding-left:1.5rem">
+          ${itemRows}
+          <button class="btn btn-sm btn-outline" style="font-size:0.72rem;padding:0.15rem 0.4rem;margin:0.15rem 0 0.4rem" onclick="DeckEditor.addItem('${ref}',${i})">+ Add time slot</button>
+          <div style="display:flex;gap:0.4rem;align-items:center">
+            <input value="${E(dd.summary || '')}" placeholder="Day summary (one sentence)" style="flex:2;padding:0.24rem 0.4rem;font-size:0.78rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveDay('${ref}',${i},'summary',this.value)">
+            <input value="${E(dd.city || day.city || '')}" placeholder="City" style="flex:1;padding:0.24rem 0.4rem;font-size:0.78rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveDay('${ref}',${i},'city',this.value)">
+            <div style="flex:1">${this.photoSelect(id, 'days.' + i + '.photo', dd.photo, '')}</div>
+          </div>
+        </div>
       </div>`;
     }).join('');
 
@@ -112,25 +141,25 @@ const DeckEditor = {
       <h3 style="margin-top:1.5rem">Deck <span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">— client-facing itinerary presentation</span></h3>
 
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.8rem">
-        <button class="btn btn-sm" style="background:var(--amber);color:#111;font-weight:700" onclick="Deck.generate(${id})">Generate Deck</button>
-        <button class="btn btn-sm btn-outline" onclick="Deck.generate(${id},{noPricing:true})">Deck without pricing</button>
-        <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="DeckCosting.export(${id})">Cost Sheet (Excel)</button>
-        <button class="btn btn-sm btn-outline" onclick="DeckEditor.lint(${id})">Check Rules</button>
-        <button class="btn btn-sm btn-outline" style="border-color:var(--gray-400);color:var(--gray-500)" onclick="DeckEditor.duplicate(${id})">Duplicate This Tour</button>
+        <button class="btn btn-sm" style="background:var(--amber);color:#111;font-weight:700" onclick="Deck.generate('${ref}')">Generate Deck</button>
+        <button class="btn btn-sm btn-outline" onclick="Deck.generate('${ref}',{noPricing:true})">Deck without pricing</button>
+        <button class="btn btn-sm btn-outline" style="border-color:var(--green);color:var(--green)" onclick="DeckCosting.export('${ref}')">Cost Sheet (Excel)</button>
+        <button class="btn btn-sm btn-outline" onclick="DeckEditor.lint('${ref}')">Check Rules</button>
+        <button class="btn btn-sm btn-outline" style="border-color:var(--gray-400);color:var(--gray-500)" onclick="DeckEditor.duplicate('${ref}')">Duplicate This Tour</button>
       </div>
 
       <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:0.8rem">
         <div class="form-row form-row-4">
           <div class="form-group" style="margin-bottom:0.6rem">
             <label style="font-size:0.75rem;color:var(--gray-400)">Language</label>
-            <select style="width:100%;padding:0.35rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'lang',this.value)">
+            <select style="width:100%;padding:0.35rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save('${ref}','lang',this.value)">
               <option value="en"${d.lang !== 'es' ? ' selected' : ''}>English</option>
               <option value="es"${d.lang === 'es' ? ' selected' : ''}>Spanish</option>
             </select>
           </div>
           <div class="form-group" style="margin-bottom:0.6rem">
             <label style="font-size:0.75rem;color:var(--gray-400)">Audience</label>
-            <select style="width:100%;padding:0.35rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'audience',this.value)">
+            <select style="width:100%;padding:0.35rem;font-size:0.82rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save('${ref}','audience',this.value)">
               <option value=""${!d.audience ? ' selected' : ''}>— detect —</option>
               <option value="us"${d.audience === 'us' ? ' selected' : ''}>USA (soccer)</option>
               <option value="uk"${d.audience === 'uk' ? ' selected' : ''}>United Kingdom (football)</option>
@@ -169,26 +198,32 @@ const DeckEditor = {
 
       <h4 style="font-size:0.88rem;margin:0.8rem 0 0.4rem">Chapters <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— one opening slide per city</span></h4>
       ${chapterRows || '<p style="color:var(--gray-400);font-size:0.82rem">Add days to the itinerary and the split by city will appear here.</p>'}
-      <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-bottom:0.8rem" onclick="DeckEditor.addChapter(${id})">+ Add chapter</button>
+      <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-bottom:0.8rem" onclick="DeckEditor.addChapter('${ref}')">+ Add chapter</button>
 
-      ${this.renderSlides(t)}
-      ${this.renderPricing(t)}
+      ${this.renderSlides(t, ref)}
+      ${this.renderPricing(t, ref)}
 
       <h4 style="font-size:0.88rem;margin:0.8rem 0 0.4rem">Cover crests
         <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— where the group trains. Never "official partner" language</span></h4>
       ${(d.crests || []).map((c, i) => `
         <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.35rem">
           <div style="width:150px;flex-shrink:0">${this.photoSelect(id, 'crests.' + i + '.logo', c.logo, '', 'logo')}</div>
-          <input value="${E(c.top || '')}" placeholder="Eyebrow (La Liga)" style="width:130px;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'crests.${i}.top',this.value)">
-          <input value="${E(c.name || '')}" placeholder="Name (FC Barcelona)" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;font-weight:600;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'crests.${i}.name',this.value)">
-          <input value="${E(c.sub || '')}" placeholder="Caption (Joan Gamper · BCN)" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'crests.${i}.sub',this.value)">
-          <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.85rem" onclick="DeckEditor.removeCrest(${id},${i})">&#10005;</button>
+          <input value="${E(c.top || '')}" placeholder="Eyebrow (La Liga)" style="width:130px;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save('${ref}','crests.${i}.top',this.value)">
+          <input value="${E(c.name || '')}" placeholder="Name (FC Barcelona)" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;font-weight:600;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save('${ref}','crests.${i}.name',this.value)">
+          <input value="${E(c.sub || '')}" placeholder="Caption (Joan Gamper · BCN)" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save('${ref}','crests.${i}.sub',this.value)">
+          <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:0.85rem" onclick="DeckEditor.removeCrest('${ref}',${i})">&#10005;</button>
         </div>`).join('')}
-      <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-bottom:0.8rem" onclick="DeckEditor.addCrest(${id})">+ Add crest</button>
+      <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-bottom:0.8rem" onclick="DeckEditor.addCrest('${ref}')">+ Add crest</button>
 
-      ${days.length ? `
-      <h4 style="font-size:0.88rem;margin:0.8rem 0 0.4rem">Days <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— the schedule comes from the itinerary; here just the summary and photo</span></h4>
-      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.6rem 0.8rem;margin-bottom:0.8rem">${dayRows}</div>` : ''}
+      <h4 style="font-size:0.88rem;margin:0.8rem 0 0.4rem">Days
+        <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— the day-by-day schedule the deck is built from</span></h4>
+      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.6rem 0.8rem;margin-bottom:0.4rem">
+        ${dayRows || '<p style="color:var(--gray-400);font-size:0.82rem;margin:0">No days yet. Add the first one to start building the deck.</p>'}
+      </div>
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.8rem">
+        <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem" onclick="DeckEditor.addItinDay('${ref}')">+ Add day</button>
+        ${t.startDate && !days.length ? `<button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;border-color:var(--amber);color:var(--amber)" onclick="DeckEditor.autoDays('${ref}')">Auto-generate from tour dates</button>` : ''}
+      </div>
 
       <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:1rem">
         <h4 style="font-size:0.88rem;margin-bottom:0.4rem">Closing</h4>
@@ -218,8 +253,8 @@ const DeckEditor = {
               'providerExpenses', 'documents', 'invoices', 'messages',
               'guideExpenses', 'guideNotes', 'roomPlan', '_deleted'],
 
-  duplicate(tourId) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  duplicate(ref) {
+    const t = this.rec(ref).rec;
     if (!t) return;
 
     const nombre = prompt('Name for the new tour:', (t.tourName || 'Tour') + ' (copy)');
@@ -258,16 +293,17 @@ const DeckEditor = {
       }
     }
 
-    const guardado = DB.saveTour(copia);
+    const r = this.rec(ref);
+    const guardado = r.kind === 'quote' ? DB.saveQuote(copia) : DB.saveTour(copia);
     alert('Created "' + nombre + '".\n\nPassengers, invoices and actual costs were NOT copied: those belong to the original tour.');
-    Tours.viewTour(guardado.id);
+    this.refresh(r.kind + ':' + guardado.id);
   },
 
   /* -- Slides ---------------------------------------------------------------
    * Qué slides salen, en qué orden, y slides libres para lo que no cabe en las
    * fijas. "Capítulos y días" no es una slide: es el hueco donde se meten. */
-  renderSlides(t) {
-    const id = t.id;
+  renderSlides(t, ref) {
+    const id = ref;
     const E = this.esc.bind(this);
     const slides = Deck.slideList(t);
 
@@ -284,22 +320,22 @@ const DeckEditor = {
         <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.3rem;background:#fff;border:1.5px solid var(--gray-200);border-radius:var(--radius);padding:0.3rem 0.5rem">
           <label style="display:flex;align-items:center;gap:0.35rem;cursor:${fixed ? 'not-allowed' : 'pointer'};flex:1;font-size:0.82rem">
             <input type="checkbox" ${s.on !== false ? 'checked' : ''} ${fixed ? 'disabled' : ''}
-                   onchange="DeckEditor.toggleSlide(${id},${i},this.checked)">
+                   onchange="DeckEditor.toggleSlide('${ref}',${i},this.checked)">
             <span style="${s.on === false ? 'opacity:0.45;text-decoration:line-through' : 'font-weight:600'}">${E(label)}</span>${count}
           </label>
-          <button title="Move up" ${i === 0 ? 'disabled' : ''} style="background:none;border:none;cursor:pointer;color:var(--gray-400);padding:0 0.25rem" onclick="DeckEditor.moveSlide(${id},${i},-1)">&#9650;</button>
-          <button title="Move down" ${i === slides.length - 1 ? 'disabled' : ''} style="background:none;border:none;cursor:pointer;color:var(--gray-400);padding:0 0.25rem" onclick="DeckEditor.moveSlide(${id},${i},1)">&#9660;</button>
-          ${s.type === 'custom' ? `<button style="background:none;border:none;color:var(--red);cursor:pointer" onclick="DeckEditor.removeSlide(${id},${i})">&#10005;</button>` : '<span style="width:14px"></span>'}
+          <button title="Move up" ${i === 0 ? 'disabled' : ''} style="background:none;border:none;cursor:pointer;color:var(--gray-400);padding:0 0.25rem" onclick="DeckEditor.moveSlide('${ref}',${i},-1)">&#9650;</button>
+          <button title="Move down" ${i === slides.length - 1 ? 'disabled' : ''} style="background:none;border:none;cursor:pointer;color:var(--gray-400);padding:0 0.25rem" onclick="DeckEditor.moveSlide('${ref}',${i},1)">&#9660;</button>
+          ${s.type === 'custom' ? `<button style="background:none;border:none;color:var(--red);cursor:pointer" onclick="DeckEditor.removeSlide('${ref}',${i})">&#10005;</button>` : '<span style="width:14px"></span>'}
         </div>
         ${s.type === 'custom' ? `
         <div style="margin:0 0 0.5rem 1.6rem;padding:0.5rem 0.6rem;background:var(--gray-50);border-radius:var(--radius)">
           <div style="display:flex;gap:0.4rem;margin-bottom:0.3rem">
-            <input value="${E(s.eyebrow || '')}" placeholder="Eyebrow" style="width:150px;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'slides.${i}.eyebrow',this.value)">
-            <input value="${E(s.title || '')}" placeholder="Headline" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;font-weight:600;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'slides.${i}.title',this.value)">
-            <input value="${E(s.title2 || '')}" placeholder="Second line" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save(${id},'slides.${i}.title2',this.value)">
+            <input value="${E(s.eyebrow || '')}" placeholder="Eyebrow" style="width:150px;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save('${ref}','slides.${i}.eyebrow',this.value)">
+            <input value="${E(s.title || '')}" placeholder="Headline" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;font-weight:600;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save('${ref}','slides.${i}.title',this.value)">
+            <input value="${E(s.title2 || '')}" placeholder="Second line" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.save('${ref}','slides.${i}.title2',this.value)">
             <div style="width:150px">${this.photoSelect(id, 'slides.' + i + '.photo', s.photo, '')}</div>
           </div>
-          <textarea rows="2" placeholder="Text. One paragraph per line." style="width:100%;padding:0.3rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:inherit" onchange="DeckEditor.save(${id},'slides.${i}.body',this.value)">${E(s.body || '')}</textarea>
+          <textarea rows="2" placeholder="Text. One paragraph per line." style="width:100%;padding:0.3rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-family:inherit" onchange="DeckEditor.save('${ref}','slides.${i}.body',this.value)">${E(s.body || '')}</textarea>
         </div>` : ''}`;
     }).join('');
 
@@ -307,7 +343,7 @@ const DeckEditor = {
       <h4 style="font-size:0.88rem;margin:0.8rem 0 0.4rem">Slides
         <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— what appears and in what order. Cover and days cannot be removed</span></h4>
       ${rows}
-      <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-bottom:0.8rem" onclick="DeckEditor.addSlide(${id})">+ Add custom slide</button>`;
+      <button class="btn btn-sm btn-outline" style="font-size:0.75rem;padding:0.2rem 0.5rem;margin-bottom:0.8rem" onclick="DeckEditor.addSlide('${ref}')">+ Add custom slide</button>`;
   },
 
   /* La primera edición congela la lista por defecto, para que a partir de ahí
@@ -318,54 +354,54 @@ const DeckEditor = {
     return t.deck.slides;
   },
 
-  toggleSlide(tourId, i, on) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  toggleSlide(ref, i, on) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     const s = this._slides(t);
     if (!s[i]) return;
     s[i].on = !!on;
-    DB.saveTour(t);
-    Tours.viewTour(tourId);
+    this.commit(ref, t);
+    this.refresh(ref);
   },
 
-  moveSlide(tourId, i, delta) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  moveSlide(ref, i, delta) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     const s = this._slides(t);
     const j = i + delta;
     if (j < 0 || j >= s.length) return;
     const tmp = s[i]; s[i] = s[j]; s[j] = tmp;
-    DB.saveTour(t);
-    Tours.viewTour(tourId);
+    this.commit(ref, t);
+    this.refresh(ref);
   },
 
-  addSlide(tourId) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  addSlide(ref) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     const s = this._slides(t);
     // Antes del cierre, que es donde casi siempre se quiere.
     const at = s.map(x => x.type).lastIndexOf('closing');
     const nueva = { type: 'custom', on: true, eyebrow: '', title: '', title2: '', body: '', photo: '' };
     if (at >= 0) s.splice(at, 0, nueva); else s.push(nueva);
-    DB.saveTour(t);
-    Tours.viewTour(tourId);
+    this.commit(ref, t);
+    this.refresh(ref);
   },
 
-  removeSlide(tourId, i) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  removeSlide(ref, i) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     const s = this._slides(t);
     if (!s[i] || s[i].type !== 'custom') return;
     s.splice(i, 1);
-    DB.saveTour(t);
-    Tours.viewTour(tourId);
+    this.commit(ref, t);
+    this.refresh(ref);
   },
 
   /* -- Precios y pagos -------------------------------------------------------
    * Por defecto salen de los precios del tour y de un calendario 25/35/40. En
    * cuanto se toca algo aquí, manda lo de aquí. */
-  renderPricing(t) {
-    const id = t.id;
+  renderPricing(t, ref) {
+    const id = ref;
     const d = t.deck || {};
     const E = this.esc.bind(this);
     const m = Deck.model(t, {});
@@ -374,18 +410,18 @@ const DeckEditor = {
 
     const tierRows = tiers.map((x, i) => `
       <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.3rem">
-        <input value="${E(x.label || '')}" placeholder="Label" style="width:150px;padding:0.28rem 0.45rem;font-size:0.8rem;font-weight:600;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveTier(${id},${i},'label',this.value)">
-        <input value="${E(x.desc || '')}" placeholder="Description" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveTier(${id},${i},'desc',this.value)">
-        <input type="number" value="${x.price != null ? x.price : ''}" placeholder="0" style="width:95px;padding:0.28rem 0.45rem;font-size:0.8rem;text-align:right;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveTier(${id},${i},'price',this.value)">
-        <button style="background:none;border:none;color:var(--red);cursor:pointer" onclick="DeckEditor.removeTier(${id},${i})">&#10005;</button>
+        <input value="${E(x.label || '')}" placeholder="Label" style="width:150px;padding:0.28rem 0.45rem;font-size:0.8rem;font-weight:600;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveTier('${ref}',${i},'label',this.value)">
+        <input value="${E(x.desc || '')}" placeholder="Description" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveTier('${ref}',${i},'desc',this.value)">
+        <input type="number" value="${x.price != null ? x.price : ''}" placeholder="0" style="width:95px;padding:0.28rem 0.45rem;font-size:0.8rem;text-align:right;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.saveTier('${ref}',${i},'price',this.value)">
+        <button style="background:none;border:none;color:var(--red);cursor:pointer" onclick="DeckEditor.removeTier('${ref}',${i})">&#10005;</button>
       </div>`).join('');
 
     const pagoRows = pagos.slice(0, 3).map((p, i) => `
       <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.3rem">
         <span style="width:22px;font-size:0.78rem;color:var(--gray-400)">${i + 1}</span>
-        <input value="${E(p.desc || '')}" placeholder="Description" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.savePayment(${id},${i},'desc',this.value)">
-        <input value="${E(p.due || '')}" placeholder="Due" style="width:170px;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.savePayment(${id},${i},'due',this.value)">
-        <input type="number" value="${p.amount != null ? p.amount : ''}" placeholder="0" style="width:95px;padding:0.28rem 0.45rem;font-size:0.8rem;text-align:right;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.savePayment(${id},${i},'amount',this.value)">
+        <input value="${E(p.desc || '')}" placeholder="Description" style="flex:1;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.savePayment('${ref}',${i},'desc',this.value)">
+        <input value="${E(p.due || '')}" placeholder="Due" style="width:170px;padding:0.28rem 0.45rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.savePayment('${ref}',${i},'due',this.value)">
+        <input type="number" value="${p.amount != null ? p.amount : ''}" placeholder="0" style="width:95px;padding:0.28rem 0.45rem;font-size:0.8rem;text-align:right;border:1.5px solid var(--gray-200);border-radius:var(--radius)" onchange="DeckEditor.savePayment('${ref}',${i},'amount',this.value)">
       </div>`).join('');
 
     return `
@@ -393,7 +429,7 @@ const DeckEditor = {
         <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— defaults to the tour prices; edit these to override</span></h4>
       <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.6rem 0.8rem;margin-bottom:0.5rem">
         ${tierRows || '<p style="color:var(--gray-400);font-size:0.8rem;margin:0">No pricing set. The deck will show "On request".</p>'}
-        <button class="btn btn-sm btn-outline" style="font-size:0.72rem;padding:0.15rem 0.45rem;margin-top:0.3rem" onclick="DeckEditor.addTier(${id})">+ Add row</button>
+        <button class="btn btn-sm btn-outline" style="font-size:0.72rem;padding:0.15rem 0.45rem;margin-top:0.3rem" onclick="DeckEditor.addTier('${ref}')">+ Add row</button>
         ${this.field(id, 'pricingNote', d.pricingNote, 'Note under the pricing table', 'Per person, based on the confirmed group')}
       </div>
 
@@ -405,49 +441,65 @@ const DeckEditor = {
       </div>`;
   },
 
-  saveTier(tourId, i, field, value) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  saveTier(ref, i, field, value) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     if (!t.deck) t.deck = {};
     if (!t.deck.tiers || !t.deck.tiers.length) t.deck.tiers = Deck.tiers(Deck.model(t, {}));
     if (!t.deck.tiers[i]) t.deck.tiers[i] = { label: '', desc: '', price: null };
     t.deck.tiers[i][field] = field === 'price' ? (value === '' ? null : +value) : value;
-    DB.saveTour(t);
+    this.commit(ref, t);
   },
 
-  addTier(tourId) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  addTier(ref) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     if (!t.deck) t.deck = {};
     if (!t.deck.tiers || !t.deck.tiers.length) t.deck.tiers = Deck.tiers(Deck.model(t, {}));
     t.deck.tiers.push({ label: '', desc: '', price: null });
-    DB.saveTour(t);
-    Tours.viewTour(tourId);
+    this.commit(ref, t);
+    this.refresh(ref);
   },
 
-  removeTier(tourId, i) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  removeTier(ref, i) {
+    const t = this.rec(ref).rec;
     if (!t || !t.deck) return;
     if (!t.deck.tiers || !t.deck.tiers.length) t.deck.tiers = Deck.tiers(Deck.model(t, {}));
     t.deck.tiers.splice(i, 1);
-    DB.saveTour(t);
-    Tours.viewTour(tourId);
+    this.commit(ref, t);
+    this.refresh(ref);
   },
 
-  savePayment(tourId, i, field, value) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  savePayment(ref, i, field, value) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     if (!t.deck) t.deck = {};
     if (!t.deck.payments || !t.deck.payments.length) t.deck.payments = Deck.defaultPayments(Deck.model(t, {}));
     if (!t.deck.payments[i]) t.deck.payments[i] = { desc: '', due: '', amount: null };
     t.deck.payments[i][field] = field === 'amount' ? (value === '' ? null : +value) : value;
-    DB.saveTour(t);
+    this.commit(ref, t);
+  },
+
+  /* -- Acceso al registro ----------------------------------------------------
+   * Todo pasa por aqui, para que el editor funcione igual sobre un presupuesto
+   * (antes de vender) que sobre un tour confirmado. La referencia lleva el tipo
+   * dentro ('quote:12'), asi que no hay estado que se pueda quedar viejo. */
+  rec(ref) { return Deck.resolve(ref); },
+
+  commit(ref, rec) { Deck.save(ref, rec); },
+
+  /* Vuelve a pintar la ficha que corresponda. */
+  refresh(ref) {
+    const r = Deck.resolve(ref);
+    if (r.kind === 'quote') { if (typeof CRM !== 'undefined') CRM.viewQuote(r.id); }
+    else if (typeof Tours !== 'undefined') Tours.viewTour(r.id);
   },
 
   /* -- Guardado --------------------------------------------------------------
    * Un solo punto de escritura. path admite 'campo' y 'coleccion.N.campo'. */
-  save(tourId, path, value) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  save(ref, path, value) {
+    const r = this.rec(ref);
+    const t = r.rec;
     if (!t) return;
     if (!t.deck) t.deck = {};
 
@@ -460,11 +512,11 @@ const DeckEditor = {
       node = node[key];
     }
     node[parts[parts.length - 1]] = value;
-    DB.saveTour(t);
+    this.commit(ref, t);
   },
 
-  saveChapter(tourId, i, field, value) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  saveChapter(ref, i, field, value) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     if (!t.deck) t.deck = {};
     // La primera edición congela el reparto que el motor había deducido, para
@@ -475,55 +527,161 @@ const DeckEditor = {
     }
     if (!t.deck.chapters[i]) t.deck.chapters[i] = { city: '', from: 0, to: 0 };
     t.deck.chapters[i][field] = (field === 'from' || field === 'to') ? Math.max(0, +value || 0) : value;
-    DB.saveTour(t);
-    if (field === 'from' || field === 'to') Tours.viewTour(tourId);
+    this.commit(ref, t);
+    if (field === 'from' || field === 'to') this.refresh(ref);
   },
 
-  addChapter(tourId) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  addChapter(ref) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     if (!t.deck) t.deck = {};
     if (!t.deck.chapters) t.deck.chapters = [];
     const last = t.deck.chapters[t.deck.chapters.length - 1];
     const from = last ? Math.min((last.to || 0) + 1, Math.max(0, (t.itinerary || []).length - 1)) : 0;
     t.deck.chapters.push({ city: '', from: from, to: from, lede: '', highlights: '', photo: '' });
-    DB.saveTour(t);
-    Tours.viewTour(tourId);
+    this.commit(ref, t);
+    this.refresh(ref);
   },
 
-  removeChapter(tourId, i) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  removeChapter(ref, i) {
+    const t = this.rec(ref).rec;
     if (!t || !t.deck || !t.deck.chapters) return;
     t.deck.chapters.splice(i, 1);
-    DB.saveTour(t);
-    Tours.viewTour(tourId);
+    this.commit(ref, t);
+    this.refresh(ref);
   },
 
-  saveDay(tourId, i, field, value) {
-    this.save(tourId, 'days.' + i + '.' + field, value);
+  saveDay(ref, i, field, value) {
+    this.save(ref, 'days.' + i + '.' + field, value);
   },
 
-  addCrest(tourId) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  /* -- Itinerario ------------------------------------------------------------
+   * Escribe en rec.itinerary, el mismo campo que usan el editor de tours y el
+   * asistente de presupuestos. Un presupuesto guarda los días con title y
+   * description; aquí se les añade items[] con horas, que es lo que el deck
+   * necesita. Es aditivo: no rompe lo que ya escribía el asistente. */
+  _itin(t) {
+    if (!t.itinerary) t.itinerary = [];
+    return t.itinerary;
+  },
+
+  saveItinDay(ref, i, field, value) {
+    const t = this.rec(ref).rec;
+    if (!t) return;
+    const it = this._itin(t);
+    if (!it[i]) return;
+    it[i][field] = value;
+    this.commit(ref, t);
+  },
+
+  addItinDay(ref) {
+    const t = this.rec(ref).rec;
+    if (!t) return;
+    const it = this._itin(t);
+    // La fecha se encadena con la del día anterior. Los días de un presupuesto
+    // suelen venir SIN fecha (el asistente solo guarda title y description),
+    // así que en ese caso se cuenta desde la salida.
+    let date = '';
+    const prev = it[it.length - 1];
+    if (prev && prev.date) {
+      const base = Deck.parseDate(prev.date);
+      base.setDate(base.getDate() + 1);
+      date = this._iso(base);
+    } else if (t.startDate) {
+      const base = Deck.parseDate(t.startDate);
+      base.setDate(base.getDate() + it.length);
+      date = this._iso(base);
+    }
+
+    it.push({ day: it.length + 1, date: date, title: '', items: [{ time: '', description: '', highlight: false }] });
+    this.commit(ref, t);
+    this.refresh(ref);
+  },
+
+  removeItinDay(ref, i) {
+    const t = this.rec(ref).rec;
+    if (!t || !t.itinerary) return;
+    if (!confirm('Remove day ' + (i + 1) + ' from the itinerary?')) return;
+    t.itinerary.splice(i, 1);
+    t.itinerary.forEach((d, n) => { d.day = n + 1; });
+    this.commit(ref, t);
+    this.refresh(ref);
+  },
+
+  /* Un día por noche + 1, con las fechas ya puestas. Ahorra el trabajo tonto. */
+  autoDays(ref) {
+    const t = this.rec(ref).rec;
+    if (!t || !t.startDate) { alert('Set a start date first.'); return; }
+    if ((t.itinerary || []).length && !confirm('This replaces the current itinerary. Continue?')) return;
+    const n = (+t.nights || 0) + 1;
+    const start = Deck.parseDate(t.startDate);
+    t.itinerary = [];
+    for (let i = 0; i < n; i++) {
+      const d = new Date(start.getTime());
+      d.setDate(d.getDate() + i);
+      t.itinerary.push({ day: i + 1, date: this._iso(d), title: '',
+                         items: [{ time: '', description: '', highlight: false }] });
+    }
+    this.commit(ref, t);
+    this.refresh(ref);
+  },
+
+  _iso(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+           '-' + String(d.getDate()).padStart(2, '0');
+  },
+
+  saveItem(ref, i, j, field, value) {
+    const t = this.rec(ref).rec;
+    if (!t) return;
+    const day = this._itin(t)[i];
+    if (!day) return;
+    if (!day.items) day.items = [];
+    if (!day.items[j]) day.items[j] = { time: '', description: '', highlight: false };
+    day.items[j][field] = value;
+    this.commit(ref, t);
+  },
+
+  addItem(ref, i) {
+    const t = this.rec(ref).rec;
+    if (!t) return;
+    const day = this._itin(t)[i];
+    if (!day) return;
+    if (!day.items) day.items = [];
+    day.items.push({ time: '', description: '', highlight: false });
+    this.commit(ref, t);
+    this.refresh(ref);
+  },
+
+  removeItem(ref, i, j) {
+    const t = this.rec(ref).rec;
+    if (!t || !t.itinerary || !t.itinerary[i] || !t.itinerary[i].items) return;
+    t.itinerary[i].items.splice(j, 1);
+    this.commit(ref, t);
+    this.refresh(ref);
+  },
+
+  addCrest(ref) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     if (!t.deck) t.deck = {};
     if (!t.deck.crests) t.deck.crests = [];
     t.deck.crests.push({ logo: '', top: '', name: '', sub: '' });
-    DB.saveTour(t);
-    Tours.viewTour(tourId);
+    this.commit(ref, t);
+    this.refresh(ref);
   },
 
-  removeCrest(tourId, i) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  removeCrest(ref, i) {
+    const t = this.rec(ref).rec;
     if (!t || !t.deck || !t.deck.crests) return;
     t.deck.crests.splice(i, 1);
-    DB.saveTour(t);
-    Tours.viewTour(tourId);
+    this.commit(ref, t);
+    this.refresh(ref);
   },
 
   /* Pasa el linter y enseña el resultado sin generar nada. */
-  lint(tourId) {
-    const t = DB.getTours().find(x => x.id === tourId);
+  lint(ref) {
+    const t = this.rec(ref).rec;
     if (!t) return;
     this.loadPhotos().then(() => {
       const problems = DeckLint.check(t, {});

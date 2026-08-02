@@ -25,7 +25,10 @@
  * son decorativos: tienen que cuadrar entre VAT_DEFAULT, origin() y
  * quoteLines(), o el IVA y la marca de origen dejan de aplicarse.
  *
- * DeckCosting.export(tourId)
+ * DeckCosting.export(ref)   ref: id de tour, 'tour:3' o 'quote:12'
+ *
+ * Depende de js/deck.js (Deck.resolve). index.html y sw.js lo cargan antes; si
+ * alguna vez se reordenan los <script>, esto revienta con "Deck is not defined".
  */
 const DeckCosting = {
 
@@ -35,13 +38,16 @@ const DeckCosting = {
    * peor que no ponerlo. */
   VAT_DEFAULT: { ACCOMMODATION: 0, MEALS: 0, TRANSPORT: 0, ACTIVITIES: 0, GUIDE: 0, COMMISSION: 0 },
 
-  export(tourId) {
+  /* ref admite un id de tour, 'tour:3' o 'quote:12': la hoja de costes hace
+   * falta antes de confirmar, que es cuando se decide el precio. */
+  export(ref) {
     if (typeof XLSX === 'undefined') {
       alert('The Excel library (SheetJS) has not loaded yet. Wait a second and try again.');
       return;
     }
-    const t = DB.getTours().find(x => x.id === tourId);
-    if (!t) { alert('Tour not found.'); return; }
+    const r = Deck.resolve(ref);
+    const t = r.rec;
+    if (!t) { alert((r.kind === 'quote' ? 'Quote' : 'Tour') + ' not found.'); return; }
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, this.sheetQuote(t), 'Quote');

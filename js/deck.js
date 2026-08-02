@@ -112,14 +112,63 @@ const Deck = {
 
   /* ======================================================================== */
 
-  generate(tourId, opts) {
+  /* -- De donde sale el registro --------------------------------------------
+   * El deck es material de VENTA: tiene que poder salir de un presupuesto,
+   * antes de que el tour exista. Quotes y tours comparten casi todo el esquema
+   * (destinos, hoteles, actividades, precios, itinerario), asi que el motor
+   * trabaja indistintamente sobre los dos.
+   *
+   * ref admite:
+   *   3            un tour, por compatibilidad con las llamadas de siempre
+   *   'tour:3'     lo mismo, explicito
+   *   'quote:12'   un presupuesto
+   */
+  resolve(ref) {
+    const s = String(ref);
+    const m = s.match(/^(tour|quote):(.+)$/);
+    const kind = m ? m[1] : 'tour';
+    const raw = m ? m[2] : s;
+    const id = /^-?\d+$/.test(raw) ? +raw : raw;
+    const list = kind === 'quote' ? DB.getQuotes() : DB.getTours();
+    return { kind: kind, id: id, ref: kind + ':' + id, rec: list.find(x => x.id === id) };
+  },
+
+  save(ref, rec) {
+    const r = this.resolve(ref);
+    return r.kind === 'quote' ? DB.saveQuote(rec) : DB.saveTour(rec);
+  },
+
+  /* Un presupuesto guarda los dias como {day, title, description}; un tour como
+   * {day, date, items:[{time, description, highlight}]}. El deck necesita filas
+   * de horario, asi que se normalizan los dos a la misma forma sin tocar lo
+   * guardado: una descripcion suelta se parte por lineas y se usa de agenda. */
+  normalizeDays(rec) {
+    return (rec.itinerary || []).slice()
+      .sort((a, b) => (a.day || 0) - (b.day || 0))
+      .map(d => {
+        let items = d.items;
+        if (!items || !items.length) {
+          const lines = String(d.description || '').split(/\n+/).map(x => x.trim()).filter(Boolean);
+          items = lines.map(x => {
+            // "09:30 Llegada al estadio" -> hora + texto. Sin hora, fila sin hora.
+            const m = x.match(/^(\d{1,2}\s*[:.]\s*\d{2}|\d{3,4})\s+(.*)$/);
+            return m ? { time: m[1], description: m[2] } : { time: '', description: x };
+          });
+        }
+        return { day: d.day, date: d.date, title: d.title, city: d.city, items: items };
+      });
+  },
+
+  generate(ref, opts) {
     opts = opts || {};
-    const t = DB.getTours().find(x => x.id === tourId);
-    if (!t) { alert('Tour not found.'); return; }
+    const r = this.resolve(ref);
+    const t = r.rec;
+    if (!t) { alert((r.kind === 'quote' ? 'Quote' : 'Tour') + ' not found.'); return; }
     if (!t.itinerary || !t.itinerary.length) {
-      alert('This tour has no day-by-day itinerary yet.\n\nBuild it in the Itinerary tab first — the deck is generated from it.');
+      alert('This ' + r.kind + ' has no day-by-day itinerary yet.\n\nBuild it in the Deck section first — the deck is generated from it.');
       return;
     }
+    opts = Object.assign({}, opts, { kind: r.kind });
 
     // El linter avisa antes de generar. Es la red que antes eran los asserts
     // al final de cada script de Python.
@@ -205,7 +254,7 @@ const Deck = {
     const lang = d.lang === 'es' ? 'es' : 'en';
     const ui = this.UI[lang];
     const ccyCode = t.currency || 'EUR';
-    const days = (t.itinerary || []).slice().sort((a, b) => (a.day || 0) - (b.day || 0));
+    const days = this.normalizeDays(t);
 
     const chapters = this.chapters(t, days, lang);
 
