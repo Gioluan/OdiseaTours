@@ -810,6 +810,13 @@ const Portal = {
       return fa < fb ? -1 : fa > fb ? 1 : 0;
     });
 
+    // Odisea's own tour directors travel with the group but are not a client place:
+    // they are never invoiced, so they stay out of the headline count and sit at the
+    // bottom of the list under their own heading.
+    const directors = passengers.filter(p => Portal._isTourDirector(p));
+    const clientPax = passengers.filter(p => !Portal._isTourDirector(p));
+    passengers = clientPax.concat(directors);
+
     const t = this.tourData;
     const totalExpected = isFamily
       ? ((this._familyData.numStudents || 0) + (this._familyData.numSiblings || 0) + (this._familyData.numAdults || 0))
@@ -818,12 +825,12 @@ const Portal = {
     let html = `
       <div class="section-header">
         <h2>${Portal._t('passengers')}</h2>
-        <p>${passengers.length} ${Portal._t('registered')}${totalExpected ? ' ' + Portal._t('ofExpected') + ' ' + totalExpected + ' ' + Portal._t('expected') : ''}</p>
+        <p>${clientPax.length} ${Portal._t('registered')}${totalExpected ? ' ' + Portal._t('ofExpected') + ' ' + totalExpected + ' ' + Portal._t('expected') : ''}${directors.length ? ' &bull; plus ' + directors.length + ' Odisea tour director' + (directors.length > 1 ? 's' : '') + ' (not charged)' : ''}</p>
       </div>
 
       ${totalExpected ? `<div class="pax-progress-bar">
-        <div class="pax-progress-fill" style="width:${Math.min(100, Math.round(passengers.length / totalExpected * 100))}%"></div>
-        <span class="pax-progress-label">${Math.round(passengers.length / totalExpected * 100)}%</span>
+        <div class="pax-progress-fill" style="width:${Math.min(100, Math.round(clientPax.length / totalExpected * 100))}%"></div>
+        <span class="pax-progress-label">${Math.round(clientPax.length / totalExpected * 100)}%</span>
       </div>` : ''}
 
       <button class="add-pax-btn" onclick="Portal.showPassengerForm()">
@@ -852,12 +859,24 @@ const Portal = {
         </div>
         <div id="pax-delete-warning" style="display:none"></div>`;
       html += `<div class="pax-list">`;
+      let directorHeadingDone = false;
       html += passengers.map(p => {
         const initials = ((p.firstName || '')[0] || '') + ((p.lastName || '')[0] || '');
         const fullName = (p.firstName || '') + ' ' + (p.lastName || '');
+        const isDirector = Portal._isTourDirector(p);
 
-        // Try to match passenger to an individual client invoice by name
-        const paymentStatus = this._getPaymentStatus(fullName);
+        // One heading above the tour-director block, which the sort put last.
+        let heading = '';
+        if (isDirector && !directorHeadingDone) {
+          directorHeadingDone = true;
+          heading = `<div class="pax-group-divider">Odisea tour directors &bull; travelling with the group, not charged to you</div>`;
+        }
+
+        // Try to match passenger to an individual client invoice by name. Tour directors
+        // have no invoice by design, so "No Invoice" would read as a missing payment.
+        const paymentStatus = isDirector
+          ? '<span class="pax-tag pax-tag-green">Not charged</span>'
+          : this._getPaymentStatus(fullName);
 
         // Passport status
         let passportTag = '';
@@ -877,7 +896,8 @@ const Portal = {
 
         const searchTokens = [p.firstName || '', p.lastName || '', p.family || ''].join(' ');
         return `
-          <div class="pax-card-detail" data-search-tokens="${Portal._escapeAttr(searchTokens)}" onclick="Portal.togglePaxDetail('pax-${p.id}')">
+          ${heading}
+          <div class="pax-card-detail${isDirector ? ' pax-card-director' : ''}" data-search-tokens="${Portal._escapeAttr(searchTokens)}" onclick="Portal.togglePaxDetail('pax-${p.id}')">
             <div class="pax-card-main">
               <input type="checkbox" class="pax-select-cb" data-pax-id="${p.id}" onclick="event.stopPropagation();Portal.togglePaxSelect('${p.id}',this.checked)" style="width:16px;height:16px;accent-color:var(--navy);flex-shrink:0;cursor:pointer">
               <div class="pax-avatar">${initials.toUpperCase() || '?'}</div>
@@ -888,7 +908,7 @@ const Portal = {
                 </div>
                 ${p.groupBreakdown ? '<div class="pax-detail" style="color:var(--gray-400);font-size:0.78rem;margin-top:2px">Group: ' + Portal._escapeHtml(p.groupBreakdown) + '</div>' : ''}
                 <div class="pax-tags">
-                  ${p.role ? '<span class="pax-tag pax-tag-role-' + p.role.toLowerCase() + '">' + Portal._escapeHtml(p.role) + '</span>' : ''}
+                  ${p.role ? '<span class="pax-tag pax-tag-role-' + Portal._roleSlug(p.role) + '">' + Portal._escapeHtml(p.role.toUpperCase() === 'TOUR DIRECTOR' ? 'TOUR DIRECTOR' : p.role) + '</span>' : ''}
                   ${p.family ? '<span class="pax-tag pax-tag-family">' + Portal._escapeHtml(p.family) + '</span>' : ''}
                   ${paymentStatus}
                   ${passportTag}
@@ -930,6 +950,17 @@ const Portal = {
     }
 
     container.innerHTML = html;
+  },
+
+  // Odisea's own people on the trip. They occupy a bed and appear on the hotel
+  // rooming lists, but they are not a client place and are never invoiced.
+  _isTourDirector(p) {
+    return String((p && p.role) || '').toLowerCase() === 'tour director';
+  },
+
+  // Role names go into a CSS class, so anything that is not a letter becomes a dash.
+  _roleSlug(role) {
+    return String(role || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   },
 
   _getPaymentStatus(fullName) {
@@ -1025,6 +1056,7 @@ const Portal = {
               <option value="Sibling" ${(p.role||'')==='Sibling'?'selected':''}>Sibling</option>
               <option value="Adult" ${(p.role||'')==='Adult'?'selected':''}>Adult</option>
               <option value="Coach" ${(p.role||'')==='Coach'?'selected':''}>Coach</option>
+              <option value="Tour Director" ${(p.role||'')==='Tour Director'?'selected':''}>Tour Director (Odisea, not charged)</option>
             </select>
           </div>
           <div class="form-group">
@@ -1369,6 +1401,18 @@ const Portal = {
     this._roomPlan.forEach(room => (room.passengers || []).forEach(id => assigned.add(id)));
     const unassigned = passengers.filter(p => !assigned.has(p.id));
 
+    // A room is Odisea's own when everyone in it is a tour director. Those rooms are on
+    // the hotel rooming list but not on the client's bill, so they go last and get a badge.
+    const directorIds = new Set(passengers.filter(p => Portal._isTourDirector(p)).map(p => p.id));
+    const isDirectorRoom = (room) => {
+      const ids = room.passengers || [];
+      return ids.length > 0 && ids.every(id => directorIds.has(id));
+    };
+    const clientRooms = this._roomPlan.filter(r => !isDirectorRoom(r));
+    const directorRooms = this._roomPlan.filter(isDirectorRoom);
+    const clientPaxCount = passengers.filter(p => !directorIds.has(p.id)).length;
+    const unassignedClient = unassigned.filter(p => !directorIds.has(p.id));
+
     // Group unassigned by family
     const familyGroups = {};
     const noFamily = [];
@@ -1389,7 +1433,7 @@ const Portal = {
     container.innerHTML = `
       <div class="section-header">
         <h2>Room Plan</h2>
-        <p>${this._roomPlan.length} room${this._roomPlan.length!==1?'s':''} &bull; ${passengers.length - unassigned.length} assigned &bull; ${unassigned.length} unassigned${isFamilyMode ? ' &bull; <span style="color:var(--gray-400)">read-only</span>' : ''}</p>
+        <p>${clientRooms.length} room${clientRooms.length!==1?'s':''} for your group${directorRooms.length ? ' + ' + directorRooms.length + ' Odisea tour director room' + (directorRooms.length>1?'s':'') + ' (not charged)' : ''} &bull; ${clientPaxCount - unassignedClient.length} assigned &bull; ${unassignedClient.length} unassigned${isFamilyMode ? ' &bull; <span style="color:var(--gray-400)">read-only</span>' : ''}</p>
       </div>
 
       ${isFamilyMode ? `
@@ -1413,17 +1457,22 @@ const Portal = {
       </div>` : ''}
 
       ${this._roomPlan.length ? `${isFamilyMode ? '' : '<div class="rp-drag-hint">Tip: drag passengers between rooms to reassign. Drop on the unassigned area to remove.</div>'}<div class="rp-rooms">
-        ${this._roomPlan.map((room, ri) => {
+        ${clientRooms.concat(directorRooms).map(room => {
+          // Render order puts Odisea's rooms last, but the handlers below still need the
+          // room's real position in this._roomPlan, so carry the original index.
+          const ri = this._roomPlan.indexOf(room);
           const roomPax = (room.passengers || []).map(id => passengers.find(p => p.id === id)).filter(Boolean).sort(paxSorter);
           const roomName = Portal._escapeHtml(room.name || 'Room ' + (ri+1));
+          const dirRoom = isDirectorRoom(room);
           return `
-            <div class="rp-room" data-room-idx="${ri}">
+            <div class="rp-room${dirRoom ? ' rp-room-director' : ''}" data-room-idx="${ri}">
               <div class="rp-room-header">
                 <div class="rp-room-num">
                   ${isFamilyMode
                     ? `<span class="rp-room-name-static" style="font-weight:600;color:var(--navy)">${roomName}</span>`
                     : `<input value="${Portal._escapeAttr(room.name || 'Room ' + (ri+1))}" class="rp-room-name-input" onchange="Portal.updateRoomName(${ri},this.value)" onclick="event.stopPropagation()">`}
                 </div>
+                ${dirRoom ? '<span class="rp-room-director-badge">Odisea &bull; not charged</span>' : ''}
                 <span class="rp-room-type">${Portal._roomTypeLabel(roomPax.length)}</span>
                 <span class="rp-room-count">${roomPax.length} guest${roomPax.length!==1?'s':''}</span>
                 ${isFamilyMode ? '' : `<button class="rp-room-delete" onclick="Portal.removeRoom(${ri})" title="Remove room">&times;</button>`}

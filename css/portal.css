@@ -1164,6 +1164,37 @@ body {
 .pax-tag-role-coach { background: rgba(243,156,18,0.12); color: #b7791f; }
 .pax-tag-family { background: rgba(11,29,58,0.08); color: var(--navy); border: 1px solid rgba(11,29,58,0.15); }
 
+/* Odisea's own tour directors: on the trip, on the rooming list, never on the bill. */
+.pax-tag-role-tour-director {
+  background: var(--navy);
+  color: #fff;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+.pax-card-director { background: rgba(11,29,58,0.03); border-left: 3px solid var(--navy); }
+.pax-group-divider {
+  margin: 1.4rem 0 0.6rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--gray-200);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--gray-400);
+}
+.rp-room-director { background: rgba(11,29,58,0.03); border-color: rgba(11,29,58,0.25); }
+.rp-room-director-badge {
+  background: var(--navy);
+  color: #fff;
+  border-radius: 10px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
 /* ── ROOM PLAN ── */
 .rp-actions {
   display: flex;
