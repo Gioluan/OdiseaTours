@@ -2452,16 +2452,24 @@ const Portal = {
             ${schedule.length ? `
               <div style="margin-bottom:0.8rem">
                 <div style="font-size:0.82rem;font-weight:600;color:var(--gray-500);margin-bottom:0.5rem">Payment Schedule</div>
-                ${schedule.map(ms => {
+                ${(() => {
+                  // A milestone counts as paid once payments cover EVERYTHING up to and including it,
+                  // not just its own amount - otherwise a large final instalment ticks itself off as
+                  // soon as the smaller deposits before it add up past it. An explicit stored status wins.
+                  let cumulative = 0;
+                  return schedule.map(ms => {
                   const msAmount = ms.amount || (ms.percentage ? Number(inv.amount) * ms.percentage / 100 : 0);
-                  const msPaid = paid >= msAmount;
+                  cumulative += msAmount;
+                  const msPaid = ms.status ? ms.status === 'Paid' : paid >= cumulative - 0.01;
                   return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--gray-50)">
                     <span style="color:${msPaid ? 'var(--green)' : 'var(--gray-300)'};font-size:1.1rem">${msPaid ? '\u2713' : '\u25CB'}</span>
                     <span style="flex:1;font-size:0.85rem;${msPaid ? 'text-decoration:line-through;color:var(--gray-400)' : ''}">${ms.label || 'Payment'}</span>
                     <span style="font-weight:600;font-size:0.85rem">${Portal._fmtCurrency(msAmount, inv.currency || cur)}</span>
                     ${ms.dueDate ? '<span style="font-size:0.78rem;color:var(--gray-400)">' + Portal._fmtDate(ms.dueDate) + '</span>' : ''}
+                    ${!msPaid ? '<span style="font-size:0.72rem;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:0.04em">Due</span>' : ''}
                   </div>`;
-                }).join('')}
+                  }).join('');
+                })()}
               </div>
             ` : ''}
             ${(inv.payments || []).length ? `

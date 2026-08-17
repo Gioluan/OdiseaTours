@@ -589,8 +589,12 @@ const PDFQuote = {
     const liStudents = ic ? (ic.numStudents || 0) : (src.numStudents || 0);
     const liSiblings = ic ? (ic.numSiblings || 0) : (src.numSiblings || 0);
     const liAdults = ic ? (ic.numAdults || 0) : (src.numAdults || 0);
+    // On a group invoice the sibling bucket also carries the paying coaches, who sit at the same
+    // rate - label it so the client can reconcile the count against their own staff list.
+    const sibLabel = (!ic && Number(src.priceCoach) === Number(src.priceSibling))
+      ? 'Sibling / Coach' : 'Sibling';
     if (liStudents) lineItems.push({ desc: `Student / Player × ${liStudents}`, unit: f(src.priceStudent || 0), total: f((src.priceStudent || 0) * liStudents) });
-    if (liSiblings) lineItems.push({ desc: `Sibling × ${liSiblings}`, unit: f(src.priceSibling || 0), total: f((src.priceSibling || 0) * liSiblings) });
+    if (liSiblings) lineItems.push({ desc: `${sibLabel} × ${liSiblings}`, unit: f(src.priceSibling || 0), total: f((src.priceSibling || 0) * liSiblings) });
     if (liAdults) lineItems.push({ desc: `Adult × ${liAdults}`, unit: f(src.priceAdult || 0), total: f((src.priceAdult || 0) * liAdults) });
     if (!lineItems.length) lineItems.push({ desc: inv.description || 'Tour Services', unit: f(inv.amount), total: f(inv.amount) });
 
