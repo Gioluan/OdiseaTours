@@ -13,8 +13,12 @@ const App = {
       });
     });
 
-    // Seed default providers if empty
-    DB.seedProviders();
+    // NOTE: seedProviders() used to run here on every boot. Its guard reads
+    // localStorage, which is empty on a fresh browser/profile/cleared cache, so
+    // it re-injected the whole 101-row demo catalogue and pushed it to Firestore
+    // as brand-new docs. That happened 16 times and left the collection 88%
+    // duplicates. Seeding is now opt-in only: Providers tab → "Seed demo data".
+    // See DB.seedProviders() for the guard.
 
     // Initialize all modules
     Briefing.init();

@@ -358,8 +358,21 @@ const DB = {
   },
 
   // SEED PROVIDERS
-  seedProviders() {
-    if (this.getProviders().length > 0) return; // only seed if empty
+  // ⚠️ NEVER call this automatically on boot. The guard below reads localStorage,
+  // which is empty on any fresh browser, new Chrome profile, cleared cache or
+  // incognito window — and Firestore has NOT synced down yet at init time. The
+  // old auto-call therefore re-seeded these 101 demo rows with fresh Date.now()
+  // ids and pushed them up as new documents. It fired 16 times between Feb and
+  // Aug 2026 and left `providers` at 1,725 docs for 210 real suppliers.
+  // Also note: the contact emails/phones in this seed are DEMO DATA, not verified
+  // suppliers. An earlier batch of similar invented addresses hard-bounced 11 of
+  // 15 times (see _fixMadrid4StarGroupHotelEmails). Do not email them.
+  seedProviders({ force = false } = {}) {
+    if (!force) return 0;                              // opt-in only
+    if (this._firebaseReady) return 0;                 // Firestore is the source of truth
+    if (localStorage.getItem('odisea_providers_seeded')) return 0;
+    if (this.getProviders().length > 0) return 0;      // only seed if empty
+    localStorage.setItem('odisea_providers_seeded', new Date().toISOString());
     const seed = [
       // ── Madrid Hotels ──
       { companyName: 'Hotel Mayorazgo', category: 'Hotel', city: 'Madrid', contactPerson: 'Reservations Dept', email: 'reservas@hotelmayorazgo.com', phone: '+34 915 47 26 00', starRating: 4, website: 'https://www.hotelmayorazgo.com', notes: 'Gran Vía location, group-friendly' },
@@ -472,6 +485,16 @@ const DB = {
       { companyName: 'Bus Valencia Group', category: 'Transport', city: 'Valencia', contactPerson: 'Charter Dept', email: 'charter@busvalencia.com', phone: '+34 963 45 67 89', starRating: 0, website: '', notes: 'Luxury coaches for groups' }
     ];
     seed.forEach(p => this.saveProvider(p));
+    return seed.length;
+  },
+
+  // Toggle a provider in/out of the favourites shortlist.
+  toggleFavorite(id) {
+    const p = this.getProviders().find(x => x.id === id);
+    if (!p) return null;
+    p.favorite = !p.favorite;
+    this.saveProvider(p);
+    return p;
   },
 
   // Idempotent insert: affordable 4★ hotels across Madrid region for large groups.

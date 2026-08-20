@@ -54,6 +54,40 @@ const Providers = {
       cities.map(c => `<option value="${this._escape(c)}" ${c===current?'selected':''}>${this._escape(c)}</option>`).join('');
   },
 
+  // Section order and display labels. The stored `category` values stay as they
+  // are (Hotel/Transport/...) so nothing else in the CRM breaks; only the
+  // heading shown to the user is friendlier.
+  SECTIONS: [
+    { key: 'Hotel',      label: 'Accommodation',      icon: '🏨' },
+    { key: 'Transport',  label: 'Buses & transfers',  icon: '🚌' },
+    { key: 'Activity',   label: 'Activities',         icon: '⚽' },
+    { key: 'Restaurant', label: 'Restaurants',        icon: '🍽️' },
+    { key: 'Other',      label: 'Other',              icon: '📦' },
+  ],
+  _collapsed: {},
+
+  toggleSection(key) {
+    this._collapsed[key] = !this._collapsed[key];
+    this.render();
+  },
+
+  toggleFavorite(id) {
+    DB.toggleFavorite(id);
+    this.render();
+  },
+
+  _favoritesOnly: false,
+
+  toggleFavoritesOnly() {
+    this._favoritesOnly = !this._favoritesOnly;
+    const btn = document.getElementById('prov-fav-toggle');
+    if (btn) {
+      btn.classList.toggle('btn-primary', this._favoritesOnly);
+      btn.classList.toggle('btn-outline', !this._favoritesOnly);
+    }
+    this.render();
+  },
+
   render() {
     this._refreshCityFilter();
     const catFilter = document.getElementById('prov-filter-cat').value;
@@ -68,39 +102,86 @@ const Providers = {
       (p.contactPerson || '').toLowerCase().includes(search) ||
       (p.city || '').toLowerCase().includes(search)
     );
+    if (this._favoritesOnly) providers = providers.filter(p => p.favorite);
 
+    const container = document.getElementById('providers-table-container');
     if (!providers.length) {
-      document.getElementById('providers-table-container').innerHTML = '<div class="empty-state">No providers found. Click "+ Add Provider" to start building your database.</div>';
+      container.innerHTML = '<div class="empty-state">No providers found. Click "+ Add Provider" to start building your database.</div>';
       return;
     }
 
-    document.getElementById('providers-table-container').innerHTML = `
-      <table class="data-table">
-        <thead><tr><th>Name</th><th>Category</th><th>City</th><th>Contact</th><th>Email</th><th>Phone</th><th>Website</th><th>Stars</th><th>Our Rating</th><th>Rates</th><th>Actions</th></tr></thead>
-        <tbody>${providers.map(p => {
-          const ourRatingStars = p.ourRating ? '<span style="color:var(--amber)">' + '★'.repeat(p.ourRating) + '</span>' + '<span style="color:var(--gray-200)">' + '★'.repeat(5 - p.ourRating) + '</span>' : '—';
-          const rateCount = DB.getRatesForProvider(p.id).length;
-          const rateBadge = rateCount > 0
-            ? `<span class="badge badge-confirmed" style="cursor:pointer" onclick="Providers.editProvider(${p.id})">${rateCount} rate${rateCount===1?'':'s'}</span>`
-            : `<span style="color:var(--gray-400);font-size:0.8rem">—</span>`;
-          return `<tr>
-            <td><strong>${p.companyName}</strong></td>
-            <td><span class="badge badge-sent">${p.category}</span></td>
-            <td>${p.city || '—'}</td>
-            <td>${p.contactPerson || '—'}</td>
-            <td>${p.email || '—'}</td>
-            <td>${p.phone || '—'}</td>
-            <td>${p.website ? `<a href="${p.website}" target="_blank" style="color:var(--amber);text-decoration:none;font-size:0.82rem" title="${p.website}">Visit</a>` : '—'}</td>
-            <td>${p.category === 'Hotel' ? '★'.repeat(p.starRating || 0) : '—'}</td>
-            <td style="font-size:0.82rem">${ourRatingStars}</td>
-            <td>${rateBadge}</td>
-            <td>
-              <button class="btn btn-sm btn-outline" onclick="Providers.editProvider(${p.id})">Edit</button>
-              <button class="btn btn-sm btn-outline" onclick="Providers.sendRFQ(${p.id})">RFQ</button>
-              <button class="btn btn-sm btn-danger" onclick="if(confirm('Delete?')){Providers.deleteProvider(${p.id})}">Del</button>
-            </td>
-          </tr>`}).join('')}</tbody>
-      </table>`;
+    const byName = (a, b) => String(a.companyName || '').localeCompare(String(b.companyName || ''));
+    const favs = providers.filter(p => p.favorite).sort(byName);
+    let html = '';
+
+    // Pinned shortlist. This is the list Juan actually works from; everything
+    // else is the long tail.
+    if (favs.length && !this._favoritesOnly) {
+      html += this._renderSection('__fav', '⭐', 'Favourites', favs, true);
+    }
+
+    this.SECTIONS.forEach(sec => {
+      const rows = providers.filter(p => (p.category || 'Other') === sec.key).sort(byName);
+      if (!rows.length) return;
+      html += this._renderSection(sec.key, sec.icon, sec.label, rows, false);
+    });
+
+    // Anything with a category outside SECTIONS still has to show up.
+    const known = new Set(this.SECTIONS.map(s => s.key));
+    const orphans = providers.filter(p => !known.has(p.category || 'Other')).sort(byName);
+    if (orphans.length) html += this._renderSection('__other', '❓', 'Uncategorised', orphans, false);
+
+    container.innerHTML = html;
+  },
+
+  _renderSection(key, icon, label, rows, pinned) {
+    const collapsed = !!this._collapsed[key];
+    const cities = [...new Set(rows.map(r => r.city).filter(Boolean))].sort();
+    const cityHint = cities.length && cities.length <= 6 ? cities.join(' · ') : `${cities.length} cities`;
+    return `
+      <div class="prov-section" style="margin-bottom:1.5rem;border:1px solid ${pinned ? 'var(--amber)' : 'var(--gray-200)'};border-radius:8px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:.6rem;padding:.7rem 1rem;cursor:pointer;background:${pinned ? 'rgba(245,158,11,.10)' : 'var(--gray-50, #f7f7f8)'}"
+             onclick="Providers.toggleSection('${key}')">
+          <span style="font-size:1.05rem">${icon}</span>
+          <strong style="font-size:.95rem">${label}</strong>
+          <span class="badge badge-sent">${rows.length}</span>
+          <span style="color:var(--gray-400);font-size:.78rem">${cityHint}</span>
+          <span style="margin-left:auto;color:var(--gray-400);font-size:.8rem">${collapsed ? '▸ show' : '▾ hide'}</span>
+        </div>
+        ${collapsed ? '' : `
+        <table class="data-table" style="margin:0">
+          <thead><tr><th style="width:34px"></th><th>Name</th><th>City</th><th>Contact</th><th>Email</th><th>Phone</th><th>Website</th><th>Stars</th><th>Our Rating</th><th>Rates</th><th>Actions</th></tr></thead>
+          <tbody>${rows.map(p => this._renderRow(p)).join('')}</tbody>
+        </table>`}
+      </div>`;
+  },
+
+  _renderRow(p) {
+    const ourRatingStars = p.ourRating ? '<span style="color:var(--amber)">' + '★'.repeat(p.ourRating) + '</span>' + '<span style="color:var(--gray-200)">' + '★'.repeat(5 - p.ourRating) + '</span>' : '—';
+    const rateCount = DB.getRatesForProvider(p.id).length;
+    const rateBadge = rateCount > 0
+      ? `<span class="badge badge-confirmed" style="cursor:pointer" onclick="Providers.editProvider(${p.id})">${rateCount} rate${rateCount===1?'':'s'}</span>`
+      : `<span style="color:var(--gray-400);font-size:0.8rem">—</span>`;
+    const star = p.favorite
+      ? `<span title="Remove from favourites" style="cursor:pointer;color:var(--amber);font-size:1.1rem">★</span>`
+      : `<span title="Add to favourites" style="cursor:pointer;color:var(--gray-200);font-size:1.1rem">☆</span>`;
+    return `<tr>
+      <td style="text-align:center" onclick="Providers.toggleFavorite(${p.id})">${star}</td>
+      <td><strong>${p.companyName}</strong></td>
+      <td>${p.city || '—'}</td>
+      <td>${p.contactPerson || '—'}</td>
+      <td>${p.email || '—'}</td>
+      <td>${p.phone || '—'}</td>
+      <td>${p.website ? `<a href="${p.website}" target="_blank" style="color:var(--amber);text-decoration:none;font-size:0.82rem" title="${p.website}">Visit</a>` : '—'}</td>
+      <td>${p.category === 'Hotel' ? '★'.repeat(p.starRating || 0) : '—'}</td>
+      <td style="font-size:0.82rem">${ourRatingStars}</td>
+      <td>${rateBadge}</td>
+      <td>
+        <button class="btn btn-sm btn-outline" onclick="Providers.editProvider(${p.id})">Edit</button>
+        <button class="btn btn-sm btn-outline" onclick="Providers.sendRFQ(${p.id})">RFQ</button>
+        <button class="btn btn-sm btn-danger" onclick="if(confirm('Delete?')){Providers.deleteProvider(${p.id})}">Del</button>
+      </td>
+    </tr>`;
   },
 
   showAddModal() {
@@ -358,7 +439,16 @@ const Providers = {
       ourReview: document.getElementById('prov-our-review').value,
       notes: document.getElementById('prov-notes').value
     };
-    if (id) p.id = Number(id);
+    if (id) {
+      p.id = Number(id);
+      // saveProvider() REPLACES the stored object, so any field not rebuilt by
+      // this form would be silently dropped. Carry the ones the form does not edit.
+      const prev = DB.getProviders().find(x => x.id === p.id);
+      if (prev) {
+        p.favorite = !!prev.favorite;
+        if (prev.createdAt) p.createdAt = prev.createdAt;
+      }
+    }
     const saved = DB.saveProvider(p);
     this.render();
     if (wasNew) {

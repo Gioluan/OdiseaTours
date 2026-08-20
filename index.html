@@ -418,6 +418,7 @@
         <option value="">All Cities</option>
       </select>
       <input type="text" id="prov-search" placeholder="Search providers..." oninput="Providers.render()">
+      <button class="btn btn-outline" id="prov-fav-toggle" onclick="Providers.toggleFavoritesOnly()" title="Show only the favourites shortlist">★ Favourites</button>
       <button class="btn btn-outline" onclick="Providers.bulkRFQ()">Bulk RFQ</button>
       <button class="btn btn-outline" onclick="Providers.deduplicateAll()">Deduplicate</button>
     </div>
