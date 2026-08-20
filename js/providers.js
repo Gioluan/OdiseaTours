@@ -499,6 +499,14 @@ const Providers = {
     document.getElementById('prov-modal').style.display = 'flex';
     document.getElementById('prov-modal-content').innerHTML = `
       <h2>Send RFQ to ${prov.companyName}</h2>
+      ${prov.email ? '' : `
+      <div style="margin-bottom:1rem;padding:.7rem .9rem;border-left:3px solid var(--amber);background:rgba(245,158,11,.10);font-size:.85rem;line-height:1.45">
+        <strong>No verified email on file.</strong> This supplier has no address we have actually read off their
+        own site, so there is nothing to send to. Open
+        ${prov.website ? `<a href="${prov.website}" target="_blank" style="color:var(--amber)">their website</a>` : 'their website'},
+        find the real groups or reservations address, save it on the record, then come back.
+        Never guess an address from the domain name.
+      </div>`}
       <p style="margin-bottom:1rem;color:var(--gray-400)">Fill in the tour details for the quote request, or select an existing tour.</p>
       <div class="form-group"><label>Select Tour (optional)</label>
         <select id="rfq-tour" onchange="Providers.fillRFQFromTour()">
