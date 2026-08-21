@@ -901,7 +901,11 @@ const Portal = {
       html += `<div class="pax-list">`;
       let directorHeadingDone = false;
       html += passengers.map(p => {
-        const initials = ((p.firstName || '')[0] || '') + ((p.lastName || '')[0] || '');
+        // A stub carries the player's name, so its initials would claim to be a
+        // person we have not been told about yet.
+        const initials = p._placeholder
+          ? '?'
+          : ((p.firstName || '')[0] || '') + ((p.lastName || '')[0] || '');
         const fullName = (p.firstName || '') + ' ' + (p.lastName || '');
         const isDirector = Portal._isTourDirector(p);
 
@@ -969,13 +973,18 @@ const Portal = {
             </div>
             <div class="pax-detail-panel" id="pax-${p.id}" style="display:none" onclick="event.stopPropagation()">
               <div class="pax-detail-grid">
-                <div class="pax-field"><span class="pax-field-label">Full Name</span><span class="pax-field-value">${fullName}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Full Name</span><span class="pax-field-value">${Portal._escapeHtml(Portal._paxDisplayName(p))}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Role</span><span class="pax-field-value">${p.role || '\u2014'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Family / Group</span><span class="pax-field-value">${p.family || '\u2014'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Date of Birth</span><span class="pax-field-value">${p.dateOfBirth ? Portal._fmtDate(p.dateOfBirth) : '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Sex</span><span class="pax-field-value">${p.sex || '\u2014'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Nationality</span><span class="pax-field-value">${p.nationality || '\u2014'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Passport</span><span class="pax-field-value">${p.passportNumber || '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Issued by</span><span class="pax-field-value">${p.passportCountry || '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Passport Issued</span><span class="pax-field-value">${p.passportIssueDate ? Portal._fmtDate(p.passportIssueDate) : '\u2014'}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Passport Expiry</span><span class="pax-field-value">${p.passportExpiry ? Portal._fmtDate(p.passportExpiry) : '\u2014'}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Email</span><span class="pax-field-value">${Portal._escapeHtml(p.email || '\u2014')}</span></div>
+                <div class="pax-field"><span class="pax-field-label">Mobile</span><span class="pax-field-value">${Portal._escapeHtml(p.mobile || '\u2014')}</span></div>
                 <div class="pax-field"><span class="pax-field-label">Dietary</span><span class="pax-field-value">${p.dietary || '\u2014'}</span></div>
                 <div class="pax-field full-width"><span class="pax-field-label">Medical Info</span><span class="pax-field-value">${p.medical || '\u2014'}</span></div>
                 <div class="pax-field full-width"><span class="pax-field-label">Emergency Contact</span><span class="pax-field-value">${p.emergencyContact || '\u2014'}</span></div>
