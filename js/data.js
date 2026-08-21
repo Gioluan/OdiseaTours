@@ -59,11 +59,13 @@ const DB = {
     const out = {};
     this.PORTAL_SAFE_FIELDS.forEach(k => { if (t[k] !== undefined) out[k] = t[k]; });
 
-    // Hotels: where they sleep, not what the bed costs.
+    // Hotels: where they sleep, not what the bed costs. rooms[] is rebuilt
+    // field by field rather than passed through - it carries costPerNight.
     out.hotels = (t.hotels || []).map(h => ({
       hotelName: h.hotelName || '', city: h.city || '', nights: h.nights || 0,
       starRating: h.starRating || '', mealPlan: h.mealPlan || '',
-      hotelConfirmed: !!h.hotelConfirmed, rooms: h.rooms || null
+      hotelConfirmed: !!h.hotelConfirmed,
+      rooms: (h.rooms || []).map(r => ({ type: r.type || '', qty: r.qty || 0 }))
     }));
 
     // Activities: what happens, not what it cost.
