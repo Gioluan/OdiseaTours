@@ -408,18 +408,37 @@ const Portal = {
   },
 
   _updateNavForMode() {
+    const isFamily = this._portalMode === 'family';
     // In family mode, hide Room Plan (group-level feature), show Flights
     document.querySelectorAll('.nav-drawer-links li').forEach(li => {
       if (li.dataset.section === 'roomplan') {
-        li.style.display = this._portalMode === 'family' ? 'none' : '';
+        li.style.display = isFamily ? 'none' : '';
       }
       if (li.dataset.section === 'flights') {
-        li.style.display = this._portalMode === 'family' ? '' : 'none';
+        li.style.display = isFamily ? '' : 'none';
+      }
+      // Families settle up with the group organiser, not with Odisea, so a
+      // balance from our invoices would be somebody else's number.
+      if (li.dataset.section === 'payments') {
+        li.style.display = isFamily ? 'none' : '';
+      }
+    });
+    document.querySelectorAll('.bottom-tab').forEach(tab => {
+      if (tab.dataset.section === 'payments') {
+        tab.style.display = isFamily ? 'none' : '';
       }
     });
   },
 
+  // Families never see Odisea's invoicing: the group organiser collects from
+  // them directly. Guarded here rather than only in the nav so a stale
+  // sessionStorage section or a direct showSection call cannot reach it.
+  _paymentsVisible() {
+    return this._portalMode !== 'family';
+  },
+
   showSection(name) {
+    if (name === 'payments' && !this._paymentsVisible()) name = 'overview';
     this.currentSection = name;
     // Toggle active nav items
     document.querySelectorAll('.nav-drawer-links li').forEach(li => {
@@ -583,6 +602,7 @@ const Portal = {
   async _renderOverviewPayments() {
     const el = document.getElementById('overview-payment-summary');
     if (!el) return;
+    if (!this._paymentsVisible()) { el.innerHTML = ''; return; }
     const t = this.tourData;
     const isFamily = this._portalMode === 'family' && this._familyId;
 
@@ -782,7 +802,7 @@ const Portal = {
     // Load passengers and invoices in parallel
     const [allPassengers, invoices] = await Promise.all([
       DB.getTourPassengers(this.tourId),
-      isFamily ? DB.getTourInvoicesForFamily(this.tourId, this._familyId) : DB.getTourInvoices(this.tourId)
+      Portal._paymentsVisible() ? DB.getTourInvoices(this.tourId) : Promise.resolve([])
     ]);
     this._passengers = allPassengers.filter(p => !p._removed);
     this._invoices = invoices;
@@ -821,15 +841,36 @@ const Portal = {
       ? ((this._familyData.numStudents || 0) + (this._familyData.numSiblings || 0) + (this._familyData.numAdults || 0))
       : ((t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0));
 
+    // Progress is measured in completed passport records, not in rows. The
+    // denominator is how many people we expect, so unregistered travellers
+    // count against it too.
+    const completeCount = clientPax.filter(p => Portal._paxComplete(p)).length;
+    const denominator = Math.max(totalExpected || 0, clientPax.length);
+    const pct = denominator ? Math.round(completeCount / denominator * 100) : 0;
+    const outstanding = Math.max(0, denominator - completeCount);
+    const expiringSoon = clientPax.filter(p => Portal._paxPassportTooSoon(p)).length;
+
     let html = `
       <div class="section-header">
         <h2>${Portal._t('passengers')}</h2>
-        <p>${clientPax.length} ${Portal._t('registered')}${totalExpected ? ' ' + Portal._t('ofExpected') + ' ' + totalExpected + ' ' + Portal._t('expected') : ''}${directors.length ? ' &bull; plus ' + directors.length + ' Odisea tour director' + (directors.length > 1 ? 's' : '') + ' (not charged)' : ''}</p>
+        <p>${completeCount} of ${denominator} complete${directors.length ? ' &bull; plus ' + directors.length + ' Odisea tour director' + (directors.length > 1 ? 's' : '') + ' (not charged)' : ''}</p>
       </div>
 
-      ${totalExpected ? `<div class="pax-progress-bar">
-        <div class="pax-progress-fill" style="width:${Math.min(100, Math.round(clientPax.length / totalExpected * 100))}%"></div>
-        <span class="pax-progress-label">${Math.round(clientPax.length / totalExpected * 100)}%</span>
+      ${denominator ? `<div class="pax-progress-bar">
+        <div class="pax-progress-fill" style="width:${Math.min(100, pct)}%;background:${pct === 100 ? 'var(--green, #22c55e)' : '#f0a500'}"></div>
+        <span class="pax-progress-label">${pct}%</span>
+      </div>` : ''}
+
+      ${outstanding ? `<div style="background:#fdecea;border:1px solid #f5c2bd;border-radius:8px;padding:0.7rem 0.9rem;margin:0.6rem 0;font-size:0.85rem;line-height:1.45">
+        <strong>${outstanding} traveller${outstanding > 1 ? 's' : ''} still need${outstanding > 1 ? '' : 's'} passport details.</strong>
+        Tap a traveller below to fill in their passport exactly as printed. We cannot issue tickets or check anyone into a hotel without this.
+      </div>` : `<div style="background:#e9f7ef;border:1px solid #bfe3cd;border-radius:8px;padding:0.7rem 0.9rem;margin:0.6rem 0;font-size:0.85rem">
+        <strong>All done.</strong> Every traveller has full passport details on file. Thank you.
+      </div>`}
+
+      ${expiringSoon ? `<div style="background:#fff4e5;border:1px solid #ffd8a8;border-radius:8px;padding:0.7rem 0.9rem;margin:0.6rem 0;font-size:0.85rem;line-height:1.45">
+        <strong>${expiringSoon} passport${expiringSoon > 1 ? 's expire' : ' expires'} too soon.</strong>
+        Spain requires validity until at least 13 January 2027. Please renew and send us the new details.
       </div>` : ''}
 
       <button class="add-pax-btn" onclick="Portal.showPassengerForm()">
@@ -875,7 +916,7 @@ const Portal = {
         // have no invoice by design, so "No Invoice" would read as a missing payment.
         const paymentStatus = isDirector
           ? '<span class="pax-tag pax-tag-green">Not charged</span>'
-          : this._getPaymentStatus(fullName);
+          : (Portal._paymentsVisible() ? this._getPaymentStatus(fullName) : '');
 
         // Passport status
         let passportTag = '';
@@ -901,10 +942,17 @@ const Portal = {
               <input type="checkbox" class="pax-select-cb" data-pax-id="${p.id}" onclick="event.stopPropagation();Portal.togglePaxSelect('${p.id}',this.checked)" style="width:16px;height:16px;accent-color:var(--navy);flex-shrink:0;cursor:pointer">
               <div class="pax-avatar">${initials.toUpperCase() || '?'}</div>
               <div class="pax-info">
-                <div class="pax-name">${fullName}</div>
+                <div class="pax-name"${p._placeholder ? ' style="color:var(--gray-400);font-style:italic"' : ''}>${Portal._escapeHtml(Portal._paxDisplayName(p))}</div>
                 <div class="pax-detail">
                   ${p.nationality || 'No nationality'}${p.dateOfBirth ? ' &bull; ' + Portal._fmtDate(p.dateOfBirth) : ''}
                 </div>
+                ${(() => {
+                  const missing = Portal._paxMissing(p);
+                  if (!missing.length) return '';
+                  const shown = missing.slice(0, 3).join(', ');
+                  return '<div class="pax-detail" style="color:#c0392b;font-size:0.78rem;margin-top:2px">Still needed: ' +
+                         Portal._escapeHtml(shown) + (missing.length > 3 ? ' +' + (missing.length - 3) + ' more' : '') + '</div>';
+                })()}
                 ${p.groupBreakdown ? '<div class="pax-detail" style="color:var(--gray-400);font-size:0.78rem;margin-top:2px">Group: ' + Portal._escapeHtml(p.groupBreakdown) + '</div>' : ''}
                 <div class="pax-tags">
                   ${p.role ? '<span class="pax-tag pax-tag-role-' + Portal._roleSlug(p.role) + '">' + Portal._escapeHtml(p.role.toUpperCase() === 'TOUR DIRECTOR' ? 'TOUR DIRECTOR' : p.role) + '</span>' : ''}
@@ -955,6 +1003,48 @@ const Portal = {
   // rooming lists, but they are not a client place and are never invoiced.
   _isTourDirector(p) {
     return String((p && p.role) || '').toLowerCase() === 'tour director';
+  },
+
+  // What "done" actually means for a traveller: everything the airline, the
+  // hotel and Spanish immigration need. Counting rows instead of contents is
+  // how a family ends up looking at a green 100% bar with no passport on file.
+  PAX_REQUIRED: [
+    ['firstName', 'given name'],
+    ['lastName', 'surname'],
+    ['dateOfBirth', 'date of birth'],
+    ['sex', 'sex'],
+    ['nationality', 'nationality'],
+    ['passportNumber', 'passport number'],
+    ['passportIssueDate', 'passport issue date'],
+    ['passportExpiry', 'passport expiry'],
+    ['passportCountry', 'issuing country']
+  ],
+
+  // A roster stub is never complete, however many fields it happens to carry -
+  // the names on it are the player's, copied across when the roster was built.
+  _paxMissing(p) {
+    if (!p) return Portal.PAX_REQUIRED.map(f => f[1]);
+    if (p._placeholder) return Portal.PAX_REQUIRED.map(f => f[1]);
+    return Portal.PAX_REQUIRED
+      .filter(([key]) => !String(p[key] == null ? '' : p[key]).trim())
+      .map(f => f[1]);
+  },
+
+  _paxComplete(p) {
+    return Portal._paxMissing(p).length === 0;
+  },
+
+  // Passport must outlast the trip by three months (Schengen), i.e. 13 Jan 2027.
+  _paxPassportTooSoon(p) {
+    if (!p || !p.passportExpiry) return false;
+    return new Date(p.passportExpiry) < new Date('2027-01-13');
+  },
+
+  // What to call a traveller we have not been told the name of yet.
+  _paxDisplayName(p) {
+    if (p && p._placeholder && p.placeholderLabel) return p.placeholderLabel;
+    const name = [(p && p.firstName) || '', (p && p.lastName) || ''].join(' ').trim();
+    return name || 'Traveller (name still needed)';
   },
 
   // Role names go into a CSS class, so anything that is not a letter becomes a dash.
@@ -1044,9 +1134,13 @@ const Portal = {
           style="position:absolute;top:0.6rem;right:0.6rem;background:none;border:none;font-size:1.6rem;line-height:1;color:var(--gray-400);cursor:pointer;padding:0.2rem 0.5rem">&times;</button>
         <h3>${isEdit ? 'Edit Passenger' : 'Register Passenger'}</h3>
         <div class="form-row form-row-2">
-          <div class="form-group"><label>First Name *</label><input id="pf-first" required value="${Portal._escapeAttr(p.firstName || '')}"></div>
-          <div class="form-group"><label>Last Name *</label><input id="pf-last" required value="${Portal._escapeAttr(p.lastName || '')}"></div>
+          <div class="form-group"><label>Given name(s) *</label><input id="pf-first" required value="${Portal._escapeAttr(p._placeholder ? '' : (p.firstName || ''))}"></div>
+          <div class="form-group"><label>Surname(s) *</label><input id="pf-last" required value="${Portal._escapeAttr(p._placeholder ? '' : (p.lastName || ''))}"></div>
         </div>
+        <p style="margin:-0.4rem 0 0.9rem;color:var(--gray-400);font-size:0.75rem;line-height:1.4">
+          Exactly as printed on the passport, including every middle name.
+          ${p._placeholder ? '<strong style="color:var(--red)">This is a placeholder we created from the roster — please replace it with the real traveller.</strong>' : ''}
+        </p>
         <div class="form-row form-row-2">
           <div class="form-group">
             <label>Role *</label>
@@ -1068,12 +1162,38 @@ const Portal = {
         </div>
         <div class="form-row form-row-2">
           <div class="form-group"><label>Date of Birth</label><input id="pf-dob" type="date" value="${p.dateOfBirth || ''}"></div>
-          <div class="form-group"><label>Nationality</label><input id="pf-nationality" placeholder="e.g. British" value="${Portal._escapeAttr(p.nationality || '')}"></div>
+          <div class="form-group">
+            <label>Sex as shown on passport</label>
+            <select id="pf-sex">
+              <option value="" ${!p.sex ? 'selected' : ''}>—</option>
+              <option value="M" ${p.sex === 'M' ? 'selected' : ''}>M</option>
+              <option value="F" ${p.sex === 'F' ? 'selected' : ''}>F</option>
+              <option value="X" ${p.sex === 'X' ? 'selected' : ''}>X</option>
+            </select>
+          </div>
         </div>
         <div class="form-row form-row-2">
-          <div class="form-group"><label>Passport Number</label><input id="pf-passport" value="${Portal._escapeAttr(p.passportNumber || '')}"></div>
-          <div class="form-group"><label>Passport Expiry</label><input id="pf-passport-exp" type="date" value="${p.passportExpiry || ''}"></div>
+          <div class="form-group"><label>Nationality</label><input id="pf-nationality" placeholder="e.g. United States" value="${Portal._escapeAttr(p.nationality || '')}"></div>
+          <div class="form-group"><label>Country that issued the passport</label><input id="pf-passport-country" placeholder="e.g. United States" value="${Portal._escapeAttr(p.passportCountry || '')}"></div>
         </div>
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label>Passport Number</label>
+            <input id="pf-passport" placeholder="No spaces" value="${Portal._escapeAttr(p.passportNumber || '')}">
+          </div>
+          <div class="form-group"><label>Passport Issue Date</label><input id="pf-passport-issue" type="date" value="${p.passportIssueDate || ''}"></div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label>Passport Expiry</label>
+            <input id="pf-passport-exp" type="date" value="${p.passportExpiry || ''}">
+            <small style="color:var(--gray-400);font-size:0.72rem;line-height:1.3;display:block;margin-top:0.25rem">
+              Spain needs the passport valid at least 3 months after you leave, so not before 13 Jan 2027.
+            </small>
+          </div>
+          <div class="form-group"><label>Mobile (with country code)</label><input id="pf-mobile" type="tel" placeholder="+1 808 555 0123" value="${Portal._escapeAttr(p.mobile || '')}"></div>
+        </div>
+        <div class="form-group"><label>Email (adults only)</label><input id="pf-email" type="email" placeholder="Leave blank for children" value="${Portal._escapeAttr(p.email || '')}"></div>
         <div class="form-group"><label>Dietary Requirements</label><input id="pf-dietary" placeholder="e.g. Vegetarian, Gluten-free" value="${Portal._escapeAttr(p.dietary || '')}"></div>
         <div class="form-group"><label>Medical Information</label><textarea id="pf-medical" rows="2" placeholder="Allergies, medications, conditions...">${Portal._escapeHtml(p.medical || '')}</textarea></div>
         <div class="form-group"><label>Emergency Contact</label><input id="pf-emergency" placeholder="Name and phone number" value="${Portal._escapeAttr(p.emergencyContact || '')}"></div>
@@ -1128,12 +1248,20 @@ const Portal = {
         role: val('pf-role'),
         family: val('pf-family').trim(),
         dateOfBirth: val('pf-dob'),
+        sex: val('pf-sex'),
         nationality: val('pf-nationality').trim(),
-        passportNumber: val('pf-passport').trim(),
+        passportNumber: val('pf-passport').replace(/\s+/g, '').trim(),
+        passportIssueDate: val('pf-passport-issue'),
         passportExpiry: val('pf-passport-exp'),
+        passportCountry: val('pf-passport-country').trim(),
+        email: val('pf-email').trim(),
+        mobile: val('pf-mobile').trim(),
         dietary: val('pf-dietary').trim(),
         medical: val('pf-medical').trim(),
         emergencyContact: val('pf-emergency').trim(),
+        // A real person has been entered, so this row is no longer a roster stub.
+        _placeholder: false,
+        placeholderLabel: '',
         source: 'portal'
       };
 
@@ -2423,6 +2551,7 @@ const Portal = {
   // ── Payment Status ──
   async renderPaymentStatus() {
     const container = document.getElementById('section-payments');
+    if (!Portal._paymentsVisible()) { if (container) container.innerHTML = ''; return; }
     const t = this.tourData;
     if (!t) return;
 
@@ -2677,6 +2806,20 @@ const Portal = {
       <form onsubmit="Portal.saveFlights(event)">
         <div class="flight-section">
           <div class="flight-section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Booking reference
+          </div>
+          <div class="form-group">
+            <label>Booking reference (PNR)</label>
+            <input id="fl-pnr" placeholder="e.g. K3LM9P" value="${Portal._escapeAttr(f.bookingRef || '')}"
+                   style="text-transform:uppercase">
+            <small style="color:var(--gray-400);font-size:0.72rem;display:block;margin-top:0.25rem">
+              The code on your airline confirmation. It lets us find your booking if a flight changes.
+            </small>
+          </div>
+        </div>
+        <div class="flight-section">
+          <div class="flight-section-title">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5 5.1 3 -1.9 1.9-2.1-.5-.6.6 2.6 1.5 1.5 2.6.6-.6-.5-2.1 1.9-1.9 3 5.1.5-.3c.4-.2.6-.6.5-1.1z"/></svg>
             ${Portal._t('arrivalFlight')}
           </div>
@@ -2735,6 +2878,7 @@ const Portal = {
     const val = id => (document.getElementById(id) || {}).value || '';
     const flightData = {
       familyName: isFamily ? ((this._familyData && this._familyData.name) || '') : '',
+      bookingRef: val('fl-pnr').replace(/\s+/g, '').toUpperCase(),
       arrival: {
         date: val('fl-arr-date'), flightNumber: val('fl-arr-number').toUpperCase(),
         airline: val('fl-arr-airline'), departureAirport: val('fl-arr-dep-airport').toUpperCase(),
@@ -2843,8 +2987,10 @@ const Portal = {
       const emergencyOk = passengers.length > 0 && passengers.every(p => p.emergencyContact);
       items.push({ done: emergencyOk, label: Portal._t('clEmergencyContacts'), section: 'passengers' });
 
-      const paymentOk = !!(invoicesRaw && invoicesRaw.amount && (invoicesRaw.payments || []).reduce((s,p) => s + Number(p.amount), 0) >= Number(invoicesRaw.amount));
-      items.push({ done: paymentOk, label: Portal._t('clPaymentComplete'), section: 'payments' });
+      if (Portal._paymentsVisible()) {
+        const paymentOk = !!(invoicesRaw && invoicesRaw.amount && (invoicesRaw.payments || []).reduce((s,p) => s + Number(p.amount), 0) >= Number(invoicesRaw.amount));
+        items.push({ done: paymentOk, label: Portal._t('clPaymentComplete'), section: 'payments' });
+      }
     }
 
     const doneCount = items.filter(i => i.done).length;

@@ -1,5 +1,27 @@
 /* === PASSENGERS MODULE === */
 const Passengers = {
+  // Kept in step with Portal.PAX_REQUIRED in portal.js. A row counts as done
+  // only when the airline and the hotel could actually be given this person.
+  REQUIRED_FIELDS: [
+    ['firstName', 'given name'],
+    ['lastName', 'surname'],
+    ['dateOfBirth', 'date of birth'],
+    ['sex', 'sex'],
+    ['nationality', 'nationality'],
+    ['passportNumber', 'passport number'],
+    ['passportIssueDate', 'passport issue date'],
+    ['passportExpiry', 'passport expiry'],
+    ['passportCountry', 'issuing country']
+  ],
+
+  _missingFields(p) {
+    if (!p) return Passengers.REQUIRED_FIELDS.map(f => f[1]);
+    if (p._placeholder) return Passengers.REQUIRED_FIELDS.map(f => f[1]);
+    return Passengers.REQUIRED_FIELDS
+      .filter(([k]) => !String(p[k] == null ? '' : p[k]).trim())
+      .map(f => f[1]);
+  },
+
   init() {
     const tours = DB.getTours();
     const sel = document.getElementById('pax-tour-select');
@@ -27,20 +49,37 @@ const Passengers = {
     }
     document.getElementById('passengers-table-container').innerHTML = `
       <table class="data-table">
-        <thead><tr><th>#</th><th>Name</th><th>Family</th><th>DOB</th><th>Nationality</th><th>Passport</th><th>Category</th><th>Dietary</th><th>Emergency Contact</th><th>Actions</th></tr></thead>
+        <thead><tr><th>#</th><th>Name</th><th>Family</th><th>Status</th><th>DOB</th><th>Sex</th><th>Nationality</th><th>Passport</th><th>Expiry</th><th>Category</th><th>Dietary</th><th>Emergency Contact</th><th>Actions</th></tr></thead>
         <tbody>${passengers.map((p, i) => {
           const fam = p.familyId ? familyById[p.familyId] : null;
           const famCell = fam
             ? `<span style="font-size:0.82rem">${fam.name || '—'}</span>`
             : '<span style="color:var(--red);font-size:0.78rem;font-style:italic">No family</span>';
+          const missing = Passengers._missingFields(p);
+          const statusCell = p._placeholder
+            ? '<span class="badge badge-followup" title="Roster stub — family has not replaced it">PLACEHOLDER</span>'
+            : (missing.length
+                ? `<span class="badge badge-sent" title="Missing: ${missing.join(', ')}">${missing.length} missing</span>`
+                : '<span class="badge badge-confirmed">Complete</span>');
+          const expiryCell = p.passportExpiry
+            ? (new Date(p.passportExpiry) < new Date('2027-01-13')
+                ? `<span style="color:var(--red);font-weight:600" title="Expires before 13 Jan 2027">${fmtDate(p.passportExpiry)}</span>`
+                : fmtDate(p.passportExpiry))
+            : '—';
+          const nameCell = p._placeholder
+            ? `<em style="color:var(--gray-400)">${p.placeholderLabel || 'Placeholder'}</em>`
+            : `<strong>${p.firstName} ${p.lastName}</strong>`;
           return `
           <tr>
             <td>${i + 1}</td>
-            <td><strong>${p.firstName} ${p.lastName}</strong></td>
+            <td>${nameCell}</td>
             <td>${famCell}</td>
+            <td>${statusCell}</td>
             <td>${fmtDate(p.dateOfBirth)}</td>
+            <td>${p.sex || '—'}</td>
             <td>${p.nationality || '—'}</td>
             <td>${p.passportNumber || '—'}</td>
+            <td>${expiryCell}</td>
             <td><span class="badge ${p.category === 'Student' ? 'badge-sent' : p.category === 'Sibling' ? 'badge-followup' : 'badge-confirmed'}">${p.category}</span></td>
             <td>${p.dietaryRequirements || '—'}</td>
             <td>${p.emergencyContactName || '—'} ${p.emergencyContactPhone ? '(' + p.emergencyContactPhone + ')' : ''}</td>
@@ -51,6 +90,21 @@ const Passengers = {
           </tr>`;
         }).join('')}</tbody>
       </table>
+      ${(() => {
+        const complete = passengers.filter(p => !Passengers._missingFields(p).length).length;
+        const stubs = passengers.filter(p => p._placeholder).length;
+        const expiring = passengers.filter(p => p.passportExpiry && new Date(p.passportExpiry) < new Date('2027-01-13')).length;
+        const pct = passengers.length ? Math.round(complete / passengers.length * 100) : 0;
+        const noFamily = passengers.filter(p => !p.familyId).length;
+        return `<div style="margin-top:0.9rem;display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center">
+          <span style="background:${pct === 100 ? 'var(--green)' : 'var(--amber)'};color:white;padding:0.3rem 0.75rem;border-radius:12px;font-size:0.85rem;font-weight:700">
+            ${complete} of ${passengers.length} complete (${pct}%)
+          </span>
+          ${stubs ? `<span style="background:var(--gray-100,#eee);color:var(--gray-500,#555);padding:0.3rem 0.75rem;border-radius:12px;font-size:0.82rem">${stubs} placeholder${stubs > 1 ? 's' : ''} not yet replaced</span>` : ''}
+          ${noFamily ? `<span style="background:#fdecea;color:#c0392b;padding:0.3rem 0.75rem;border-radius:12px;font-size:0.82rem" title="Not linked to any family, so they appear in no family portal and nobody will fill them in">${noFamily} with no family</span>` : ''}
+          ${expiring ? `<span style="background:#fff4e5;color:#b26a00;padding:0.3rem 0.75rem;border-radius:12px;font-size:0.82rem">${expiring} passport${expiring > 1 ? 's expire' : ' expires'} before 13 Jan 2027</span>` : ''}
+        </div>`;
+      })()}
       <div style="margin-top:0.8rem;color:var(--gray-400);font-size:0.85rem">Total: ${passengers.length} passengers · ${families.length} families on this tour. Each family generates one Family Portal code in Confirmed Tours → Family Pays.</div>`;
   },
 
@@ -87,8 +141,23 @@ const Passengers = {
       </div>
       <div class="form-row form-row-3">
         <div class="form-group"><label>Date of Birth</label><input id="pax-dob" type="date" value="${p.dateOfBirth || ''}"></div>
+        <div class="form-group"><label>Sex (passport)</label><select id="pax-sex">
+          <option value="" ${!p.sex ? 'selected' : ''}>—</option>
+          <option value="M" ${p.sex === 'M' ? 'selected' : ''}>M</option>
+          <option value="F" ${p.sex === 'F' ? 'selected' : ''}>F</option>
+          <option value="X" ${p.sex === 'X' ? 'selected' : ''}>X</option>
+        </select></div>
         <div class="form-group"><label>Nationality</label><input id="pax-nat" value="${p.nationality || ''}"></div>
+      </div>
+      <div class="form-row form-row-4">
         <div class="form-group"><label>Passport Number</label><input id="pax-passport" value="${p.passportNumber || ''}"></div>
+        <div class="form-group"><label>Issue Date</label><input id="pax-passport-issue" type="date" value="${p.passportIssueDate || ''}"></div>
+        <div class="form-group"><label>Expiry Date</label><input id="pax-passport-exp" type="date" value="${p.passportExpiry || ''}"></div>
+        <div class="form-group"><label>Issuing Country</label><input id="pax-passport-country" value="${p.passportCountry || ''}"></div>
+      </div>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label>Email <span style="font-weight:400;color:var(--gray-400);font-size:0.78rem">— adults only</span></label><input id="pax-email" type="email" value="${p.email || ''}"></div>
+        <div class="form-group"><label>Mobile <span style="font-weight:400;color:var(--gray-400);font-size:0.78rem">— with country code</span></label><input id="pax-mobile" value="${p.mobile || ''}" placeholder="+1 808 555 0123"></div>
       </div>
       <div class="form-row form-row-2">
         <div class="form-group"><label>Category</label><select id="pax-cat"><option ${p.category==='Student'?'selected':''}>Student</option><option ${p.category==='Sibling'?'selected':''}>Sibling</option><option ${p.category==='Adult'?'selected':''}>Adult</option></select></div>
@@ -165,8 +234,14 @@ const Passengers = {
       firstName: document.getElementById('pax-first').value,
       lastName: document.getElementById('pax-last').value,
       dateOfBirth: document.getElementById('pax-dob').value,
+      sex: document.getElementById('pax-sex').value,
       nationality: document.getElementById('pax-nat').value,
-      passportNumber: document.getElementById('pax-passport').value,
+      passportNumber: document.getElementById('pax-passport').value.replace(/\s+/g, '').trim(),
+      passportIssueDate: document.getElementById('pax-passport-issue').value,
+      passportExpiry: document.getElementById('pax-passport-exp').value,
+      passportCountry: document.getElementById('pax-passport-country').value.trim(),
+      email: document.getElementById('pax-email').value.trim(),
+      mobile: document.getElementById('pax-mobile').value.trim(),
       category: document.getElementById('pax-cat').value,
       roomPreference: document.getElementById('pax-room').value,
       dietaryRequirements: document.getElementById('pax-diet').value,

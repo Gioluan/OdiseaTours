@@ -146,6 +146,74 @@ const DB = {
       .catch(err => console.warn('Invoice projection push failed:', err.message));
   },
 
+  // The roster rebuild created one row per expected traveller, but it had only
+  // the player's name to work with, so a family of four arrives as four copies
+  // of "Collin Packard" with different roles. Families read that as done and
+  // fill nothing in. This marks those rows as stubs and gives each a label that
+  // says who it is waiting for, matching how the Excel sheet reads.
+  //
+  //   await DB.flagPlaceholderPassengers('1771413637937')
+  //   await DB.flagPlaceholderPassengers('1771413637937', { apply: true })
+  //
+  // Dry run by default: pass { apply: true } to write.
+  async flagPlaceholderPassengers(tourId, opts) {
+    const apply = !!(opts && opts.apply);
+    if (!this._firebaseReady || !this.auth || !this.auth.currentUser) {
+      console.error('Sign in to the CRM first.');
+      return { ok: false };
+    }
+    const snap = await this.firestore.collection('tours').doc(String(tourId))
+      .collection('passengers').get();
+    const pax = [];
+    snap.forEach(d => pax.push(Object.assign({ _id: d.id }, d.data())));
+
+    const live = pax.filter(p => !p._removed);
+    const keyOf = p => String(p.familyId || p.family || '').toLowerCase().trim();
+    const nameOf = p => [p.firstName || '', p.lastName || ''].join(' ').toLowerCase().replace(/\s+/g, ' ').trim();
+    const isDirector = p => String(p.role || '').toLowerCase() === 'tour director';
+
+    const byFamily = {};
+    live.forEach(p => { (byFamily[keyOf(p)] = byFamily[keyOf(p)] || []).push(p); });
+
+    const planned = [];
+    Object.values(byFamily).forEach(members => {
+      const players = members.filter(p => String(p.role || '').toLowerCase() === 'player' && nameOf(p));
+      const anchorName = players.length
+        ? [players[0].firstName || '', players[0].lastName || ''].join(' ').trim()
+        : '';
+      const playerNames = new Set(players.map(nameOf));
+      const counters = {};
+
+      members.forEach(p => {
+        if (isDirector(p)) return;
+        const role = String(p.role || 'Traveller');
+        const isPlayer = role.toLowerCase() === 'player';
+        // A stub is a non-player carrying the player's name, or any row with no
+        // given name at all. Anything a family has already corrected is left be.
+        const duplicatesPlayer = !isPlayer && playerNames.has(nameOf(p));
+        const nameless = !String(p.firstName || '').trim();
+        if (!duplicatesPlayer && !nameless) return;
+
+        counters[role] = (counters[role] || 0) + 1;
+        const label = anchorName
+          ? `${role} ${counters[role]} (travelling with ${anchorName})`
+          : `${role} ${counters[role]} (name still needed)`;
+        if (p._placeholder === true && p.placeholderLabel === label) return;
+        planned.push({ id: p._id, label: label, was: [p.firstName, p.lastName].filter(Boolean).join(' ') });
+      });
+    });
+
+    if (apply) {
+      for (const row of planned) {
+        await this.firestore.collection('tours').doc(String(tourId))
+          .collection('passengers').doc(row.id)
+          .set({ _placeholder: true, placeholderLabel: row.label }, { merge: true });
+      }
+    }
+    console.log(`${apply ? 'Flagged' : 'Would flag'} ${planned.length} placeholder(s) of ${live.length} passengers.`);
+    return { ok: true, applied: apply, count: planned.length, sample: planned.slice(0, 8) };
+  },
+
   // Backfills projections + access-code docs for every tour and invoice already
   // in Firestore. Run once from the CRM console while signed in:
   //   await DB.migratePortalProjections()
