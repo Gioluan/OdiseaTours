@@ -2,97 +2,172 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Admin (authenticated) can read/write everything ──
+    // ─────────────────────────────────────────────────────────────────────
+    // THREAT MODEL
+    //
+    // portal.html and guide.html run unauthenticated in a client's browser.
+    // firebase-config.js ships the API key to everyone, so "has the API key"
+    // grants nothing: any rule that says `if true` is open to the whole
+    // internet, not just to people holding an access code. Rules cannot read
+    // an access code, and they cannot hide individual fields - only whole
+    // documents.
+    //
+    // So the model is:
+    //   - Business documents (tours, invoices, quotes, providers, clients,
+    //     leads, rates) are ADMIN-ONLY. They carry costs.margin, costs.profit,
+    //     providerExpenses[].amount and per-family amountDue.
+    //   - The portal reads a cut-down projection written by the CRM:
+    //     tours/{tourId}/portal/public - see DB.PORTAL_SAFE_FIELDS in data.js.
+    //   - Access codes resolve through accessCodes/{code}, which allows `get`
+    //     but not `list`. You must know a code to use one; you can no longer
+    //     discover tours by querying the collection.
+    //
+    // KNOWN LIMIT: anyone holding one valid family code can still read that
+    // tour's other passengers and invoices, because rules have no identity to
+    // scope on. Closing that needs real auth - a Cloud Function issuing a
+    // custom token per family, which needs the Blaze plan. Until then a code
+    // is a shared secret for the whole tour, so treat codes as sensitive and
+    // rotate them if one leaks.
+    //
+    // Deploy: firebase deploy --only firestore:rules
+    // ─────────────────────────────────────────────────────────────────────
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Public writes must not grow without bound or carry junk payloads.
+    function sanePayload(maxFields) {
+      return request.resource.data.size() <= maxFields;
+    }
+
+    // ── Default: admin only. Everything not matched below lands here, so a
+    // new collection is private until someone deliberately opens it. ──
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if signedIn();
     }
 
-    // ── Tours: public can only read specific fields needed for portal lookup ──
-    // Access-code queries (where accessCode == X) still work because read is allowed.
-    // But the tour doc may contain pricing/internal data — acceptable tradeoff
-    // since the access code acts as a shared secret.
+    // ── Access codes: get by id, never list ──
+    // The document id IS the code, so a `get` requires knowing it. `list` is
+    // denied, which is what stops the collection being enumerated.
+    match /accessCodes/{code} {
+      allow get: if true;
+      allow list: if signedIn();
+      // Portal bumps lastAccess / accessCount and nothing else.
+      allow update: if signedIn()
+        || request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly(['lastAccess', 'accessCount']);
+      allow create, delete: if signedIn();
+    }
+
+    // ── Tours: admin-only to READ. ──
+    // Writing roomPlan stays open because the group leader rearranges rooms in
+    // the portal, and Firestore does not require read access to update.
     match /tours/{tourId} {
-      allow read: if true;
-      // Portal may update ONLY roomPlan and flight fields — everything else is admin-only.
-      // Keeps pricing / internal fields safe while letting group leader save room changes.
-      allow update: if request.resource.data.diff(resource.data)
-        .affectedKeys()
-        .hasOnly(['roomPlan', 'tourFlightDetails', 'flightLegs']);
-      // No public create or delete
+      allow get, list: if signedIn();
+      allow create, delete: if signedIn();
+      allow update: if signedIn()
+        || request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly(['roomPlan', 'tourFlightDetails', 'flightLegs']);
+
+      // ── The public projection the portal and guide actually read ──
+      match /portal/{docId} {
+        allow get: if true;
+        allow list: if signedIn();
+        allow create, delete: if signedIn();
+        allow update: if signedIn()
+          || request.resource.data.diff(resource.data)
+               .affectedKeys().hasOnly(['roomPlan']);
+      }
+
+      // ── Invoice projection: amounts and payments for this tour only ──
+      // Listing requires the tourId, which now requires a code.
+      match /portalInvoices/{invoiceId} {
+        allow read: if true;
+        allow write: if signedIn();
+      }
+
+      // ── Passengers: families fill in their own travellers ──
+      // Delete stays admin-only; the portal soft-deletes with _removed.
+      match /passengers/{passengerId} {
+        allow read: if true;
+        allow create: if signedIn()
+          || (sanePayload(40)
+              && request.resource.data.firstName is string
+              && request.resource.data.lastName is string
+              && request.resource.data.firstName.size() <= 100
+              && request.resource.data.lastName.size() <= 100);
+        allow update: if signedIn()
+          || (sanePayload(40)
+              && request.resource.data.firstName is string
+              && request.resource.data.lastName is string
+              && request.resource.data.firstName.size() <= 100
+              && request.resource.data.lastName.size() <= 100);
+        allow delete: if signedIn();
+      }
+
+      // ── Messages: families write to the group thread ──
+      match /messages/{messageId} {
+        allow read: if true;
+        allow create: if signedIn()
+          || (sanePayload(15)
+              && request.resource.data.text is string
+              && request.resource.data.text.size() <= 2000);
+        allow update, delete: if signedIn();
+      }
+
+      // ── Flight details ──
+      match /tourFlights/{docId} {
+        allow read: if true;
+        allow create, update: if signedIn() || sanePayload(30);
+        allow delete: if signedIn();
+      }
+      match /familyFlights/{familyId} {
+        allow read: if true;
+        allow create, update: if signedIn() || sanePayload(30);
+        allow delete: if signedIn();
+      }
+
+      // ── Consent signatures and feedback, written from the portal ──
+      match /consent/{docId} {
+        allow read: if true;
+        allow create, update: if signedIn() || sanePayload(60);
+        allow delete: if signedIn();
+      }
+      match /feedback/{docId} {
+        allow read: if true;
+        allow create, update: if signedIn() || sanePayload(40);
+        allow delete: if signedIn();
+      }
+
+      // ── Documents handed to families and guides ──
+      match /documents/{docId} {
+        allow read: if true;
+        allow write: if signedIn();
+      }
+      match /guideDocuments/{docId} {
+        allow read: if true;
+        allow write: if signedIn();
+      }
+
+      // ── Guide app: expenses and notes are created on the road ──
+      match /guideExpenses/{expenseId} {
+        allow read: if true;
+        allow create: if signedIn() || sanePayload(30);
+        allow update, delete: if signedIn();
+      }
+      match /guideNotes/{noteId} {
+        allow read: if true;
+        allow create: if signedIn() || sanePayload(20);
+        allow update, delete: if signedIn();
+      }
     }
 
-    // ── Passengers: public can read, create, update — but NOT delete ──
-    // Deletion requires authentication (admin CRM only).
-    // Portal "remove passenger" will need admin auth or a Cloud Function in future.
-    match /tours/{tourId}/passengers/{passengerId} {
-      allow read: if true;
-      allow create: if true
-        && request.resource.data.keys().hasAny(['firstName', 'lastName'])
-        && request.resource.data.firstName is string
-        && request.resource.data.lastName is string
-        && request.resource.data.firstName.size() <= 100
-        && request.resource.data.lastName.size() <= 100;
-      allow update: if true
-        && request.resource.data.firstName is string
-        && request.resource.data.lastName is string
-        && request.resource.data.firstName.size() <= 100
-        && request.resource.data.lastName.size() <= 100;
-      // delete only for authenticated admin
-    }
-
-    // ── Messages: public can read and create (not update or delete) ──
-    match /tours/{tourId}/messages/{messageId} {
-      allow read: if true;
-      allow create: if true
-        && request.resource.data.keys().hasAny(['text'])
-        && request.resource.data.text is string
-        && request.resource.data.text.size() <= 2000;
-      // No update or delete from public
-    }
-
-    // ── Flight details: public create/update, no delete ──
-    match /tours/{tourId}/tourFlights/{docId} {
-      allow read: if true;
-      allow create, update: if true
-        && request.resource.data.size() <= 20;
-      // No delete from public
-    }
-
-    // ── Family flights: public create/update, no delete ──
-    match /tours/{tourId}/familyFlights/{familyId} {
-      allow read: if true;
-      allow create, update: if true
-        && request.resource.data.size() <= 20;
-      // No delete from public
-    }
-
-    // ── Documents: read-only for public ──
-    match /tours/{tourId}/documents/{docId} {
-      allow read: if true;
-    }
-
-    // ── Guide expenses: read and create, delete requires auth ──
-    match /tours/{tourId}/guideExpenses/{expenseId} {
-      allow read, create: if true;
-      // delete only for authenticated admin
-    }
-
-    // ── Guide notes: read and create, delete requires auth ──
-    match /tours/{tourId}/guideNotes/{noteId} {
-      allow read, create: if true;
-      // delete only for authenticated admin
-    }
-
-    // ── Guide documents: read-only ──
-    match /tours/{tourId}/guideDocuments/{docId} {
-      allow read: if true;
-    }
-
-    // ── Invoices: public read so family portal can show balance + schedule ──
-    // Same shared-secret model as tours: the family access code is what gates
-    // access in practice. Write is still admin-only via the catch-all above.
+    // ── Invoices: admin only. ──
+    // This collection held every client's billing across every tour and used to
+    // be world-readable. The portal now reads tours/{tourId}/portalInvoices.
     match /invoices/{invoiceId} {
-      allow read: if true;
+      allow read, write: if signedIn();
     }
   }
 }

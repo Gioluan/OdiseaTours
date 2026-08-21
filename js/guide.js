@@ -95,9 +95,17 @@ const Guide = {
     sessionStorage.setItem('guide_tourId', this.tourId);
 
     try {
-      const doc = await DB.firestore.collection('tours').doc(this.tourId).get();
+      // Public projection only. The tour document holds costs and margins and
+      // is admin-only; see DB.PORTAL_SAFE_FIELDS.
+      const doc = await DB.firestore.collection('tours').doc(this.tourId)
+        .collection('portal').doc('public').get();
       if (doc.exists) {
-        this.tourData = { id: doc.id, ...doc.data() };
+        this.tourData = { id: this.tourId, ...doc.data() };
+      } else {
+        // Transitional fallback, same as the family portal. Stops working once
+        // the hardened rules are deployed, by design.
+        const legacy = await DB.firestore.collection('tours').doc(this.tourId).get();
+        if (legacy.exists) this.tourData = { id: legacy.id, ...legacy.data() };
       }
     } catch (e) {
       console.warn('loadTour failed:', e.message);
@@ -484,7 +492,12 @@ const Guide = {
   async _saveRoomPlan() {
     if (!this.tourId || !DB._firebaseReady) return;
     try {
+      // Rules permit an unauthenticated update of roomPlan on the tour doc even
+      // though reading it is admin-only. The projection is updated too so the
+      // next portal load sees the change before the CRM re-projects.
       await DB.firestore.collection('tours').doc(this.tourId).update({ roomPlan: this._roomPlan });
+      await DB.firestore.collection('tours').doc(this.tourId)
+        .collection('portal').doc('public').update({ roomPlan: this._roomPlan });
       this.tourData.roomPlan = this._roomPlan;
     } catch (e) {
       console.warn('Save room plan failed:', e.message);
@@ -547,9 +560,12 @@ const Guide = {
       });
     }
 
-    // Providers from tour's providerExpenses
-    if (t.providerExpenses && t.providerExpenses.length) {
-      t.providerExpenses.forEach(pe => {
+    // Providers: names and categories only. The projection strips the amounts,
+    // falling back to providerExpenses for anything not yet re-projected.
+    const providerRows = (t.providerContacts && t.providerContacts.length)
+      ? t.providerContacts : (t.providerExpenses || []);
+    if (providerRows.length) {
+      providerRows.forEach(pe => {
         const name = pe.providerName || '';
         if (!name || contacts.find(c => c.name.toLowerCase() === name.toLowerCase())) return;
         const prov = this._providers.find(p => p.companyName && name && p.companyName.toLowerCase().includes(name.toLowerCase()));

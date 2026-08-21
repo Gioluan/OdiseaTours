@@ -29,6 +29,149 @@ const DB = {
     }
     this.firestore.collection(collection).doc(String(item.id))
       .set(clean, { merge: true }).catch(err => console.warn('Push failed:', err.message));
+    if (collection === 'tours') this._pushPortalProjection(clean);
+    if (collection === 'invoices') this._pushInvoiceProjection(clean);
+  },
+
+  // ── PUBLIC PORTAL PROJECTION ──────────────────────────────────────────────
+  // The family portal and the guide app run unauthenticated: an access code is
+  // the only thing between a visitor and the data. Firestore rules can allow or
+  // deny a whole document but cannot hide individual fields, so the tour doc is
+  // now admin-only and the portal reads this cut-down copy instead.
+  //
+  // NEVER add a cost, price, margin or another family's contact detail below.
+  // The tour doc carries costs.margin, costs.profit, costs.totalRevenue,
+  // providerExpenses[].amount and individualClients[].amountDue. None of that
+  // may ever reach a client's browser.
+  PORTAL_SAFE_FIELDS: [
+    'id', 'tourName', 'status', 'destination', 'destinations',
+    'startDate', 'endDate', 'nights',
+    'groupName', 'school', 'organization', 'currency',
+    'clientName', 'clientEmail', 'clientPhone',
+    'itinerary', 'inclusions', 'requiredForms',
+    'roomPlan', 'roomType', 'roomingSummary', 'mealPlan',
+    'numStudents', 'numSiblings', 'numAdults', 'numFOC', 'numRooms',
+    'flights', 'flightLegs', 'tourFlightDetails',
+    'portalPaymentWise', 'portalPaymentCard'
+  ],
+
+  _buildPortalProjection(t) {
+    const out = {};
+    this.PORTAL_SAFE_FIELDS.forEach(k => { if (t[k] !== undefined) out[k] = t[k]; });
+
+    // Hotels: where they sleep, not what the bed costs.
+    out.hotels = (t.hotels || []).map(h => ({
+      hotelName: h.hotelName || '', city: h.city || '', nights: h.nights || 0,
+      starRating: h.starRating || '', mealPlan: h.mealPlan || '',
+      hotelConfirmed: !!h.hotelConfirmed, rooms: h.rooms || null
+    }));
+
+    // Activities: what happens, not what it cost.
+    out.activities = (t.activities || []).map(a => ({
+      name: a.name || '', day: a.day || '', destination: a.destination || '',
+      playersOnly: !!a.playersOnly, isFree: !!a.isFree
+    }));
+
+    // The guide app needs provider names and contacts, never the amounts.
+    out.providerContacts = (t.providerExpenses || []).map(p => ({
+      providerId: p.providerId || null, providerName: p.providerName || '',
+      category: p.category || '', description: p.description || ''
+    }));
+
+    // Families: only what the portal actually renders (name + headcount).
+    // Strips every family's email, phone, amountDue and notes.
+    out.individualClients = (t.individualClients || []).map(ic => ({
+      id: ic.id, name: ic.name || '', group: ic.group || '',
+      numStudents: ic.numStudents || 0, numAdults: ic.numAdults || 0,
+      numSiblings: ic.numSiblings || 0
+    }));
+
+    // Deliberately absent: familyAccessCodes. One family's code must not be a
+    // key to every other family's code. The portal learns its own familyId from
+    // the accessCodes lookup instead.
+    out._projectedAt = new Date().toISOString();
+    return out;
+  },
+
+  _pushPortalProjection(t) {
+    if (!this._firebaseReady || !this.auth || !this.auth.currentUser) return;
+    const tourId = String(t.id);
+    this.firestore.collection('tours').doc(tourId)
+      .collection('portal').doc('public')
+      .set(this._buildPortalProjection(t), { merge: false })
+      .catch(err => console.warn('Portal projection push failed:', err.message));
+    this._pushAccessCodeDocs(t);
+  },
+
+  // One document per access code, keyed BY the code. Rules allow `get` but not
+  // `list`, so the code has to be known up front - it can no longer be found by
+  // querying the tours collection, which is what made every tour enumerable.
+  _pushAccessCodeDocs(t) {
+    if (!this._firebaseReady || !this.auth || !this.auth.currentUser) return;
+    const tourId = String(t.id);
+    const write = (code, payload) => {
+      if (!code) return;
+      this.firestore.collection('accessCodes').doc(String(code))
+        .set(Object.assign({ tourId: tourId, updatedAt: new Date().toISOString() }, payload),
+             { merge: true })
+        .catch(err => console.warn('Access code doc failed:', err.message));
+    };
+    write(t.accessCode, { kind: 'tour', familyId: null });
+    write(t.guideAccessCode, { kind: 'guide', familyId: null });
+    Object.entries(t.familyAccessCodes || {}).forEach(([familyId, entry]) => {
+      if (entry && entry.code) write(entry.code, { kind: 'family', familyId: String(familyId) });
+    });
+  },
+
+  // Invoices live in a root collection the portal must no longer be able to
+  // list. This mirrors the few fields the payments screen shows under the tour.
+  _pushInvoiceProjection(inv) {
+    if (!this._firebaseReady || !this.auth || !this.auth.currentUser) return;
+    if (!inv.tourId) return;
+    this.firestore.collection('tours').doc(String(inv.tourId))
+      .collection('portalInvoices').doc(String(inv.id))
+      .set({
+        id: inv.id, number: inv.number || '', tourId: inv.tourId,
+        individualClientRef: inv.individualClientRef != null ? String(inv.individualClientRef) : null,
+        amount: Number(inv.amount) || 0, currency: inv.currency || 'EUR',
+        issueDate: inv.issueDate || '', dueDate: inv.dueDate || '',
+        status: inv.status || '', description: inv.description || '',
+        payments: (inv.payments || []).map(p => ({
+          amount: Number(p.amount) || 0, date: p.date || '', method: p.method || ''
+        })),
+        _projectedAt: new Date().toISOString()
+      }, { merge: false })
+      .catch(err => console.warn('Invoice projection push failed:', err.message));
+  },
+
+  // Backfills projections + access-code docs for every tour and invoice already
+  // in Firestore. Run once from the CRM console while signed in:
+  //   await DB.migratePortalProjections()
+  async migratePortalProjections() {
+    if (!this._firebaseReady || !this.auth || !this.auth.currentUser) {
+      console.error('Sign in to the CRM first.');
+      return { ok: false };
+    }
+    const tours = await this.firestore.collection('tours').get();
+    let t = 0;
+    for (const doc of tours.docs) {
+      const data = Object.assign({ id: doc.id }, doc.data());
+      await this.firestore.collection('tours').doc(doc.id)
+        .collection('portal').doc('public')
+        .set(this._buildPortalProjection(data), { merge: false });
+      this._pushAccessCodeDocs(data);
+      t++;
+    }
+    const invoices = await this.firestore.collection('invoices').get();
+    let i = 0;
+    for (const doc of invoices.docs) {
+      const data = Object.assign({ id: doc.id }, doc.data());
+      if (!data.tourId) continue;
+      this._pushInvoiceProjection(data);
+      i++;
+    }
+    console.log(`Migrated ${t} tour projection(s) and ${i} invoice projection(s).`);
+    return { ok: true, tours: t, invoices: i };
   },
   _softDelete(key, id) {
     // Remove from localStorage
@@ -722,84 +865,107 @@ const DB = {
     return await this._lookupTourViaRest(code);
   },
 
+  // Resolve a code to its tour by reading accessCodes/{code} directly. This is a
+  // `get` on a known document id, not a query over the tours collection, which
+  // is what lets the rules forbid listing and stop tours being enumerable.
   async _lookupTourViaSdk(code) {
-    const snapshot = await this.firestore.collection('tours')
-      .where('accessCode', '==', code).limit(1).get();
-    if (!snapshot.empty) {
-      const doc = snapshot.docs[0];
-      return { id: doc.id, ...doc.data(), _portalMode: 'tour', _familyId: null };
-    }
-    const famSnapshot = await this.firestore.collection('tours')
-      .where('familyAccessCodesList', 'array-contains', code).limit(1).get();
-    if (!famSnapshot.empty) {
-      const doc = famSnapshot.docs[0];
-      const tourData = doc.data();
-      let familyId = null;
-      const codes = tourData.familyAccessCodes || {};
-      for (const [icId, entry] of Object.entries(codes)) {
-        if (entry.code === code) { familyId = icId; break; }
+    const codeDoc = await this.firestore.collection('accessCodes').doc(String(code)).get();
+    if (!codeDoc.exists) return await this._lookupTourLegacy(code);
+    const entry = codeDoc.data() || {};
+    if (!entry.tourId) return null;
+
+    const projection = await this.firestore.collection('tours').doc(String(entry.tourId))
+      .collection('portal').doc('public').get();
+    if (!projection.exists) return null;
+
+    return Object.assign({ id: String(entry.tourId) }, projection.data(), {
+      _portalMode: entry.kind === 'family' ? 'family' : (entry.kind === 'guide' ? 'guide' : 'tour'),
+      _familyId: entry.familyId ? String(entry.familyId) : null
+    });
+  },
+
+  // Transitional: resolve a code the old way, by querying the tours collection.
+  // Only reachable while accessCodes/{code} is missing, and only until the
+  // hardened rules deny listing /tours. Safe to delete once every tour has been
+  // through DB.migratePortalProjections().
+  async _lookupTourLegacy(code) {
+    try {
+      const snapshot = await this.firestore.collection('tours')
+        .where('accessCode', '==', code).limit(1).get();
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
+        return { id: doc.id, ...doc.data(), _portalMode: 'tour', _familyId: null };
       }
-      return { id: doc.id, ...tourData, _portalMode: 'family', _familyId: familyId };
+      const guideSnap = await this.firestore.collection('tours')
+        .where('guideAccessCode', '==', code).limit(1).get();
+      if (!guideSnap.empty) {
+        const doc = guideSnap.docs[0];
+        return { id: doc.id, ...doc.data(), _portalMode: 'guide', _familyId: null };
+      }
+      const famSnapshot = await this.firestore.collection('tours')
+        .where('familyAccessCodesList', 'array-contains', code).limit(1).get();
+      if (!famSnapshot.empty) {
+        const doc = famSnapshot.docs[0];
+        const tourData = doc.data();
+        let familyId = null;
+        for (const [icId, entry] of Object.entries(tourData.familyAccessCodes || {})) {
+          if (entry && entry.code === code) { familyId = icId; break; }
+        }
+        return { id: doc.id, ...tourData, _portalMode: 'family', _familyId: familyId };
+      }
+    } catch (e) {
+      console.warn('Legacy code lookup failed (expected once rules are hardened):', e.message);
     }
     return null;
+  },
+
+  // Room plan is the one field an unauthenticated group leader may change.
+  // Rules allow updating it on the tour doc while still refusing to let anyone
+  // read that doc, so the CRM keeps a single source of truth; the projection is
+  // written too so the portal sees its own edit before the CRM re-projects.
+  async _savePortalRoomPlan(tourId, roomPlan) {
+    const tourRef = this.firestore.collection('tours').doc(String(tourId));
+    await tourRef.update({ roomPlan: roomPlan });
+    try {
+      await tourRef.collection('portal').doc('public').update({ roomPlan: roomPlan });
+    } catch (e) { /* projection catches up on the next CRM save */ }
+  },
+
+  // Records that a code was used. Lives on the code document because the tour
+  // itself is no longer writable - or readable - from the portal.
+  async touchAccessCode(code) {
+    if (!this._firebaseReady || !code) return;
+    try {
+      await this.firestore.collection('accessCodes').doc(String(code)).update({
+        lastAccess: new Date().toISOString(),
+        accessCount: firebase.firestore.FieldValue.increment(1)
+      });
+    } catch (e) { /* a stale or admin-revoked code should not break the portal */ }
   },
 
   async _lookupTourViaRest(code) {
     try {
       const cfg = (typeof FIREBASE_CONFIG !== 'undefined') ? FIREBASE_CONFIG : null;
       if (!cfg || !cfg.projectId || !cfg.apiKey) return null;
-      const url = 'https://firestore.googleapis.com/v1/projects/' + cfg.projectId
-        + '/databases/(default)/documents:runQuery?key=' + encodeURIComponent(cfg.apiKey);
+      // Two plain document reads: the code, then that tour's public projection.
+      // No queries, so this keeps working once `list` is denied on /tours.
+      const docBase = 'https://firestore.googleapis.com/v1/projects/' + cfg.projectId
+        + '/databases/(default)/documents/';
+      const getDoc = (path) => fetch(docBase + path + '?key=' + encodeURIComponent(cfg.apiKey))
+        .then(r => r.ok ? r.json() : null);
 
-      const post = (body) => fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      }).then(r => r.ok ? r.json() : []);
+      const codeDoc = await getDoc('accessCodes/' + encodeURIComponent(code));
+      if (!codeDoc || !codeDoc.fields) return null;
+      const entry = DB._restFieldsToObj(codeDoc.fields);
+      if (!entry.tourId) return null;
 
-      // 1) Tour-level access code
-      const tourRows = await post({
-        structuredQuery: {
-          from: [{ collectionId: 'tours' }],
-          where: { fieldFilter: {
-            field: { fieldPath: 'accessCode' },
-            op: 'EQUAL',
-            value: { stringValue: code }
-          }},
-          limit: 1
-        }
+      const projDoc = await getDoc('tours/' + encodeURIComponent(entry.tourId) + '/portal/public');
+      if (!projDoc || !projDoc.fields) return null;
+
+      return Object.assign({ id: String(entry.tourId) }, DB._restFieldsToObj(projDoc.fields), {
+        _portalMode: entry.kind === 'family' ? 'family' : (entry.kind === 'guide' ? 'guide' : 'tour'),
+        _familyId: entry.familyId ? String(entry.familyId) : null
       });
-      const tourHit = (tourRows || []).find(r => r && r.document);
-      if (tourHit) {
-        const fields = DB._restFieldsToObj(tourHit.document.fields);
-        const docId = tourHit.document.name.split('/').pop();
-        return { id: docId, ...fields, _portalMode: 'tour', _familyId: null };
-      }
-
-      // 2) Family access code
-      const famRows = await post({
-        structuredQuery: {
-          from: [{ collectionId: 'tours' }],
-          where: { fieldFilter: {
-            field: { fieldPath: 'familyAccessCodesList' },
-            op: 'ARRAY_CONTAINS',
-            value: { stringValue: code }
-          }},
-          limit: 1
-        }
-      });
-      const famHit = (famRows || []).find(r => r && r.document);
-      if (famHit) {
-        const fields = DB._restFieldsToObj(famHit.document.fields);
-        const docId = famHit.document.name.split('/').pop();
-        let familyId = null;
-        const codes = fields.familyAccessCodes || {};
-        for (const [icId, entry] of Object.entries(codes)) {
-          if (entry && entry.code === code) { familyId = icId; break; }
-        }
-        return { id: docId, ...fields, _portalMode: 'family', _familyId: familyId };
-      }
-      return null;
     } catch (e) {
       console.warn('REST fallback failed:', e.message);
       return null;
@@ -829,21 +995,12 @@ const DB = {
   },
 
   // Get invoices for a specific family in a tour
+  // Reads the per-tour projection, not the root invoices collection. Listing
+  // /invoices is now admin-only: it held every client's billing across every
+  // tour, and one portal code was enough to read the lot.
   async getTourInvoicesForFamily(tourId, familyId) {
-    if (!this._firebaseReady) return [];
-    try {
-      const snapshot = await this.firestore.collection('invoices')
-        .where('tourId', '==', Number(tourId)).get();
-      const items = [];
-      snapshot.forEach(doc => {
-        const inv = { id: doc.id, ...doc.data() };
-        if (String(inv.individualClientRef) === String(familyId)) items.push(inv);
-      });
-      return items;
-    } catch (e) {
-      console.warn('getTourInvoicesForFamily failed:', e.message);
-      return [];
-    }
+    const all = await this.getTourInvoices(tourId);
+    return all.filter(inv => String(inv.individualClientRef) === String(familyId));
   },
 
   // Real-time listener for family messages (group + this family's private)
@@ -927,21 +1084,17 @@ const DB = {
   // Get invoices for a tour from Firestore (server-first)
   async getTourInvoices(tourId) {
     if (!this._firebaseReady) return [];
-    try {
-      const snapshot = await this.firestore.collection('invoices')
-        .where('tourId', '==', Number(tourId)).get({ source: 'server' });
+    const ref = this.firestore.collection('tours').doc(String(tourId))
+      .collection('portalInvoices');
+    const collect = snapshot => {
       const items = [];
       snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
       return items;
+    };
+    try {
+      return collect(await ref.get({ source: 'server' }));
     } catch (e) {
-      // Fallback to cache if offline
-      try {
-        const snapshot = await this.firestore.collection('invoices')
-          .where('tourId', '==', Number(tourId)).get({ source: 'cache' });
-        const items = [];
-        snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
-        return items;
-      } catch (_) { return []; }
+      try { return collect(await ref.get({ source: 'cache' })); } catch (_) { return []; }
     }
   },
 
@@ -1119,11 +1272,8 @@ const DB = {
   async getTourByGuideAccessCode(code) {
     if (!this._firebaseReady) return null;
     try {
-      const snapshot = await this.firestore.collection('tours')
-        .where('guideAccessCode', '==', code).limit(1).get();
-      if (snapshot.empty) return null;
-      const doc = snapshot.docs[0];
-      return { id: doc.id, ...doc.data() };
+      const hit = await this._lookupTourViaSdk(code);
+      return (hit && hit._portalMode === 'guide') ? hit : null;
     } catch (e) {
       console.warn('getTourByGuideAccessCode failed:', e.message);
       return null;

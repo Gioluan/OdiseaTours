@@ -335,14 +335,23 @@ const Portal = {
     sessionStorage.setItem('portal_code', code);
     sessionStorage.setItem('portal_tourId', this.tourId);
 
-    // Fetch tour document
+    // Fetch the public projection, never the tour document itself. The tour doc
+    // carries costs, margins and provider amounts and is admin-only.
     try {
-      const doc = await DB.firestore.collection('tours').doc(this.tourId).get();
-      if (!doc.exists) {
-        this.logout();
-        return;
+      const doc = await DB.firestore.collection('tours').doc(this.tourId)
+        .collection('portal').doc('public').get();
+      if (doc.exists) {
+        this.tourData = { id: this.tourId, ...doc.data() };
+      } else {
+        // Transitional: a tour that has not been re-projected yet. Works only
+        // until the hardened rules land, which is the point - it keeps portals
+        // alive between deploying this code and running the migration.
+        console.warn('No portal projection for tour ' + this.tourId +
+                     ' - run DB.migratePortalProjections() from the CRM.');
+        const legacy = await DB.firestore.collection('tours').doc(this.tourId).get();
+        if (!legacy.exists) { this.logout(); return; }
+        this.tourData = { id: legacy.id, ...legacy.data() };
       }
-      this.tourData = { id: doc.id, ...doc.data() };
     } catch (e) {
       console.warn('Load tour failed:', e.message);
       this.logout();
@@ -353,17 +362,7 @@ const Portal = {
     if (this._portalMode === 'family' && this._familyId) {
       const ics = this.tourData.individualClients || [];
       this._familyData = ics.find(ic => String(ic.id) === String(this._familyId)) || null;
-
-      // Track family access
-      try {
-        const famCodes = this.tourData.familyAccessCodes || {};
-        if (famCodes[this._familyId]) {
-          await DB.firestore.collection('tours').doc(this.tourId).update({
-            [`familyAccessCodes.${this._familyId}.lastAccess`]: new Date().toISOString(),
-            [`familyAccessCodes.${this._familyId}.accessCount`]: firebase.firestore.FieldValue.increment(1)
-          });
-        }
-      } catch (_) { /* portal users may lack write access */ }
+      DB.touchAccessCode(code);
     }
 
     // Switch from login to main portal
@@ -1736,7 +1735,7 @@ const Portal = {
     this._roomPlan = rooms.map(r => ({ name: r.name, passengers: r.members.map(m => m.id) }));
     this.tourData.roomPlan = this._roomPlan;
     if (DB._firebaseReady) {
-      try { await DB.firestore.collection('tours').doc(this.tourId).update({ roomPlan: this._roomPlan }); }
+      try { await DB._savePortalRoomPlan(this.tourId, this._roomPlan); }
       catch (e) { console.warn('Room plan save failed (portal is unauthenticated):', e.message); }
     }
 
@@ -1853,7 +1852,7 @@ const Portal = {
     let saved = false;
     if (DB._firebaseReady) {
       try {
-        await DB.firestore.collection('tours').doc(this.tourId).update({ roomPlan: this._roomPlan });
+        await DB._savePortalRoomPlan(this.tourId, this._roomPlan);
         saved = true;
       } catch (e) {
         console.warn('Save room plan failed:', e.message);
