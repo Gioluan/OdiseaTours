@@ -1641,119 +1641,114 @@ const Tours = {
      ============================================================ */
   _renderPortalSection(t) {
     const hasCode = !!t.accessCode;
-    const portalUrl = hasCode ? `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=${t.accessCode}` : '';
+    const base = `${window.location.origin}${window.location.pathname.replace('index.html', '')}portal.html?code=`;
+    const portalUrl = hasCode ? base + t.accessCode : '';
+    const families = t.individualClients || [];
+    const famCodes = t.familyAccessCodes || {};
+    const codesGenerated = families.filter(ic => famCodes[ic.id]).length;
+    const clean = s => String(s || '').replace(/[<>"]/g, '');
+    const clubName = clean(t.paymentsHandledBy || t.groupName || t.clientName || 'the club / group');
+    const block = 'background:white;border-radius:var(--radius-lg);padding:1rem 1.1rem;margin-bottom:1rem;border:1.5px solid var(--gray-100)';
+    const head = (n, title, sub) => `<div style="display:flex;align-items:baseline;gap:0.6rem;margin-bottom:0.8rem;flex-wrap:wrap">
+        <span style="background:var(--navy);color:white;border-radius:50%;width:1.6rem;height:1.6rem;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem">${n}</span>
+        <h3 style="margin:0;font-size:1.05rem;color:var(--navy)">${title}</h3>
+        <span style="font-size:0.8rem;color:var(--gray-400)">${sub}</span></div>`;
+    const step = (n, title, done, body) => `<div style="display:flex;gap:0.7rem;align-items:flex-start;padding:0.7rem 0;border-top:1px solid var(--gray-100)">
+        <span style="flex:none;width:1.4rem;height:1.4rem;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;${done ? 'background:var(--green);color:white' : 'background:var(--gray-100);color:var(--gray-500)'}">${done ? '&#10003;' : n}</span>
+        <div style="flex:1;min-width:0"><div style="font-size:0.88rem;font-weight:600;color:var(--navy);margin-bottom:0.3rem">${title}</div>${body}</div></div>`;
+    const card = (title, badgeId, badgeColor, buttons) => `<div style="flex:1;min-width:180px;background:var(--gray-50);border-radius:var(--radius);padding:0.7rem 0.8rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem"><h4 style="font-size:0.84rem;color:var(--navy);margin:0">${title}</h4>
+        ${badgeId ? `<span id="${badgeId}" style="background:${badgeColor};color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px;display:none">0</span>` : ''}</div>${buttons}</div>`;
+    const tourNameJs = (t.tourName || '').replace(/\\/g, '').replace(/'/g, "\\'").replace(/"/g, '');
 
     return `
-      <h3 style="margin-top:1.5rem">Client Portal <span style="font-weight:400;font-size:0.82rem;color:var(--gray-400)">— share with group leaders / families</span></h3>
-      <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem">
+      <h3 style="margin-top:1.5rem">Client Portal</h3>
+      <p style="font-size:0.82rem;color:var(--gray-400);margin:0.2rem 0 0.8rem">A: one portal for the club / group organiser. B (optional): a private link for each family. Families never see the club's portal, invoices or payments.</p>
+
+      <div style="${block}">
+        ${head('A', 'Club portal', `for ${clubName} (organiser) &middot; itinerary, documents, invoices &amp; payments, family status`)}
         ${hasCode ? `
-          <div style="margin-bottom:0.8rem">
-            <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Access Code</label>
-            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
-              <code style="font-family:'Courier New',monospace;font-size:1.4rem;font-weight:700;color:var(--navy);background:white;padding:0.4rem 1rem;border-radius:var(--radius);border:1.5px solid var(--gray-200);letter-spacing:0.1em">${t.accessCode}</code>
-              <button class="btn btn-sm btn-outline" onclick="Tours.copyPortalLink(${t.id},'${t.accessCode}')">Copy Link</button>
-              <button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.generateAccessCode(${t.id})">New Code</button>
-            </div>
+          <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.6rem">
+            <code style="font-family:'Courier New',monospace;font-size:1.3rem;font-weight:700;color:var(--navy);background:var(--gray-50);padding:0.35rem 0.9rem;border-radius:var(--radius);border:1.5px solid var(--gray-200);letter-spacing:0.1em">${t.accessCode}</code>
+            <button class="btn btn-sm btn-outline" onclick="Tours.copyPortalLink(${t.id},'${t.accessCode}')">Copy Link</button>
+            <button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${portalUrl}','_blank')">Open</button>
+            <button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.sendGroupLeaderWelcome(${t.id})">Welcome Email to Organiser</button>
+            <button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="window.open('https://wa.me/?text='+encodeURIComponent('Hi! Here is the portal for the tour ${tourNameJs}: ${portalUrl}'),'_blank')">WhatsApp</button>
+            <button class="btn btn-sm btn-outline" style="border-color:var(--gray-300);color:var(--gray-400);margin-left:auto" onclick="Tours.generateAccessCode(${t.id})" title="Replace the code: the old link stops working">New Code</button>
           </div>
-          <div style="margin-bottom:0.8rem">
-            <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Portal URL</label>
-            <input type="text" readonly value="${portalUrl}" style="width:100%;padding:0.4rem 0.6rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);background:white;color:var(--gray-500)" onclick="this.select()">
-          </div>
+          <input type="text" readonly value="${portalUrl}" style="width:100%;padding:0.4rem 0.6rem;font-size:0.8rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);background:var(--gray-50);color:var(--gray-500);margin-bottom:0.4rem" onclick="this.select()">
+          ${families.length ? `<p style="font-size:0.78rem;color:var(--red);margin-bottom:0.6rem">Send this link to the organiser only &mdash; families use their own links (section B).</p>` : ''}
         ` : `
-          <p style="color:var(--gray-400);margin-bottom:0.8rem;font-size:0.85rem">Generate an access code so clients can view tour info, register passengers, and message you through the portal.</p>
-          <button class="btn btn-primary" onclick="Tours.generateAccessCode(${t.id})">Generate Access Code</button>
+          <p style="color:var(--gray-400);margin-bottom:0.8rem;font-size:0.85rem">Generate the club's access code: the organiser sees the itinerary, documents, invoices and the status of every family.</p>
+          <button class="btn btn-primary" onclick="Tours.generateAccessCode(${t.id})">Generate Club Access Code</button>
         `}
+        <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:0.6rem">
+          ${card('Messages', `msg-badge-${t.id}`, 'var(--red)', `<button class="btn btn-sm btn-outline" onclick="Tours.viewMessages(${t.id})">View Messages</button>`)}
+          ${card('Documents', '', '', `<span id="doc-count-${t.id}" style="font-size:0.78rem;color:var(--gray-400)"></span><div style="display:flex;gap:0.4rem;flex-wrap:wrap"><button class="btn btn-sm btn-outline" onclick="Tours.uploadDocument(${t.id})">Upload</button><button class="btn btn-sm btn-outline" onclick="Tours.viewDocuments(${t.id})">View All</button></div>
+            <input type="file" id="doc-upload-${t.id}" style="display:none" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" onchange="Tours.handleDocUpload(${t.id},event)">`)}
+          ${card('Passengers', `pax-badge-${t.id}`, 'var(--blue)', `<button class="btn btn-sm btn-outline" onclick="Tours.viewPortalPassengers(${t.id})">View Registrations</button>`)}
+          ${card('Flights', `flight-badge-${t.id}`, 'var(--green)', `<button class="btn btn-sm btn-outline" onclick="Tours.viewAllFamilyFlights(${t.id})">View All Flights</button>`)}
+        </div>
+        <div id="portal-checklist-progress-${t.id}" style="margin-top:0.8rem"></div>
+        <details style="margin-top:0.6rem" ${(t.portalPaymentCard || t.portalPaymentWise) ? 'open' : ''}>
+          <summary style="font-size:0.82rem;color:var(--gray-500);cursor:pointer">Online payment links on the club portal (optional) &mdash; never shown to families</summary>
+          <div class="form-row form-row-2" style="margin-top:0.5rem">
+            <div class="form-group"><label>Card Payment URL</label><input value="${t.portalPaymentCard || ''}" onchange="Tours.saveOrgField(${t.id},'portalPaymentCard',this.value)" placeholder="https://pay.stripe.com/..."></div>
+            <div class="form-group"><label>Wise Payment URL</label><input value="${t.portalPaymentWise || ''}" onchange="Tours.saveOrgField(${t.id},'portalPaymentWise',this.value)" placeholder="https://wise.com/pay/..."></div>
+          </div>
+        </details>
       </div>
 
-      <div style="display:flex;gap:0.8rem;flex-wrap:wrap;margin-bottom:1rem">
-        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
-            <h4 style="font-size:0.88rem;color:var(--navy)">Client Messages</h4>
-            <span id="msg-badge-${t.id}" style="background:var(--red);color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px;display:none">0</span>
+      <div style="${block}">
+        ${head('B', 'Family portals', families.length ? `${families.length} families &middot; ${codesGenerated} links created` : 'optional &middot; one private link per family for travelers, passports, flights &amp; forms')}
+        ${step(1, 'Settings', !!(t.paymentsHandledBy || t.portalDataDeadline), `
+          <div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:0.84rem;margin-bottom:0.5rem"><span style="color:var(--gray-500)">Forms each family signs:</span>
+            ${[['terms', 'Terms & Conditions'], ['medical', 'Medical declaration'], ['photo', 'Photo consent'], ['waiver', 'Participation waiver (minors)']].map(([id, label]) => `
+              <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer"><input type="checkbox" ${(t.requiredForms || ['terms', 'medical', 'photo']).includes(id) ? 'checked' : ''} onchange="Tours.toggleRequiredForm(${t.id},'${id}',this.checked)"> ${label}</label>`).join('')}
           </div>
-          <button class="btn btn-sm btn-outline" onclick="Tours.viewMessages(${t.id})">View Messages</button>
-        </div>
-        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
-            <h4 style="font-size:0.88rem;color:var(--navy)">Portal Documents</h4>
-            <span id="doc-count-${t.id}" style="font-size:0.82rem;color:var(--gray-400)"></span>
+          <div class="form-row form-row-2" style="margin-bottom:0">
+            <div class="form-group" style="margin-bottom:0"><label>Families pay to (empty = they pay Odisea)</label><input value="${(t.paymentsHandledBy || '').replace(/"/g, '&quot;')}" onchange="Tours.setPortalSetting(${t.id},'paymentsHandledBy',this.value);Tours.viewTour(${t.id})" placeholder="e.g. Lampass Legacy FC"></div>
+            <div class="form-group" style="margin-bottom:0"><label>Deadline for travelers, flights &amp; forms</label><input type="date" value="${t.portalDataDeadline || ''}" onchange="Tours.setPortalSetting(${t.id},'portalDataDeadline',this.value)"></div>
+          </div>`)}
+        ${step(2, 'Import the families', families.length > 0, `
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="Tours.importFamiliesPaste(${t.id})">Import Families (paste from Excel)</button>
+            <span style="font-size:0.78rem;color:var(--gray-400)">Family &middot; Email &middot; Phone &middot; Players &middot; Siblings &middot; Adults &middot; Team &middot; Notes. ${families.length ? families.length + ' imported &mdash; importing again updates them by name.' : ''}</span>
+          </div>`)}
+        ${step(3, 'Create a private link for each family', families.length > 0 && codesGenerated >= families.length, families.length ? `
+          <button class="btn btn-sm btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.generateAllFamilyCodes(${t.id})">Create All Family Links</button>
+          <span style="font-size:0.78rem;color:var(--gray-400)">${codesGenerated} of ${families.length} done</span>` : '<span style="font-size:0.8rem;color:var(--gray-400)">After importing the families.</span>')}
+        ${step(4, 'Send each family its link', families.length > 0 && families.every(ic => famCodes[ic.id] && famCodes[ic.id].lastAccess), families.length ? `
+          <button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.sendAllFamilyWelcomes(${t.id})">Welcome Email to All Families</button>
+          <span style="font-size:0.78rem;color:var(--gray-400)">${t.paymentsHandledBy ? 'The email says payments are handled by ' + clean(t.paymentsHandledBy) + ' (no amounts).' : 'The email includes each family&#39;s amount and payment schedule.'}</span>` : '<span style="font-size:0.8rem;color:var(--gray-400)">After creating the links.</span>')}
+        ${families.length ? `
+        <div style="border-top:1px solid var(--gray-100);padding-top:0.8rem;margin-top:0.2rem">
+          <div style="font-size:0.88rem;font-weight:600;color:var(--navy);margin-bottom:0.4rem">Family status <span id="family-status-summary-${t.id}" style="font-weight:400;font-size:0.78rem;color:var(--gray-400)"></span></div>
+          <div style="overflow-x:auto">
+          <table class="data-table" style="font-size:0.82rem;margin-bottom:0.4rem">
+            <thead><tr><th>Family</th><th>Team</th><th>Link</th><th>Last opened</th><th>Travelers</th><th>Passports</th><th>Flights</th><th>Forms</th><th></th></tr></thead>
+            <tbody>${families.map(ic => {
+              const entry = famCodes[ic.id];
+              const code = entry ? entry.code : null;
+              return `<tr>
+                <td><strong>${ic.name || '—'}</strong></td>
+                <td>${ic.group || '<span style="color:var(--gray-300)">—</span>'}</td>
+                <td>${code ? '<code style="font-family:monospace;font-size:0.82rem;letter-spacing:0.05em">' + code + '</code>' : '<span style="color:var(--gray-300)">—</span>'}</td>
+                <td>${entry && entry.lastAccess ? new Date(entry.lastAccess).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '<span style="color:var(--gray-300)">Never</span>'}</td>
+                <td id="fs-trav-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
+                <td id="fs-pass-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
+                <td id="fs-fl-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
+                <td id="fs-forms-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
+                <td style="white-space:nowrap">${code
+                  ? '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.copyFamilyPortalLink(' + t.id + ',&#39;' + code + '&#39;)">Copy Link</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--amber);color:var(--amber)" onclick="Tours.sendFamilyWelcome(' + t.id + ',&#39;' + ic.id + '&#39;)">Welcome Email</button>'
+                  : '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--blue);color:var(--blue)" onclick="Tours.generateFamilyCode(' + t.id + ',&#39;' + ic.id + '&#39;)">Create Link</button>'
+                }</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>
           </div>
-          <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
-            <button class="btn btn-sm btn-outline" onclick="Tours.uploadDocument(${t.id})">Upload Document</button>
-            <button class="btn btn-sm btn-outline" onclick="Tours.viewDocuments(${t.id})">View All</button>
-          </div>
-          <input type="file" id="doc-upload-${t.id}" style="display:none" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" onchange="Tours.handleDocUpload(${t.id},event)">
-        </div>
-        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
-            <h4 style="font-size:0.88rem;color:var(--navy)">Portal Passengers</h4>
-            <span id="pax-badge-${t.id}" style="background:var(--blue);color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px;display:none">0</span>
-          </div>
-          <button class="btn btn-sm btn-outline" onclick="Tours.viewPortalPassengers(${t.id})">View Registrations</button>
-        </div>
-        <div style="flex:1;min-width:200px;background:white;border-radius:var(--radius-lg);padding:1rem;border:1.5px solid var(--gray-100)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
-            <h4 style="font-size:0.88rem;color:var(--navy)">Family Flights</h4>
-            <span id="flight-badge-${t.id}" style="background:var(--green);color:white;font-size:0.72rem;font-weight:700;padding:0.15rem 0.5rem;border-radius:10px;display:none">0</span>
-          </div>
-          <button class="btn btn-sm btn-outline" onclick="Tours.viewAllFamilyFlights(${t.id})">View All Flights</button>
-        </div>
+        </div>` : ''}
       </div>
-      ${hasCode ? `<div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="window.open('${portalUrl}','_blank')">Open Client Portal</button><button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="window.open('https://wa.me/?text='+encodeURIComponent('Hi! Here is the portal for the tour ${(t.tourName||'').replace(/'/g,"\\'")}:\\n${portalUrl}'),'_blank')">WhatsApp Share</button><button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.sendGroupLeaderWelcome(${t.id})">Send Welcome Email</button></div>` : ''}
-      <div id="portal-checklist-progress-${t.id}" style="margin-top:1rem"></div>
-      <div style="margin-top:0.8rem">
-        <h4 style="font-size:0.85rem;margin-bottom:0.4rem">Portal Payment Links <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— shown to clients on portal</span></h4>
-        <div class="form-row form-row-2">
-          <div class="form-group"><label>Card Payment URL</label><input value="${t.portalPaymentCard || ''}" onchange="Tours.saveOrgField(${t.id},'portalPaymentCard',this.value)" placeholder="https://pay.stripe.com/..."></div>
-          <div class="form-group"><label>Wise Payment URL</label><input value="${t.portalPaymentWise || ''}" onchange="Tours.saveOrgField(${t.id},'portalPaymentWise',this.value)" placeholder="https://wise.com/pay/..."></div>
-        </div>
-      </div>
-      <div style="margin-top:0.8rem">
-        <h4 style="font-size:0.85rem;margin-bottom:0.4rem">Family Portal Settings <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— what families must complete</span></h4>
-        <div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:0.84rem;margin-bottom:0.5rem">
-          ${[['terms', 'Terms & Conditions'], ['medical', 'Medical declaration'], ['photo', 'Photo consent'], ['waiver', 'Participation waiver (minors)']].map(([id, label]) => `
-            <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer"><input type="checkbox" ${(t.requiredForms || ['terms', 'medical', 'photo']).includes(id) ? 'checked' : ''} onchange="Tours.toggleRequiredForm(${t.id},'${id}',this.checked)"> ${label}</label>`).join('')}
-        </div>
-        <div class="form-row form-row-2">
-          <div class="form-group"><label>Families pay (leave empty if they pay Odisea)</label><input value="${(t.paymentsHandledBy || '').replace(/"/g, '&quot;')}" onchange="Tours.setPortalSetting(${t.id},'paymentsHandledBy',this.value)" placeholder="e.g. Lampass Legacy FC"></div>
-          <div class="form-group"><label>Deadline for travelers, flights &amp; forms</label><input type="date" value="${t.portalDataDeadline || ''}" onchange="Tours.setPortalSetting(${t.id},'portalDataDeadline',this.value)"></div>
-        </div>
-      </div>
-      ${(t.individualClients && t.individualClients.length) ? (() => {
-        const famCodes = t.familyAccessCodes || {};
-        const codesGenerated = Object.keys(famCodes).length;
-        const totalFamilies = t.individualClients.length;
-        return `
-        <h4 style="margin-top:1.5rem;margin-bottom:0.5rem;font-size:0.92rem">Family Portal Access <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— ${codesGenerated} of ${totalFamilies} codes generated</span></h4>
-        <table class="data-table" style="font-size:0.82rem;margin-bottom:0.8rem">
-          <thead><tr><th>Family</th><th>Team</th><th>Code</th><th>Last Access</th><th title="Travelers registered">Travelers</th><th>Passports</th><th>Flights</th><th>Forms</th><th>Actions</th></tr></thead>
-          <tbody>${t.individualClients.map(ic => {
-            const entry = famCodes[ic.id];
-            const code = entry ? entry.code : null;
-            return `<tr>
-              <td><strong>${ic.name || '—'}</strong></td>
-              <td>${ic.group || '<span style="color:var(--gray-300)">—</span>'}</td>
-              <td>${code ? '<code style="font-family:monospace;font-size:0.85rem;letter-spacing:0.05em">' + code + '</code>' : '<span style="color:var(--gray-300)">Not generated</span>'}</td>
-              <td>${entry && entry.lastAccess ? new Date(entry.lastAccess).toLocaleDateString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--gray-300)">Never</span>'}</td>
-              <td id="fs-trav-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
-              <td id="fs-pass-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
-              <td id="fs-fl-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
-              <td id="fs-forms-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
-              <td style="white-space:nowrap">${code
-                ? '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.copyFamilyPortalLink(' + t.id + ',&#39;' + code + '&#39;)">Copy Link</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:#25D366;color:#25D366" onclick="Tours.sendFamilyInvite(' + t.id + ',&#39;' + ic.id + '&#39;)">Invite</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--amber);color:var(--amber)" onclick="Tours.sendFamilyWelcome(' + t.id + ',&#39;' + ic.id + '&#39;)">Welcome</button>'
-                : '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--blue);color:var(--blue)" onclick="Tours.generateFamilyCode(' + t.id + ',&#39;' + ic.id + '&#39;)">Generate</button>'
-              }</td>
-            </tr>`;
-          }).join('')}</tbody>
-        </table>
-        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-          <button class="btn btn-sm btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.generateAllFamilyCodes(${t.id})">Generate All Codes</button>
-          <button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="Tours.sendAllFamilyInvites(${t.id})">Email All Invites</button>
-          <button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.sendAllFamilyWelcomes(${t.id})">Welcome All</button>
-          <button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="Tours.importFamiliesPaste(${t.id})">Import Families (paste from Excel)</button>
-        </div>
-        <div id="family-status-summary-${t.id}" style="font-size:0.8rem;color:var(--gray-400);margin-top:0.4rem"></div>`;
-      })() : `<div style="margin-top:1rem"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="Tours.importFamiliesPaste(${t.id})">Import Families (paste from Excel)</button> <span style="font-size:0.78rem;color:var(--gray-400)">— one row per family; each family then gets its own portal code</span></div>`}
       <div id="portal-detail-${t.id}"></div>`;
   },
 
@@ -1881,7 +1876,7 @@ const Tours = {
         set(`fs-forms-${tourId}-${r.id}`, mark(r.formsOk, `${r.formsSigned}/${r.formsRequired}`));
       });
       const done = rows.filter(r => r.complete).length;
-      set(`family-status-summary-${tourId}`, `${done} of ${rows.length} families complete${t.portalDataDeadline ? ' · deadline ' + fmtDate(t.portalDataDeadline) : ''}. The organiser sees the same table in the group portal (ticks only, no personal data).`);
+      set(`family-status-summary-${tourId}`, `— ${done} of ${rows.length} complete${t.portalDataDeadline ? ' · deadline ' + fmtDate(t.portalDataDeadline) : ''} · the organiser sees this table in the club portal (ticks only)`);
     } catch (e) {}
   },
 
