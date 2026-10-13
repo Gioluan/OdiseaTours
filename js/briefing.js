@@ -380,7 +380,7 @@ const Briefing = {
         const [paxSnap, flightsDoc, sigDoc] = await Promise.all([
           DB.firestore.collection('tours').doc(tourIdStr).collection('passengers').get({ source: 'server' }).catch(() => ({ size: 0 })),
           DB.firestore.collection('tours').doc(tourIdStr).collection('tourFlights').doc('shared').get({ source: 'server' }).catch(() => ({ exists: false })),
-          DB.firestore.collection('tours').doc(tourIdStr).collection('consent').doc('signatures').get({ source: 'server' }).catch(() => ({ exists: false, data: () => ({}) }))
+          DB.getTourSignatures(tourIdStr, { source: 'server' })
         ]);
 
         const expectedPax = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
@@ -391,24 +391,14 @@ const Briefing = {
         const assignedSet = new Set();
         roomPlan.forEach(r => (r.passengers || []).forEach(id => assignedSet.add(id)));
         const roomOk = roomPlan.length > 0 && assignedSet.size > 0;
-        const sigs = sigDoc.exists ? sigDoc.data() || {} : {};
-        const requiredForms = t.requiredForms || ['terms', 'medical', 'photo'];
-        const sigEntries = Object.keys(sigs);
-        let formsSigned = 0, formsExpected = 0;
-        if (sigEntries.length > 0) {
-          sigEntries.forEach(code => {
-            const ms = sigs[code] || {};
-            formsExpected += requiredForms.length;
-            formsSigned += requiredForms.filter(f => ms[f]).length;
-          });
-        }
-        const formsOk = sigEntries.length > 0 && formsSigned >= formsExpected;
+        const { signed: formsSigned, expected: formsExpected, signers } = DB.formsProgress(t, sigDoc || {});
+        const formsOk = formsExpected > 0 && formsSigned >= formsExpected;
 
         const items = [
           { done: paxOk, label: 'Passengers', short: expectedPax ? `${paxCount}/${expectedPax}` : `${paxCount}` },
           { done: !!flightsOk, label: 'Flights' },
           { done: roomOk, label: 'Rooms' },
-          { done: formsOk, label: 'Forms', short: sigEntries.length > 0 ? `${formsSigned}/${formsExpected}` : '0' }
+          { done: formsOk, label: 'Forms', short: signers > 0 ? `${formsSigned}/${formsExpected}` : '0' }
         ];
         const doneCount = items.filter(i => i.done).length;
         if (doneCount < items.length) {

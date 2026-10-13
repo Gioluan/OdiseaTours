@@ -577,7 +577,15 @@ const Portal = {
 
       <div id="overview-payment-summary"></div>
 
+      ${this._portalMode === 'family' && t.paymentsHandledBy ? `
+      <div style="background:white;border-radius:var(--radius-lg);padding:1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:1rem;border-left:4px solid var(--navy)">
+        <div style="font-size:0.9rem;font-weight:600;color:var(--navy)">Payments</div>
+        <div style="font-size:0.84rem;color:var(--gray-500);margin-top:0.2rem">Payments for this trip are handled by <strong>${String(t.paymentsHandledBy).replace(/[&<>"]/g, '')}</strong>. Please contact them for any question about payments.</div>
+      </div>` : ''}
+
       <div id="overview-checklist"></div>
+
+      <div id="overview-family-status"></div>
 
       <div onclick="Portal.showSection('terms')" style="background:white;border-radius:var(--radius-lg);padding:1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:1rem;cursor:pointer;display:flex;align-items:center;gap:0.8rem">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
@@ -597,6 +605,54 @@ const Portal = {
     // Load payment summary and checklist async
     this._renderOverviewPayments();
     this._renderOverviewChecklist();
+    this._renderFamilyStatus();
+  },
+
+  // Organiser view: one row per family with what is still missing. Ticks and
+  // counts only - no other family's personal data reaches this screen.
+  async _renderFamilyStatus() {
+    const el = document.getElementById('overview-family-status');
+    const t = this.tourData;
+    if (!el || !t || this._portalMode === 'family' || !DB._firebaseReady) return;
+    const families = t.individualClients || [];
+    if (!families.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div style="text-align:center;padding:1rem"><div class="spinner"></div></div>';
+    let passengers = [], flights = [], sigs = {};
+    try {
+      [passengers, flights, sigs] = await Promise.all([
+        DB.getTourPassengers(this.tourId).catch(() => []),
+        DB.getAllFamilyFlights(this.tourId).catch(() => []),
+        DB.getTourSignatures(this.tourId).catch(() => ({}))
+      ]);
+    } catch (e) {}
+    const rows = DB.familyStatusRows(t, families, passengers, flights, sigs, {});
+    const done = rows.filter(r => r.complete).length;
+    const mark = ok => ok ? '<span style="color:var(--green);font-weight:700">&#10003;</span>' : '<span style="color:var(--red);font-weight:700">&times;</span>';
+    const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    el.innerHTML = `
+      <div style="background:white;border-radius:var(--radius-lg);padding:1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:0.5rem;margin-bottom:0.6rem">
+          <div style="font-size:0.95rem;font-weight:700;color:var(--navy)">Family status</div>
+          <div style="font-size:0.8rem;color:var(--gray-400)">${done}/${rows.length} families complete${t.portalDataDeadline ? ' &middot; deadline ' + Portal._fmtDate(t.portalDataDeadline) : ''}</div>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:0.82rem">
+            <thead><tr style="text-align:left;color:var(--gray-400)">
+              <th style="padding:0.3rem 0.4rem">Family</th><th style="padding:0.3rem 0.4rem">Team</th>
+              <th style="padding:0.3rem 0.4rem;text-align:center">Travelers</th><th style="padding:0.3rem 0.4rem;text-align:center">Passports</th>
+              <th style="padding:0.3rem 0.4rem;text-align:center">Flights</th><th style="padding:0.3rem 0.4rem;text-align:center">Forms</th>
+            </tr></thead>
+            <tbody>${rows.map(r => `<tr style="border-top:1px solid var(--gray-100)">
+              <td style="padding:0.35rem 0.4rem;font-weight:600;color:var(--navy)">${esc(r.name)}</td>
+              <td style="padding:0.35rem 0.4rem;color:var(--gray-500)">${esc(r.team)}</td>
+              <td style="padding:0.35rem 0.4rem;text-align:center">${mark(r.travelersOk)} <span style="color:var(--gray-400)">${r.travelers}/${r.expected || '?'}</span></td>
+              <td style="padding:0.35rem 0.4rem;text-align:center">${mark(r.passportsOk)}</td>
+              <td style="padding:0.35rem 0.4rem;text-align:center">${mark(r.flightsOk)}</td>
+              <td style="padding:0.35rem 0.4rem;text-align:center">${mark(r.formsOk)} <span style="color:var(--gray-400)">${r.formsSigned}/${r.formsRequired}</span></td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
   },
 
   async _renderOverviewPayments() {
@@ -2327,53 +2383,68 @@ const Portal = {
     const t = this.tourData;
     if (!t) return;
 
-    const requiredForms = t.requiredForms || ['terms', 'medical', 'photo'];
+    const isFamily = Portal._portalMode === 'family' && !!this._familyId;
+    const requiredForms = this._requiredFormsFor(t, isFamily);
+    const allRequired = t.requiredForms || ['terms', 'medical', 'photo'];
 
-    // Load existing signatures from Firestore
-    let signatures = {};
-    try {
-      const sigDoc = await DB.firestore.collection('tours').doc(this.tourId).collection('consent').doc('signatures').get();
-      if (sigDoc.exists) signatures = sigDoc.data() || {};
-    } catch (e) {}
+    const [allSigs, minors] = await Promise.all([
+      DB.getTourSignatures(this.tourId),
+      isFamily && allRequired.includes('waiver') ? this._familyMinors() : Promise.resolve([])
+    ]);
+    if (isFamily) await DB.migrateFamilySignatures(this.tourId, allSigs, this._familyId, sessionStorage.getItem('portal_code'));
+    const mySignatures = this._mySignatures(allSigs);
+    this._waiverMinors = minors;
 
-    const sessionCode = sessionStorage.getItem('portal_code') || 'client';
-    const mySignatures = signatures[sessionCode] || {};
-
-    const formDefs = {
-      terms: { title: 'Terms & Conditions', desc: 'I accept the tour terms and conditions, including <a href="#" onclick="event.preventDefault();Portal.showSection(\'terms\')" style="color:var(--navy);font-weight:600;text-decoration:underline">cancellation policy</a> and <a href="#" onclick="event.preventDefault();Portal.showSection(\'terms\')" style="color:var(--navy);font-weight:600;text-decoration:underline">travel insurance requirements</a>.' },
-      medical: { title: 'Medical Declaration', descTour: 'I acknowledge that each family/traveler is solely responsible for disclosing any medical conditions in their passenger registration forms and for confirming that all members of their party are fit to travel. Odisea Tours and the group organizer accept no liability for undisclosed medical conditions.', descFamily: 'I confirm that all medical conditions have been disclosed in the passenger registration forms and that all travelers in my party are fit to travel.' },
-      photo: { title: 'Photo Consent', desc: 'I consent to photographs and videos being taken during the tour for promotional and record-keeping purposes.' }
-    };
+    const formDefs = Portal.FORM_DEFS;
+    const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
     container.innerHTML = `
       <div class="section-header">
         <h2>Forms & Consent</h2>
-        <p>Please review and sign the required forms below</p>
+        <p>Please review and sign the required forms below${t.portalDataDeadline ? ` before <strong>${Portal._fmtDate(t.portalDataDeadline)}</strong>` : ''}</p>
       </div>
+      ${!isFamily && allRequired.includes('waiver') && (t.individualClients || []).length ? `
+        <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem;font-size:0.86rem;color:var(--gray-500)">
+          <strong style="color:var(--navy)">Participation waiver</strong> &middot; each family signs it in their own family portal, for every minor travelling with them.
+        </div>` : ''}
       ${requiredForms.map(formId => {
         const def = formDefs[formId] || { title: formId, desc: '' };
-        const isFamily = Portal._portalMode === 'family';
         const descText = def.descFamily && isFamily ? def.descFamily : (def.descTour || def.desc || '');
         const signed = mySignatures[formId];
+        const isWaiver = formId === 'waiver';
         return `
           <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-bottom:1rem;box-shadow:var(--shadow);border-left:4px solid ${signed ? 'var(--green)' : 'var(--amber)'}">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;gap:0.5rem">
               <h3 style="font-size:1rem;color:var(--navy)">${def.title}</h3>
               ${signed ? '<span style="background:var(--green);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">Signed</span>' : '<span style="background:var(--amber);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">Pending</span>'}
             </div>
-            <p style="font-size:0.88rem;color:var(--gray-500);margin-bottom:1rem">${descText}</p>
+            ${isWaiver ? `
+              <div style="font-size:0.84rem;color:var(--gray-500);line-height:1.5;max-height:${signed ? '9rem' : '22rem'};overflow:auto;border:1px solid var(--gray-100);border-radius:var(--radius);padding:0.8rem;margin-bottom:0.8rem">${def.body(t)}</div>
+              ${signed ? '' : `
+              <div style="margin-bottom:0.8rem;font-size:0.86rem">
+                <strong style="color:var(--navy)">Minors covered by this waiver</strong>
+                ${minors.length
+                  ? `<ul style="margin:0.3rem 0 0 1.1rem">${minors.map(m => `<li>${esc(m)}</li>`).join('')}</ul>`
+                  : `<p style="color:var(--red);margin-top:0.3rem">Register your travelers first (Passengers section): the waiver lists every player and sibling under 18 by name.</p>`}
+              </div>`}
+            ` : `<p style="font-size:0.88rem;color:var(--gray-500);margin-bottom:1rem">${descText}</p>`}
             ${signed ? `
               <div style="background:var(--gray-50);padding:0.8rem;border-radius:var(--radius)">
-                <p style="font-size:0.82rem;color:var(--gray-400)">Signed on: ${Portal._fmtDate(signed.date)}</p>
+                <p style="font-size:0.82rem;color:var(--gray-400)">Signed${signed.signerName ? ' by <strong>' + esc(signed.signerName) + '</strong>' : ''} on ${Portal._fmtDate(signed.date)}</p>
+                ${signed.minors && signed.minors.length ? `<p style="font-size:0.82rem;color:var(--gray-400)">For: ${signed.minors.map(esc).join(', ')}</p>` : ''}
                 <img src="${signed.signature}" style="max-width:200px;max-height:60px;border:1px solid var(--gray-200);border-radius:var(--radius);margin-top:0.3rem" alt="Signature">
               </div>
             ` : `
-              <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.8rem;font-size:0.88rem;cursor:pointer">
-                <input type="checkbox" id="consent-check-${formId}"> I agree to the above
+              <label style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:0.8rem;font-size:0.88rem;cursor:pointer">
+                <input type="checkbox" id="consent-check-${formId}" style="margin-top:0.2rem"> ${isWaiver ? 'I am the parent or legal guardian of the minors listed above and I have read and agree to this waiver on their behalf.' : 'I agree to the above'}
               </label>
+              <div style="margin-bottom:0.8rem">
+                <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Full name of the person signing</label>
+                <input id="consent-name-${formId}" type="text" autocomplete="name" placeholder="First and last name" style="width:100%;max-width:300px;padding:0.5rem 0.6rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-size:0.9rem">
+              </div>
               <div style="margin-bottom:0.5rem">
                 <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Sign below:</label>
-                <canvas id="sig-canvas-${formId}" width="300" height="100" style="border:1.5px solid var(--gray-200);border-radius:var(--radius);cursor:crosshair;touch-action:none;background:white"></canvas>
+                <canvas id="sig-canvas-${formId}" width="300" height="100" style="border:1.5px solid var(--gray-200);border-radius:var(--radius);cursor:crosshair;touch-action:none;background:white;max-width:100%"></canvas>
                 <div style="display:flex;gap:0.5rem;margin-top:0.3rem">
                   <button class="btn-outline btn-sm" onclick="Portal.clearSignature('${formId}')">Clear</button>
                   <button class="btn-primary btn-sm" onclick="Portal.submitConsent('${formId}')">Submit</button>
@@ -2389,6 +2460,72 @@ const Portal = {
         if (!mySignatures[formId]) Portal._initSignatureCanvas(formId);
       });
     }, 100);
+  },
+
+  // The waiver is signed per family (a parent for their own minors), so the
+  // group / organiser code never has to sign it.
+  _requiredFormsFor(t, isFamily) {
+    const forms = (t && t.requiredForms) || ['terms', 'medical', 'photo'];
+    const hasFamilies = !!(t && t.individualClients && t.individualClients.length);
+    return forms.filter(f => !(f === 'waiver' && !isFamily && hasFamilies));
+  },
+
+  // This session's signatures: the family doc in family mode (plus anything the
+  // family signed under its code before per-family docs), else the code doc.
+  _mySignatures(allSigs) {
+    const code = sessionStorage.getItem('portal_code') || 'client';
+    if (this._portalMode === 'family' && this._familyId) return DB.familySignatures(allSigs, this._familyId, code);
+    return allSigs[DB.consentDocId(code)] || {};
+  },
+
+  // Names of this family's travelers under 18 (by date of birth), or players
+  // and siblings when no date of birth was given.
+  async _familyMinors() {
+    try {
+      const snap = await DB.firestore.collection('tours').doc(this.tourId).collection('passengers')
+        .where('familyId', '==', this._familyId).get();
+      const start = this.tourData && this.tourData.startDate ? new Date(this.tourData.startDate) : new Date();
+      const out = [];
+      snap.forEach(d => {
+        const p = d.data() || {};
+        if (p._removed) return;
+        const role = String(p.role || '').toLowerCase();
+        let minor = role === 'player' || role === 'student' || role === 'sibling';
+        if (p.dateOfBirth || p.dob) {
+          const dob = new Date(p.dateOfBirth || p.dob);
+          if (!isNaN(dob)) {
+            const age = start.getFullYear() - dob.getFullYear() - ((start.getMonth() < dob.getMonth() || (start.getMonth() === dob.getMonth() && start.getDate() < dob.getDate())) ? 1 : 0);
+            minor = age < 18;
+          }
+        }
+        if (minor) out.push(((p.firstName || '') + ' ' + (p.lastName || '')).trim());
+      });
+      return out.filter(Boolean);
+    } catch (e) {
+      return [];
+    }
+  },
+
+  FORM_DEFS: {
+    terms: { title: 'Terms & Conditions', desc: 'I accept the tour terms and conditions, including <a href="#" onclick="event.preventDefault();Portal.showSection(\'terms\')" style="color:var(--navy);font-weight:600;text-decoration:underline">cancellation policy</a> and <a href="#" onclick="event.preventDefault();Portal.showSection(\'terms\')" style="color:var(--navy);font-weight:600;text-decoration:underline">travel insurance requirements</a>.' },
+    medical: { title: 'Medical Declaration', descTour: 'I acknowledge that each family/traveler is solely responsible for disclosing any medical conditions in their passenger registration forms and for confirming that all members of their party are fit to travel. Odisea Tours and the group organizer accept no liability for undisclosed medical conditions.', descFamily: 'I confirm that all medical conditions have been disclosed in the passenger registration forms and that all travelers in my party are fit to travel.' },
+    photo: { title: 'Photo Consent', desc: 'I consent to photographs and videos being taken during the tour for promotional and record-keeping purposes.' },
+    // DRAFT wording - to be reviewed by Odisea's insurer / lawyer before use.
+    waiver: {
+      title: 'Participation Waiver & Parental Consent',
+      body: t => {
+        const club = t.groupName || t.organization || t.clientName || 'the club';
+        return `
+          <p><strong>Tour:</strong> ${t.tourName || ''}${t.startDate ? ' &middot; ' + Portal._fmtDate(t.startDate) + ' to ' + Portal._fmtDate(t.endDate) : ''}. Organised by ${club} with Odisea Tours (Ground Agents Solutions SL) as tour operator in Spain.</p>
+          <p style="margin-top:0.5rem"><strong>1. Participation.</strong> I give permission for the minors listed below to take part in all tour activities, including football training sessions, matches and tournaments with professional clubs and local teams, stadium tours, sightseeing and coach travel.</p>
+          <p style="margin-top:0.5rem"><strong>2. Risks.</strong> I understand that football and travel involve risks, including injury, and I accept these risks on behalf of the minors. I confirm they are fit to take part and that any medical condition, allergy or medication has been declared in their traveler registration.</p>
+          <p style="margin-top:0.5rem"><strong>3. Emergency medical treatment.</strong> If I cannot be reached, I authorise the tour staff and the club's staff to obtain emergency medical care, treatment or hospitalisation that a doctor considers necessary, and I accept responsibility for its cost where not covered by insurance.</p>
+          <p style="margin-top:0.5rem"><strong>4. Supervision and conduct.</strong> The minors will follow the instructions of their coaches, the club's staff and the tour directors. Minors may not leave the group without an authorised adult. Serious misconduct may lead to removal from activities at the family's cost.</p>
+          <p style="margin-top:0.5rem"><strong>5. Insurance.</strong> I confirm the minors will hold valid travel and medical insurance for the whole trip.</p>
+          <p style="margin-top:0.5rem"><strong>6. Release.</strong> To the extent permitted by law, I release Odisea Tours, its staff and partner clubs from liability for injury, loss or damage arising from ordinary participation in the activities, except where caused by their negligence or wilful misconduct.</p>
+          <p style="margin-top:0.5rem">This waiver is governed by Spanish law.</p>`;
+      }
+    }
   },
 
   _signatureCanvases: {},
@@ -2441,16 +2578,29 @@ const Portal = {
     const hasContent = imageData.data.some((val, i) => i % 4 === 3 && val > 0);
     if (!hasContent) { alert('Please sign in the signature area.'); return; }
 
-    const signatureData = canvas.toDataURL('image/png');
+    const nameInput = document.getElementById('consent-name-' + formId);
+    const signerName = nameInput ? nameInput.value.trim() : '';
+    if (signerName.split(/\s+/).filter(Boolean).length < 2) { alert('Please type your first and last name.'); return; }
+
+    const record = {
+      signature: canvas.toDataURL('image/png'),
+      date: new Date().toISOString(),
+      agreed: true,
+      signerName
+    };
+    if (formId === 'waiver') {
+      const minors = this._waiverMinors || [];
+      if (!minors.length) { alert('Please register your travelers first: the waiver must list every minor by name.'); return; }
+      record.minors = minors;
+    }
+
     const sessionCode = sessionStorage.getItem('portal_code') || 'client';
+    const isFamily = this._portalMode === 'family' && this._familyId;
+    const docId = isFamily ? DB.consentDocId(null, this._familyId) : DB.consentDocId(sessionCode);
+    if (isFamily) record.familyId = String(this._familyId);
 
     try {
-      const ref = DB.firestore.collection('tours').doc(this.tourId).collection('consent').doc('signatures');
-      const doc = await ref.get();
-      const existing = doc.exists ? doc.data() : {};
-      if (!existing[sessionCode]) existing[sessionCode] = {};
-      existing[sessionCode][formId] = { signature: signatureData, date: new Date().toISOString(), agreed: true };
-      await ref.set(existing);
+      await DB.saveSignature(this.tourId, docId, formId, record);
       this.renderForms();
     } catch (e) {
       alert('Failed to save consent. Please try again.');
@@ -2936,7 +3086,7 @@ const Portal = {
 
     // Load data in parallel
     let passengers = [], flights = null, invoicesRaw = null, roomPlan = [], signatures = {};
-    const sigPromise = DB._firebaseReady ? DB.firestore.collection('tours').doc(this.tourId).collection('consent').doc('signatures').get().then(s => s.exists ? s.data() || {} : {}).catch(() => ({})) : Promise.resolve({});
+    const sigPromise = DB._firebaseReady ? DB.getTourSignatures(this.tourId) : Promise.resolve({});
     try {
       if (isFamily) {
         [passengers, flights, invoicesRaw, signatures] = await Promise.all([
@@ -2981,9 +3131,9 @@ const Portal = {
     items.push({ done: roomOk, label: Portal._t('roomAssignments').split(' for ')[0] || 'Room plan', detail: roomOk ? `${assignedCount.size} assigned` : '', section: 'roomplan' });
 
     // 4. Forms & Consent signed
-    const sessionCode = sessionStorage.getItem('portal_code') || 'client';
-    const mySignatures = signatures[sessionCode] || {};
-    const requiredForms = (t && t.requiredForms) || ['terms', 'medical', 'photo'];
+    if (isFamily) await DB.migrateFamilySignatures(this.tourId, signatures || {}, this._familyId, sessionStorage.getItem('portal_code'));
+    const mySignatures = this._mySignatures(signatures || {});
+    const requiredForms = this._requiredFormsFor(t, !!isFamily);
     const signedCount = requiredForms.filter(f => mySignatures[f]).length;
     const formsOk = signedCount >= requiredForms.length;
     items.push({ done: formsOk, label: Portal._t('clFormsSigned'), detail: `${signedCount}/${requiredForms.length}`, section: 'forms' });

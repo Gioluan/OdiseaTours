@@ -52,7 +52,10 @@ const DB = {
     'roomPlan', 'roomType', 'roomingSummary', 'mealPlan',
     'numStudents', 'numSiblings', 'numAdults', 'numFOC', 'numRooms',
     'flights', 'flightLegs', 'tourFlightDetails',
-    'portalPaymentWise', 'portalPaymentCard'
+    'portalPaymentWise', 'portalPaymentCard',
+    // Who the families pay (e.g. "Lampass Legacy FC") when they settle with
+    // the club, and the date families must finish registration, flights and forms.
+    'paymentsHandledBy', 'portalDataDeadline'
   ],
 
   _buildPortalProjection(t) {
@@ -1494,6 +1497,128 @@ const DB = {
       console.warn('saveFamilyFlight failed:', e.message);
       return false;
     }
+  },
+
+  // ── Consent signatures ──
+  // One document per signer under tours/{id}/consent: "fam_<familyId>" in
+  // family mode, "code_<CODE>" for the group / organiser code. Each doc maps
+  // formId -> { signature, date, agreed, signerName, ... }.
+  //
+  // Tours signed before this change keep everything in a single legacy doc,
+  // consent/signatures, mapping CODE -> forms. That doc grew with every
+  // family (PNG signatures add up to Firestore's 1 MB limit at ~40 families)
+  // and was saved read-modify-write, so two families signing at once could
+  // drop each other's signature. It is still read, never written.
+  consentDocId(code, familyId) {
+    if (familyId) return 'fam_' + String(familyId).replace(/[^A-Za-z0-9_-]/g, '');
+    return 'code_' + String(code || 'client').replace(/[^A-Za-z0-9_-]/g, '');
+  },
+
+  // All signatures for a tour, keyed by consent doc id ("fam_..." / "code_...").
+  // Legacy entries are folded in as "code_<CODE>".
+  async getTourSignatures(tourId, opts) {
+    if (!this._firebaseReady) return {};
+    const out = {};
+    const merge = (key, forms) => { out[key] = Object.assign({}, out[key] || {}, forms || {}); };
+    try {
+      const snap = await this.firestore.collection('tours').doc(String(tourId))
+        .collection('consent').get(opts && opts.source ? { source: opts.source } : undefined);
+      snap.forEach(doc => {
+        const data = doc.data() || {};
+        if (doc.id === 'signatures') {
+          Object.keys(data).forEach(code => merge(this.consentDocId(code), data[code]));
+        } else {
+          merge(doc.id, data);
+        }
+      });
+    } catch (e) {
+      console.warn('getTourSignatures failed:', e.message);
+    }
+    return out;
+  },
+
+  // Signatures for one family on a tour, including any it made under its code
+  // before the per-family docs existed.
+  familySignatures(allSigs, familyId, familyCode) {
+    return Object.assign({},
+      familyCode ? allSigs[this.consentDocId(familyCode)] || {} : {},
+      allSigs[this.consentDocId(null, familyId)] || {});
+  },
+
+
+  // Per-family completion, shared by the organiser portal and the CRM.
+  // codesById (CRM only) maps familyId -> access code, to pick up signatures a
+  // family made under its code before per-family consent docs existed.
+  familyStatusRows(t, families, passengers, flights, sigs, codesById) {
+    const required = (t && t.requiredForms) || ['terms', 'medical', 'photo'];
+    return (families || []).map(ic => {
+      const id = String(ic.id);
+      const pax = (passengers || []).filter(p => !p._removed && String(p.familyId || '') === id);
+      const expected = (ic.numStudents || 0) + (ic.numSiblings || 0) + (ic.numAdults || 0);
+      const fl = (flights || []).find(f => String(f.familyId || f.id) === id);
+      const mine = this.familySignatures(sigs || {}, id, (codesById || {})[id]);
+      const formsSigned = required.filter(f => mine[f]).length;
+      const travelersOk = pax.length > 0 && (!expected || pax.length >= expected);
+      const passportsOk = pax.length > 0 && pax.every(p => p.passportNumber && p.passportExpiry && p.nationality);
+      const flightsOk = !!(fl && fl.arrival && fl.arrival.flightNumber);
+      const formsOk = formsSigned >= required.length;
+      return {
+        id, name: ic.name || '', team: ic.group || '', travelers: pax.length, expected,
+        travelersOk, passportsOk, flightsOk, formsSigned, formsRequired: required.length, formsOk,
+        complete: travelersOk && passportsOk && flightsOk && formsOk
+      };
+    });
+  },
+
+  // Forms signed vs expected for a tour (CRM side: t is the full tour, with
+  // familyAccessCodes). With families, every family owes every required form;
+  // otherwise each signer (group code) owes them.
+  formsProgress(t, sigs) {
+    const required = (t && t.requiredForms) || ['terms', 'medical', 'photo'];
+    const families = (t && t.individualClients) || [];
+    const signers = Object.values(sigs || {}).filter(f => f && Object.keys(f).length).length;
+    if (families.length) {
+      const codes = {};
+      Object.entries((t && t.familyAccessCodes) || {}).forEach(([id, e]) => { if (e && e.code) codes[String(id)] = e.code; });
+      let signed = 0;
+      families.forEach(ic => {
+        const mine = this.familySignatures(sigs || {}, String(ic.id), codes[String(ic.id)]);
+        signed += required.filter(f => mine[f]).length;
+      });
+      return { signed, expected: families.length * required.length, signers };
+    }
+    let signed = 0;
+    Object.values(sigs || {}).forEach(f => { signed += required.filter(id => f && f[id]).length; });
+    return { signed, expected: Math.max(signers, 1) * required.length, signers };
+  },
+
+  // Copies forms a family signed under its code (legacy single doc or a
+  // code_ doc) into its own fam_ doc, so views that only know familyIds
+  // (the organiser's portal) see them too. Run from the family's own session.
+  async migrateFamilySignatures(tourId, allSigs, familyId, code) {
+    if (!familyId || !code) return false;
+    const legacy = allSigs[this.consentDocId(code)] || {};
+    const famId = this.consentDocId(null, familyId);
+    const mine = allSigs[famId] || {};
+    const missing = Object.keys(legacy).filter(f => !mine[f]);
+    if (!missing.length) return false;
+    const patch = {};
+    missing.forEach(f => { patch[f] = Object.assign({}, legacy[f], { familyId: String(familyId), migratedFromCode: true }); });
+    try {
+      await this.firestore.collection('tours').doc(String(tourId)).collection('consent').doc(famId).set(patch, { merge: true });
+      allSigs[famId] = Object.assign({}, mine, patch);
+      return true;
+    } catch (e) {
+      console.warn('migrateFamilySignatures failed:', e.message);
+      return false;
+    }
+  },
+
+  async saveSignature(tourId, docId, formId, record) {
+    // merge:true touches only this form's field, so concurrent signers never
+    // overwrite each other.
+    await this.firestore.collection('tours').doc(String(tourId))
+      .collection('consent').doc(docId).set({ [formId]: record }, { merge: true });
   },
 
   async getFamilyFlight(tourId, familyId) {

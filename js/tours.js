@@ -310,6 +310,7 @@ const Tours = {
       if (t.accessCode && DB._firebaseReady) {
         this._loadPortalChecklist(t.id);
         this._loadPortalBadges(t.id);
+        this._loadFamilyStatus(t.id);
       }
     }, 100);
   },
@@ -1707,6 +1708,17 @@ const Tours = {
           <div class="form-group"><label>Wise Payment URL</label><input value="${t.portalPaymentWise || ''}" onchange="Tours.saveOrgField(${t.id},'portalPaymentWise',this.value)" placeholder="https://wise.com/pay/..."></div>
         </div>
       </div>
+      <div style="margin-top:0.8rem">
+        <h4 style="font-size:0.85rem;margin-bottom:0.4rem">Family Portal Settings <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— what families must complete</span></h4>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:0.84rem;margin-bottom:0.5rem">
+          ${[['terms', 'Terms & Conditions'], ['medical', 'Medical declaration'], ['photo', 'Photo consent'], ['waiver', 'Participation waiver (minors)']].map(([id, label]) => `
+            <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer"><input type="checkbox" ${(t.requiredForms || ['terms', 'medical', 'photo']).includes(id) ? 'checked' : ''} onchange="Tours.toggleRequiredForm(${t.id},'${id}',this.checked)"> ${label}</label>`).join('')}
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label>Families pay (leave empty if they pay Odisea)</label><input value="${(t.paymentsHandledBy || '').replace(/"/g, '&quot;')}" onchange="Tours.setPortalSetting(${t.id},'paymentsHandledBy',this.value)" placeholder="e.g. Lampass Legacy FC"></div>
+          <div class="form-group"><label>Deadline for travelers, flights &amp; forms</label><input type="date" value="${t.portalDataDeadline || ''}" onchange="Tours.setPortalSetting(${t.id},'portalDataDeadline',this.value)"></div>
+        </div>
+      </div>
       ${(t.individualClients && t.individualClients.length) ? (() => {
         const famCodes = t.familyAccessCodes || {};
         const codesGenerated = Object.keys(famCodes).length;
@@ -1714,14 +1726,19 @@ const Tours = {
         return `
         <h4 style="margin-top:1.5rem;margin-bottom:0.5rem;font-size:0.92rem">Family Portal Access <span style="font-weight:400;font-size:0.78rem;color:var(--gray-400)">— ${codesGenerated} of ${totalFamilies} codes generated</span></h4>
         <table class="data-table" style="font-size:0.82rem;margin-bottom:0.8rem">
-          <thead><tr><th>Family</th><th>Code</th><th>Last Access</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Family</th><th>Team</th><th>Code</th><th>Last Access</th><th title="Travelers registered">Travelers</th><th>Passports</th><th>Flights</th><th>Forms</th><th>Actions</th></tr></thead>
           <tbody>${t.individualClients.map(ic => {
             const entry = famCodes[ic.id];
             const code = entry ? entry.code : null;
             return `<tr>
               <td><strong>${ic.name || '—'}</strong></td>
+              <td>${ic.group || '<span style="color:var(--gray-300)">—</span>'}</td>
               <td>${code ? '<code style="font-family:monospace;font-size:0.85rem;letter-spacing:0.05em">' + code + '</code>' : '<span style="color:var(--gray-300)">Not generated</span>'}</td>
               <td>${entry && entry.lastAccess ? new Date(entry.lastAccess).toLocaleDateString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--gray-300)">Never</span>'}</td>
+              <td id="fs-trav-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
+              <td id="fs-pass-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
+              <td id="fs-fl-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
+              <td id="fs-forms-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
               <td style="white-space:nowrap">${code
                 ? '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.copyFamilyPortalLink(' + t.id + ',&#39;' + code + '&#39;)">Copy Link</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:#25D366;color:#25D366" onclick="Tours.sendFamilyInvite(' + t.id + ',&#39;' + ic.id + '&#39;)">Invite</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--amber);color:var(--amber)" onclick="Tours.sendFamilyWelcome(' + t.id + ',&#39;' + ic.id + '&#39;)">Welcome</button>'
                 : '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--blue);color:var(--blue)" onclick="Tours.generateFamilyCode(' + t.id + ',&#39;' + ic.id + '&#39;)">Generate</button>'
@@ -1733,8 +1750,10 @@ const Tours = {
           <button class="btn btn-sm btn-outline" style="border-color:var(--blue);color:var(--blue)" onclick="Tours.generateAllFamilyCodes(${t.id})">Generate All Codes</button>
           <button class="btn btn-sm btn-outline" style="border-color:#25D366;color:#25D366" onclick="Tours.sendAllFamilyInvites(${t.id})">Email All Invites</button>
           <button class="btn btn-sm btn-outline" style="border-color:var(--amber);color:var(--amber)" onclick="Tours.sendAllFamilyWelcomes(${t.id})">Welcome All</button>
-        </div>`;
-      })() : ''}
+          <button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="Tours.importFamiliesPaste(${t.id})">Import Families (paste from Excel)</button>
+        </div>
+        <div id="family-status-summary-${t.id}" style="font-size:0.8rem;color:var(--gray-400);margin-top:0.4rem"></div>`;
+      })() : `<div style="margin-top:1rem"><button class="btn btn-sm btn-outline" style="border-color:var(--navy);color:var(--navy)" onclick="Tours.importFamiliesPaste(${t.id})">Import Families (paste from Excel)</button> <span style="font-size:0.78rem;color:var(--gray-400)">— one row per family; each family then gets its own portal code</span></div>`}
       <div id="portal-detail-${t.id}"></div>`;
   },
 
@@ -1769,7 +1788,7 @@ const Tours = {
         // checklist item is accurate after deletions.
         DB.getTourPassengers(tourIdStr).catch(() => []),
         DB.firestore.collection('tours').doc(tourIdStr).collection('tourFlights').doc('shared').get({ source: 'server' }).catch(() => ({ exists: false })),
-        DB.firestore.collection('tours').doc(tourIdStr).collection('consent').doc('signatures').get({ source: 'server' }).catch(() => ({ exists: false, data: () => ({}) }))
+        DB.getTourSignatures(tourIdStr, { source: 'server' })
       ]);
 
       const expectedPax = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
@@ -1783,26 +1802,14 @@ const Tours = {
       roomPlan.forEach(r => (r.passengers || []).forEach(id => assignedSet.add(id)));
       const roomOk = roomPlan.length > 0 && assignedSet.size > 0;
 
-      const sigs = sigDoc.exists ? sigDoc.data() || {} : {};
-      const requiredForms = t.requiredForms || ['terms', 'medical', 'photo'];
-      // Count total forms signed across all access codes
-      let totalFormsSigned = 0;
-      let totalFormsExpected = 0;
-      const sigEntries = Object.keys(sigs);
-      if (sigEntries.length > 0) {
-        sigEntries.forEach(code => {
-          const mySigs = sigs[code] || {};
-          totalFormsExpected += requiredForms.length;
-          totalFormsSigned += requiredForms.filter(f => mySigs[f]).length;
-        });
-      }
-      const formsOk = sigEntries.length > 0 && totalFormsSigned >= totalFormsExpected;
+      const { signed: totalFormsSigned, expected: totalFormsExpected, signers } = DB.formsProgress(t, sigDoc || {});
+      const formsOk = totalFormsExpected > 0 && totalFormsSigned >= totalFormsExpected;
 
       const items = [
         { done: paxOk, label: 'Passengers registered', detail: expectedPax ? `${paxCount}/${expectedPax}` : `${paxCount}` },
         { done: !!flightsOk, label: 'Flight details submitted', detail: flightsOk ? 'Done' : 'Pending' },
         { done: roomOk, label: 'Room plan assigned', detail: roomOk ? `${assignedSet.size} assigned` : 'Pending' },
-        { done: formsOk, label: 'Forms & consent signed', detail: sigEntries.length > 0 ? `${totalFormsSigned}/${totalFormsExpected}` : '0 signatures' }
+        { done: formsOk, label: 'Forms & consent signed', detail: signers > 0 ? `${totalFormsSigned}/${totalFormsExpected}` : '0 signatures' }
       ];
       const doneCount = items.filter(i => i.done).length;
       const pct = Math.round(doneCount / items.length * 100);
@@ -1829,6 +1836,138 @@ const Tours = {
     } catch (e) {
       el.innerHTML = '<div style="font-size:0.82rem;color:var(--gray-400)">Could not load portal progress.</div>';
     }
+  },
+
+  // Plain-text portal settings (saveOrgField would turn "" into 0).
+  setPortalSetting(tourId, field, value) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    t[field] = String(value || '').trim();
+    DB.saveTour(t);
+  },
+
+  toggleRequiredForm(tourId, formId, on) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    const order = ['terms', 'medical', 'photo', 'waiver'];
+    const set = new Set(t.requiredForms || ['terms', 'medical', 'photo']);
+    if (on) set.add(formId); else set.delete(formId);
+    t.requiredForms = order.filter(f => set.has(f));
+    DB.saveTour(t);
+    this._loadPortalChecklist(tourId);
+    this._loadFamilyStatus(tourId);
+  },
+
+  // Fills the Travelers / Passports / Flights / Forms cells of the Family
+  // Portal Access table.
+  async _loadFamilyStatus(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !DB._firebaseReady || !(t.individualClients || []).length) return;
+    try {
+      const [passengers, flights, sigs] = await Promise.all([
+        DB.getTourPassengers(String(tourId)).catch(() => []),
+        DB.getAllFamilyFlights(String(tourId)).catch(() => []),
+        DB.getTourSignatures(String(tourId), { source: 'server' })
+      ]);
+      const codes = {};
+      Object.entries(t.familyAccessCodes || {}).forEach(([id, e]) => { if (e && e.code) codes[String(id)] = e.code; });
+      const rows = DB.familyStatusRows(t, t.individualClients, passengers, flights, sigs, codes);
+      const mark = (ok, extra) => `<span style="color:${ok ? 'var(--green)' : 'var(--red)'};font-weight:700">${ok ? '&#10003;' : '&times;'}</span>${extra ? ' <span style="color:var(--gray-400)">' + extra + '</span>' : ''}`;
+      const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+      rows.forEach(r => {
+        set(`fs-trav-${tourId}-${r.id}`, mark(r.travelersOk, `${r.travelers}/${r.expected || '?'}`));
+        set(`fs-pass-${tourId}-${r.id}`, mark(r.passportsOk));
+        set(`fs-fl-${tourId}-${r.id}`, mark(r.flightsOk));
+        set(`fs-forms-${tourId}-${r.id}`, mark(r.formsOk, `${r.formsSigned}/${r.formsRequired}`));
+      });
+      const done = rows.filter(r => r.complete).length;
+      set(`family-status-summary-${tourId}`, `${done} of ${rows.length} families complete${t.portalDataDeadline ? ' · deadline ' + fmtDate(t.portalDataDeadline) : ''}. The organiser sees the same table in the group portal (ticks only, no personal data).`);
+    } catch (e) {}
+  },
+
+  // ── Import families from a spreadsheet paste ──
+  // Columns (header row optional, any order when headed):
+  // Family | Email | Phone | Players | Siblings | Adults | Team | Notes
+  importFamiliesPaste(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t) return;
+    document.getElementById('tours-modal-content').innerHTML = `
+      <h2>Import Families — ${t.tourName}</h2>
+      <p style="font-size:0.85rem;color:var(--gray-500);margin-bottom:0.6rem">Copy the rows from Excel (one row per family) and paste them below. Columns:
+        <strong>Family · Email · Phone · Players · Siblings · Adults · Team · Notes</strong>. A header row is fine. Families already on the tour (same name) are updated, not duplicated.</p>
+      <textarea id="fam-import-text" rows="10" style="width:100%;font-family:monospace;font-size:0.8rem" placeholder="Smith Family\tjane@email.com\t+1 555 0100\t1\t0\t2\tU16 Boys"></textarea>
+      <div id="fam-import-preview" style="margin-top:0.8rem"></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="Tours._previewFamilyImport(${tourId})">Preview</button>
+        <button class="btn btn-primary" id="fam-import-go" disabled onclick="Tours._applyFamilyImport(${tourId})">Import</button>
+        <button class="btn btn-outline" onclick="Tours.viewTour(${tourId})">Cancel</button>
+      </div>`;
+  },
+
+  _parseFamilyRows(text) {
+    const lines = String(text || '').split(/\r?\n/).map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+    if (!lines.length) return [];
+    const split = l => l.includes('\t') ? l.split('\t') : l.split(/[;,](?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, ''));
+    const cols = ['name', 'email', 'phone', 'numStudents', 'numSiblings', 'numAdults', 'group', 'notes'];
+    const aliases = { family: 'name', name: 'name', familia: 'name', email: 'email', 'e-mail': 'email', correo: 'email', phone: 'phone', telefono: 'phone', 'teléfono': 'phone', mobile: 'phone',
+      players: 'numStudents', player: 'numStudents', jugadores: 'numStudents', students: 'numStudents', siblings: 'numSiblings', hermanos: 'numSiblings',
+      adults: 'numAdults', adultos: 'numAdults', parents: 'numAdults', team: 'group', equipo: 'group', squad: 'group', notes: 'notes', notas: 'notes' };
+    let map = cols;
+    const first = split(lines[0]).map(c => c.trim().toLowerCase());
+    if (first.some(c => aliases[c] === 'name')) {
+      map = first.map(c => aliases[c] || null);
+      lines.shift();
+    }
+    return lines.map(l => {
+      const cells = split(l).map(c => c.trim());
+      const row = {};
+      map.forEach((key, i) => { if (key && cells[i] !== undefined && cells[i] !== '') row[key] = cells[i]; });
+      ['numStudents', 'numSiblings', 'numAdults'].forEach(k => { row[k] = Math.max(0, parseInt(row[k], 10) || 0); });
+      return row;
+    }).filter(r => r.name);
+  },
+
+  _previewFamilyImport(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    const rows = this._parseFamilyRows(document.getElementById('fam-import-text').value);
+    this._pendingFamilyImport = rows;
+    const existing = new Set((t.individualClients || []).map(ic => (ic.name || '').toLowerCase().trim()));
+    const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const tot = k => rows.reduce((s, r) => s + r[k], 0);
+    document.getElementById('fam-import-preview').innerHTML = rows.length ? `
+      <p style="font-size:0.84rem;margin-bottom:0.4rem"><strong>${rows.length} families</strong> · ${tot('numStudents')} players, ${tot('numSiblings')} siblings, ${tot('numAdults')} adults = ${tot('numStudents') + tot('numSiblings') + tot('numAdults')} travelers</p>
+      <table class="data-table" style="font-size:0.78rem"><thead><tr><th>Family</th><th>Email</th><th>Phone</th><th>Players</th><th>Siblings</th><th>Adults</th><th>Team</th><th></th></tr></thead>
+      <tbody>${rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.email) || '<span style="color:var(--red)">missing</span>'}</td><td>${esc(r.phone)}</td><td>${r.numStudents}</td><td>${r.numSiblings}</td><td>${r.numAdults}</td><td>${esc(r.group)}</td>
+        <td>${existing.has(r.name.toLowerCase().trim()) ? '<span style="color:var(--amber)">update</span>' : '<span style="color:var(--green)">new</span>'}</td></tr>`).join('')}</tbody></table>`
+      : '<p style="color:var(--red);font-size:0.84rem">No rows found. Paste the rows including the family name in the first column (or a header row with "Family").</p>';
+    document.getElementById('fam-import-go').disabled = !rows.length;
+  },
+
+  _applyFamilyImport(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    const rows = this._pendingFamilyImport || [];
+    if (!t || !rows.length) return;
+    if (!t.individualClients) t.individualClients = [];
+    const familiesPayClub = !!t.paymentsHandledBy;
+    let added = 0, updated = 0;
+    rows.forEach((r, i) => {
+      const amount = familiesPayClub ? 0 : r.numStudents * (t.priceStudent || 0) + r.numSiblings * (t.priceSibling || 0) + r.numAdults * (t.priceAdult || 0);
+      const ic = t.individualClients.find(x => (x.name || '').toLowerCase().trim() === r.name.toLowerCase().trim());
+      if (ic) {
+        Object.assign(ic, { email: r.email || ic.email || '', phone: r.phone || ic.phone || '', numStudents: r.numStudents, numSiblings: r.numSiblings,
+          numAdults: r.numAdults, group: r.group || ic.group || '', notes: r.notes || ic.notes || '' });
+        if (!familiesPayClub) ic.amountDue = amount;
+        updated++;
+      } else {
+        t.individualClients.push({ id: Date.now() + i, name: r.name, email: r.email || '', phone: r.phone || '', numStudents: r.numStudents,
+          numSiblings: r.numSiblings, numAdults: r.numAdults, group: r.group || '', amountDue: amount, notes: r.notes || '' });
+        added++;
+      }
+    });
+    this._pendingFamilyImport = null;
+    DB.saveTour(t);
+    alert(`${added} families added, ${updated} updated. Next: Generate All Codes, then Welcome All.`);
+    this.viewTour(tourId);
   },
 
   generateAccessCode(tourId) {
@@ -1946,6 +2085,7 @@ const Tours = {
     const dest = t.destination || 'the destination';
     const dates = fmtDate(t.startDate) + ' — ' + fmtDate(t.endDate);
     const nights = t.nights ? ` (${t.nights} nights)` : '';
+    if (t.paymentsHandledBy) return this._familyWelcomeBodyClubPays(t, ic, url, dest, dates, nights);
     const inv = DB.getInvoices().find(i => i.individualClientRef === ic.id && i.tourId === t.id);
     const amountLine = inv ? `\nYour total: ${fmt(inv.amount, t.currency)}` : (ic.amountDue ? `\nYour total: ${fmt(ic.amountDue, t.currency)}` : '');
     const paymentLines = (t.portalPaymentCard || t.portalPaymentWise) ? '\nPayment options are available directly on your portal.' : '';
@@ -2000,6 +2140,8 @@ juan@odisea-tours.com`;
 - Remaining 20%: ${fmt(Number(inv ? inv.amount : ic.amountDue || 0) * 0.2, t.currency)}`;
     }
 
+    if (t.paymentsHandledBy) return this._familyWelcomeBodyClubPays(t, ic, url, dest, dates, nights);
+
     return `Dear ${ic.name},
 
 Thank you for registering for "${t.tourName}" to ${dest}! We're excited to have your family joining the group.
@@ -2035,6 +2177,46 @@ NEXT STEPS
 IMPORTANT: This link is unique to your family. Please do not share it with other families as it gives access to your private information.
 
 If you have any questions, reply to this email or use the Messages section in your portal to reach us directly.
+
+We look forward to a fantastic trip!
+
+Kind regards,
+Juan
+Odisea Tours
+juan@odisea-tours.com`;
+  },
+
+  // Families pay the club, not Odisea: no amounts, no invoice, no payment links.
+  _familyWelcomeBodyClubPays(t, ic, url, dest, dates, nights) {
+    const forms = (t.requiredForms || ['terms', 'medical', 'photo']);
+    const formNames = { terms: 'Terms & Conditions', medical: 'Medical declaration', photo: 'Photo consent', waiver: 'Participation waiver & parental consent (one for your players and siblings under 18)' };
+    const deadline = t.portalDataDeadline ? fmtDate(t.portalDataDeadline) : '';
+    return `Dear ${ic.name},
+
+Welcome to "${t.tourName}"! We're Odisea Tours, the tour operator in Spain working with ${t.paymentsHandledBy}, and we're looking forward to having your family with us.
+
+TRIP DETAILS
+Destination: ${dest}
+Dates: ${dates}${nights}
+
+YOUR FAMILY PORTAL
+Your family has its own private portal:
+${url}
+
+In the portal, please:
+1. Register every traveler in your family (name, date of birth, passport details, medical information and an emergency contact)
+2. Add your arrival and departure flight details
+3. Read and sign the forms:
+${forms.map(f => '   - ' + (formNames[f] || f)).join('\n')}
+${deadline ? `
+Please complete all three steps by ${deadline}. We need this information for hotel rooming, airport transfers and the clubs' registration lists.
+` : ''}
+You'll also find the full itinerary there, and you can message us at any time from the Messages section.
+
+PAYMENTS
+Payments for this trip are handled by ${t.paymentsHandledBy}. For any question about payments, please contact them directly.
+
+IMPORTANT: This link is unique to your family. Please do not share it with other families, as it gives access to your private information.
 
 We look forward to a fantastic trip!
 
