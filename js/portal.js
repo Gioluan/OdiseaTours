@@ -82,7 +82,8 @@ const Portal = {
       termsCancellationP4: 'In the unlikely event that Odisea Tours is unable to operate a tour due to unforeseen circumstances, we will work directly with each group to find the best possible solution, which may include rebooking to alternative dates, applying credit toward a future tour, or arranging a partial or full refund at Odisea Tours\u2019 discretion.',
       termsChanges: 'Changes & Modifications',
       termsChangesP1: 'Odisea Tours reserves the right to make changes to the itinerary, accommodation, or services if necessary due to circumstances beyond our control (weather, availability, safety, etc.).',
-      termsChangesP2: 'If a significant change affects the tour, clients will be notified as early as possible and offered an alternative arrangement or refund where applicable.',
+      termsChangesActivities: 'Activities, training sessions, matches, stadium tours, visits and tickets are subject to availability. If any of them is not available at the time of booking, or is cancelled or rescheduled by the provider (clubs, LaLiga, venues or local authorities), Odisea Tours will replace it with an activity of the same or higher quality. These substitutions are part of the service and do not give rise to any refund or compensation.',
+      termsChangesP2: 'If any other significant change affects the tour, clients will be notified as early as possible and offered an alternative arrangement or refund where applicable.',
       termsChangesP3: 'Client-requested changes to bookings (dates, names, services) are subject to availability and may incur additional fees.',
       termsTravel: 'Travel Requirements',
       termsTravelP1: 'It is the responsibility of each traveler to ensure they have valid travel documents (passport, visa, etc.) for the duration of the trip. Odisea Tours is not liable for denied boarding or entry due to insufficient documentation.',
@@ -166,7 +167,8 @@ const Portal = {
       termsCancellationP4: 'En el improbable caso de que Odisea Tours no pueda operar un tour debido a circunstancias imprevistas, trabajaremos directamente con cada grupo para encontrar la mejor soluci\u00f3n posible, que puede incluir reprogramaci\u00f3n a fechas alternativas, aplicaci\u00f3n de cr\u00e9dito para un futuro tour, o un reembolso parcial o total a discreci\u00f3n de Odisea Tours.',
       termsChanges: 'Cambios y Modificaciones',
       termsChangesP1: 'Odisea Tours se reserva el derecho de realizar cambios en el itinerario, alojamiento o servicios si es necesario debido a circunstancias fuera de nuestro control (clima, disponibilidad, seguridad, etc.).',
-      termsChangesP2: 'Si un cambio significativo afecta al tour, los clientes seran notificados lo antes posible y se les ofrecera una alternativa o reembolso segun corresponda.',
+      termsChangesActivities: 'Las actividades, entrenamientos, partidos, visitas a estadios, excursiones y entradas est\u00e1n sujetos a disponibilidad. Si alguna no est\u00e1 disponible en el momento de la reserva, o el proveedor la cancela o la cambia de fecha (clubes, LaLiga, instalaciones o autoridades locales), Odisea Tours la sustituir\u00e1 por otra de igual o mayor calidad. Estas sustituciones forman parte del servicio y no dan derecho a reembolso ni compensaci\u00f3n.',
+      termsChangesP2: 'Si cualquier otro cambio significativo afecta al tour, los clientes seran notificados lo antes posible y se les ofrecera una alternativa o reembolso segun corresponda.',
       termsChangesP3: 'Los cambios solicitados por el cliente (fechas, nombres, servicios) estan sujetos a disponibilidad y pueden generar cargos adicionales.',
       termsTravel: 'Requisitos de Viaje',
       termsTravelP1: 'Es responsabilidad de cada viajero asegurarse de tener documentos de viaje validos (pasaporte, visa, etc.) durante todo el viaje. Odisea Tours no es responsable por denegacion de embarque o entrada por documentacion insuficiente.',
@@ -2523,6 +2525,7 @@ const Portal = {
           <p style="margin-top:0.5rem"><strong>4. Supervision and conduct.</strong> The minors will follow the instructions of their coaches, the club's staff and the tour directors. Minors may not leave the group without an authorised adult. Serious misconduct may lead to removal from activities at the family's cost.</p>
           <p style="margin-top:0.5rem"><strong>5. Insurance.</strong> I confirm the minors will hold valid travel and medical insurance for the whole trip.</p>
           <p style="margin-top:0.5rem"><strong>6. Release.</strong> To the extent permitted by law, I release Odisea Tours, its staff and partner clubs from liability for injury, loss or damage arising from ordinary participation in the activities, except where caused by their negligence or wilful misconduct.</p>
+          <p style="margin-top:0.5rem"><strong>7. Programme changes.</strong> Activities, training sessions, matches, stadium tours, visits and tickets are subject to availability. If any of them is not available at the time of booking, or is cancelled or rescheduled by the provider (clubs, LaLiga, venues or local authorities), Odisea Tours will replace it with an activity of the same or higher quality. These substitutions are part of the service and do not give rise to any refund or compensation.</p>
           <p style="margin-top:0.5rem">This waiver is governed by Spanish law.</p>`;
       }
     }
@@ -2908,6 +2911,7 @@ const Portal = {
       <div style="${sectionStyle}">
         <h3 style="${h3Style}">4. ${t('termsChanges')}</h3>
         <p style="${pStyle}">${t('termsChangesP1')}</p>
+        <p style="${pStyle}"><strong>${t('termsChangesActivities')}</strong></p>
         <p style="${pStyle}">${t('termsChangesP2')}</p>
         <p style="${lastP}">${t('termsChangesP3')}</p>
       </div>
