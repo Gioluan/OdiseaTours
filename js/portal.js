@@ -2783,9 +2783,9 @@ const Portal = {
               </div>` : ''}
               ${eur ? `
               <div>
-                <div style="font-weight:600;color:var(--navy);margin-bottom:0.3rem">International wire, in euros</div>
+                <div style="font-weight:600;color:var(--navy);margin-bottom:0.3rem">Bank transfer, in euros</div>
                 <p style="margin-bottom:0.4rem">Send <strong>${fmt(amount)}</strong>. Please choose the option where you cover all bank fees, so the full amount arrives.</p>
-                ${row('Account name', eur.name)}${row('IBAN', eur.iban)}${row('BIC / SWIFT', eur.bic)}${row('Bank address', eur.address)}
+                ${row('Account name', eur.name)}${row('IBAN', eur.iban)}${row('BIC / SWIFT', eur.bic)}${row('Bank', eur.bank)}${row('Bank address', eur.address)}${eur.tip ? `<p style="margin-top:0.6rem;font-size:0.8rem;color:var(--gray-500)">${esc(eur.tip)}</p>` : ''}
               </div>` : ''}
             </div>
           </details>` : ''}
