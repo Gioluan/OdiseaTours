@@ -364,6 +364,7 @@ const Portal = {
     if (this._portalMode === 'family' && this._familyId) {
       const ics = this.tourData.individualClients || [];
       this._familyData = ics.find(ic => String(ic.id) === String(this._familyId)) || null;
+      this._familyPayment = await DB.getFamilyPayment(code);
       DB.touchAccessCode(code);
     }
 
@@ -397,6 +398,7 @@ const Portal = {
     this._portalMode = 'tour';
     this._familyId = null;
     this._familyData = null;
+    this._familyPayment = null;
     this._messageTab = 'announcements';
     this._allMessages = [];
     this._flightData = null;
@@ -422,12 +424,12 @@ const Portal = {
       // Families settle up with the group organiser, not with Odisea, so a
       // balance from our invoices would be somebody else's number.
       if (li.dataset.section === 'payments') {
-        li.style.display = isFamily ? 'none' : '';
+        li.style.display = this._paymentsVisible() ? '' : 'none';
       }
     });
     document.querySelectorAll('.bottom-tab').forEach(tab => {
       if (tab.dataset.section === 'payments') {
-        tab.style.display = isFamily ? 'none' : '';
+        tab.style.display = this._paymentsVisible() ? '' : 'none';
       }
     });
   },
@@ -435,8 +437,10 @@ const Portal = {
   // Families never see Odisea's invoicing: the group organiser collects from
   // them directly. Guarded here rather than only in the nav so a stale
   // sessionStorage section or a direct showSection call cannot reach it.
+  // The exception is a family that pays Odisea directly and has its own payment
+  // plan on its access code (see DB.getFamilyPayment).
   _paymentsVisible() {
-    return this._portalMode !== 'family';
+    return this._portalMode !== 'family' || !!this._familyPayment;
   },
 
   showSection(name) {
@@ -661,6 +665,10 @@ const Portal = {
     const el = document.getElementById('overview-payment-summary');
     if (!el) return;
     if (!this._paymentsVisible()) { el.innerHTML = ''; return; }
+    if (this._portalMode === 'family' && this._familyPayment) {
+      el.innerHTML = this._familyPaymentSummaryHtml();
+      return;
+    }
     const t = this.tourData;
     const isFamily = this._portalMode === 'family' && this._familyId;
 
@@ -2711,7 +2719,99 @@ const Portal = {
   },
 
   // ── Payment Status ──
+  // ── Family pays Odisea directly: its own total, dates and how to pay ──
+  _familyPaymentNumbers() {
+    const pay = this._familyPayment || {};
+    const items = Array.isArray(pay.installments) ? pay.installments : [];
+    const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const paid = items.filter(i => i.status === 'paid').reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    return { pay, items, total, paid, balance: total - paid, cur: pay.currency || 'EUR',
+             next: items.find(i => i.status !== 'paid') || null };
+  },
+
+  _familyPaymentSummaryHtml() {
+    const n = this._familyPaymentNumbers();
+    const fmt = v => Portal._fmtCurrency(v, n.cur);
+    return `
+      <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-top:1rem;box-shadow:var(--shadow);cursor:pointer" onclick="Portal.showSection('payments')">
+        <h4 style="font-family:var(--font-display);color:var(--navy);margin-bottom:0.5rem;font-size:1.05rem">Payments</h4>
+        ${n.next
+          ? `<p style="font-size:0.9rem;color:var(--gray-600)">Next payment: <strong>${fmt(Number(n.next.amount) || 0)}</strong> by ${Portal._fmtDate(n.next.due)}</p>`
+          : `<p style="font-size:0.9rem;color:var(--green);font-weight:600">All paid. Thank you!</p>`}
+        <p style="font-size:0.78rem;color:var(--gray-400);margin-top:0.3rem">Paid ${fmt(n.paid)} of ${fmt(n.total)} &mdash; tap for details and how to pay</p>
+      </div>`;
+  },
+
+  renderFamilyPaymentPanel() {
+    const container = document.getElementById('section-payments');
+    const n = this._familyPaymentNumbers();
+    const esc = s => Portal._escapeHtml(String(s == null ? '' : s));
+    const fmt = v => Portal._fmtCurrency(v, n.cur);
+    const usd = v => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const row = (k, v) => v ? `<div style="display:flex;justify-content:space-between;gap:1rem;padding:0.25rem 0;font-size:0.84rem;border-bottom:1px solid var(--gray-100)"><span style="color:var(--gray-400)">${esc(k)}</span><strong style="text-align:right;word-break:break-word">${esc(v)}</strong></div>` : '';
+    const eur = (n.pay.bank && n.pay.bank.eur) || null;
+    const us = (n.pay.bank && n.pay.bank.usd) || null;
+
+    const installment = i => {
+      const amount = Number(i.amount) || 0;
+      const paid = i.status === 'paid';
+      const isNext = n.next && n.next === i;
+      const cardUrl = /^https:\/\//.test(i.cardUrl || '') ? i.cardUrl : '';
+      const cardAmount = Number(i.cardAmount) || amount;
+      const usAmount = Number(i.usdAmount) || 0;
+      return `
+      <div style="background:white;border-radius:var(--radius-lg);padding:1.1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:0.9rem;${isNext ? 'border-left:4px solid var(--navy)' : ''}">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:baseline">
+          <div>
+            <div style="font-weight:700;color:var(--navy)">${esc(i.label)}</div>
+            <div style="font-size:0.8rem;color:var(--gray-400)">${paid ? 'Received' + (i.paidOn ? ' ' + Portal._fmtDate(i.paidOn) : '') : 'Due by ' + Portal._fmtDate(i.due)}</div>
+          </div>
+          <div style="font-weight:700;font-size:1.1rem;color:${paid ? 'var(--green)' : 'var(--navy)'}">${fmt(amount)}${paid ? ' &#10003;' : ''}</div>
+        </div>
+        ${paid ? '' : `
+        <div style="margin-top:0.9rem;display:flex;flex-direction:column;gap:0.6rem">
+          ${cardUrl ? `<a href="${Portal._escapeAttr(cardUrl)}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:0.7rem 1rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay by card${cardAmount !== amount ? ' &middot; ' + fmt(cardAmount) : ''}</a>` : ''}
+          ${(eur || us) ? `<details style="border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:0.7rem 1rem">
+            <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:var(--navy)">Pay by bank transfer</summary>
+            <div style="margin-top:0.7rem;font-size:0.84rem;color:var(--gray-600)">
+              <p style="margin-bottom:0.6rem">Please always use this reference: <strong>${esc(i.reference)}</strong></p>
+              ${us && usAmount ? `
+              <div style="margin-bottom:0.9rem">
+                <div style="font-weight:600;color:var(--navy);margin-bottom:0.3rem">From a US bank, in dollars (ACH)</div>
+                <p style="margin-bottom:0.4rem">Send <strong>${usd(usAmount)}</strong>${i.usdValidUntil ? ' by ' + Portal._fmtDate(i.usdValidUntil) : ''}.</p>
+                ${row('Account name', us.name)}${row('Routing number', us.routing)}${row('Account number', us.account)}${row('Account type', us.type)}${row('Bank', us.bank)}
+              </div>` : ''}
+              ${eur ? `
+              <div>
+                <div style="font-weight:600;color:var(--navy);margin-bottom:0.3rem">International wire, in euros</div>
+                <p style="margin-bottom:0.4rem">Send <strong>${fmt(amount)}</strong>. Please choose the option where you cover all bank fees, so the full amount arrives.</p>
+                ${row('Account name', eur.name)}${row('IBAN', eur.iban)}${row('BIC / SWIFT', eur.bic)}${row('Bank address', eur.address)}
+              </div>` : ''}
+            </div>
+          </details>` : ''}
+        </div>`}
+      </div>`;
+    };
+
+    container.innerHTML = `
+      <div class="section-header">
+        <h2>Payments</h2>
+        <p>Your trip total, due dates and how to pay</p>
+      </div>
+      <div style="background:white;border-radius:var(--radius-lg);padding:1.1rem;box-shadow:var(--shadow);margin-bottom:1rem;display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.6rem;text-align:center">
+        <div><div style="font-size:0.7rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Total</div><div style="font-weight:700;color:var(--navy)">${fmt(n.total)}</div></div>
+        <div><div style="font-size:0.7rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Paid</div><div style="font-weight:700;color:var(--green)">${fmt(n.paid)}</div></div>
+        <div><div style="font-size:0.7rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Balance</div><div style="font-weight:700;color:${n.balance > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(n.balance)}</div></div>
+      </div>
+      ${n.items.map(installment).join('')}
+      <p style="font-size:0.8rem;color:var(--gray-400);margin:0.4rem 0.2rem 1rem">Payments can take a few working days to show here. Any questions? Send us a message from the Messages section.</p>`;
+  },
+
   async renderPaymentStatus() {
+    if (this._portalMode === 'family' && this._familyPayment) {
+      this.renderFamilyPaymentPanel();
+      return;
+    }
     const container = document.getElementById('section-payments');
     if (!Portal._paymentsVisible()) { if (container) container.innerHTML = ''; return; }
     const t = this.tourData;

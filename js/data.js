@@ -1016,6 +1016,35 @@ const DB = {
     } catch (e) { /* a stale or admin-revoked code should not break the portal */ }
   },
 
+  // A family's private payment plan lives on its own access-code document. Rules
+  // allow `get` but not `list` there, so only someone holding this code can read
+  // it. Deliberately NOT in the tour projection or portalInvoices, which any code
+  // holder on the tour can read. Trips without one keep the old behaviour.
+  async getFamilyPayment(code) {
+    if (!code) return null;
+    try {
+      if (this._firebaseReady) {
+        const doc = await this.firestore.collection('accessCodes').doc(String(code)).get();
+        return (doc.exists && doc.data().payment) || null;
+      }
+    } catch (e) {
+      console.warn('Family payment SDK read failed, trying REST:', e.message);
+    }
+    try {
+      const cfg = (typeof FIREBASE_CONFIG !== 'undefined') ? FIREBASE_CONFIG : null;
+      if (!cfg) return null;
+      const r = await fetch('https://firestore.googleapis.com/v1/projects/' + cfg.projectId +
+        '/databases/(default)/documents/accessCodes/' + encodeURIComponent(code) +
+        '?key=' + encodeURIComponent(cfg.apiKey));
+      if (!r.ok) return null;
+      const j = await r.json();
+      return (j.fields && DB._restFieldsToObj(j.fields).payment) || null;
+    } catch (e) {
+      console.warn('Family payment REST read failed:', e.message);
+      return null;
+    }
+  },
+
   async _lookupTourViaRest(code) {
     try {
       const cfg = (typeof FIREBASE_CONFIG !== 'undefined') ? FIREBASE_CONFIG : null;
