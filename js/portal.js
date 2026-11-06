@@ -2770,7 +2770,7 @@ const Portal = {
         </div>
         ${paid ? '' : `
         <div style="margin-top:0.9rem;display:flex;flex-direction:column;gap:0.6rem">
-          ${cardUrl ? `<a href="${Portal._escapeAttr(cardUrl)}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:0.7rem 1rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay by card${cardAmount !== amount ? ' &middot; ' + fmt(cardAmount) : ''}</a>` : ''}
+          ${cardUrl ? `<a href="${Portal._escapeAttr(cardUrl)}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:0.7rem 1rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay by card${cardAmount !== amount ? ' &middot; ' + fmt(cardAmount) : ''}</a>${i.cardNote ? `<p style="font-size:0.8rem;color:var(--gray-500);margin:0">${esc(i.cardNote)}</p>` : ''}` : ''}
           ${(eur || us) ? `<details style="border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:0.7rem 1rem">
             <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:var(--navy)">Pay by bank transfer</summary>
             <div style="margin-top:0.7rem;font-size:0.84rem;color:var(--gray-600)">
