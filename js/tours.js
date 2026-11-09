@@ -1726,7 +1726,7 @@ const Tours = {
           <div style="font-size:0.88rem;font-weight:600;color:var(--navy);margin-bottom:0.4rem">Family status <span id="family-status-summary-${t.id}" style="font-weight:400;font-size:0.78rem;color:var(--gray-400)"></span></div>
           <div style="overflow-x:auto">
           <table class="data-table" style="font-size:0.82rem;margin-bottom:0.4rem">
-            <thead><tr><th>Family</th><th>Team</th><th>Link</th><th>Last opened</th><th>Travelers</th><th>Passports</th><th>Flights</th><th>Forms</th><th></th></tr></thead>
+            <thead><tr><th>Family</th><th>Team</th><th>Link</th><th>Last opened</th><th>Travelers</th><th>Passports</th><th>Flights</th><th>Forms</th><th>Paid</th><th></th></tr></thead>
             <tbody>${families.map(ic => {
               const entry = famCodes[ic.id];
               const code = entry ? entry.code : null;
@@ -1739,8 +1739,9 @@ const Tours = {
                 <td id="fs-pass-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
                 <td id="fs-fl-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
                 <td id="fs-forms-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
+                <td id="fs-pay-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300);white-space:nowrap">·</td>
                 <td style="white-space:nowrap">${code
-                  ? '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.copyFamilyPortalLink(' + t.id + ',&#39;' + code + '&#39;)">Copy Link</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--amber);color:var(--amber)" onclick="Tours.sendFamilyWelcome(' + t.id + ',&#39;' + ic.id + '&#39;)">Welcome Email</button>'
+                  ? '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem" onclick="Tours.copyFamilyPortalLink(' + t.id + ',&#39;' + code + '&#39;)">Copy Link</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--amber);color:var(--amber)" onclick="Tours.sendFamilyWelcome(' + t.id + ',&#39;' + ic.id + '&#39;)">Welcome Email</button> <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--green);color:var(--green)" onclick="Tours.openFamilyPayments(' + t.id + ',&#39;' + ic.id + '&#39;)">Payments</button>'
                   : '<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.4rem;font-size:0.72rem;border-color:var(--blue);color:var(--blue)" onclick="Tours.generateFamilyCode(' + t.id + ',&#39;' + ic.id + '&#39;)">Create Link</button>'
                 }</td>
               </tr>`;
@@ -1855,9 +1856,113 @@ const Tours = {
 
   // Fills the Travelers / Passports / Flights / Forms cells of the Family
   // Portal Access table.
+  // ── Family payment plans (accessCodes/{code}.payment) ──
+  // Card payments are marked paid by the website's Stripe webhook. Wise and
+  // bank transfers are marked here by hand once the money shows in Wise.
+  async _getFamilyPlan(t, familyId) {
+    const entry = (t.familyAccessCodes || {})[familyId];
+    if (!entry || !entry.code) return { code: null, plan: null };
+    const doc = await DB.firestore.collection('accessCodes').doc(entry.code).get({ source: 'server' });
+    const plan = doc.exists ? (doc.data().payment || null) : null;
+    return { code: entry.code, plan: plan && Array.isArray(plan.installments) && plan.installments.length ? plan : null };
+  },
+
+  async _loadFamilyPayments(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    if (!t || !DB._firebaseReady) return;
+    const eur = v => '€' + Math.round(v).toLocaleString('en-GB');
+    await Promise.all((t.individualClients || []).map(async ic => {
+      const el = document.getElementById(`fs-pay-${tourId}-${ic.id}`);
+      if (!el) return;
+      try {
+        const { plan } = await this._getFamilyPlan(t, String(ic.id));
+        if (!plan) { el.innerHTML = '<span style="color:var(--gray-300)">no plan</span>'; return; }
+        const items = plan.installments;
+        const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+        const paidItems = items.filter(i => i.status === 'paid');
+        const paid = paidItems.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+        const all = paidItems.length === items.length;
+        el.innerHTML = `<span style="color:${all ? 'var(--green)' : paid > 0 ? 'var(--amber)' : 'var(--red)'};font-weight:700">${all ? '&#10003;' : paidItems.length + '/' + items.length}</span> <span style="color:var(--gray-400)">${eur(paid)} / ${eur(total)}</span>`;
+      } catch (e) { el.innerHTML = '<span style="color:var(--gray-300)">?</span>'; }
+    }));
+  },
+
+  async openFamilyPayments(tourId, familyId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    const container = document.getElementById('portal-detail-' + tourId);
+    if (!t || !container) return;
+    const ic = (t.individualClients || []).find(c => String(c.id) === String(familyId)) || {};
+    const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    container.innerHTML = '<div style="padding:1rem;color:var(--gray-400);font-size:0.85rem">Loading payments...</div>';
+    container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    let res;
+    try { res = await this._getFamilyPlan(t, String(familyId)); }
+    catch (e) { container.innerHTML = `<div style="padding:1rem;color:var(--red)">Could not load the payment plan: ${esc(e.message)}</div>`; return; }
+    const { code, plan } = res;
+    const shell = inner => `<div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-top:1rem;border:1.5px solid var(--gray-200)">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:0.7rem">
+          <h4 style="margin:0;font-size:0.95rem">Payments &mdash; ${esc(ic.name)} <span style="font-weight:400;color:var(--gray-400);font-size:0.8rem">${esc(code || '')}</span></h4>
+          <button class="btn btn-sm btn-outline" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">Close</button>
+        </div>${inner}</div>`;
+    if (!plan) { container.innerHTML = shell('<p style="font-size:0.85rem;color:var(--gray-500)">This family has no payment plan yet.</p>'); return; }
+    const today = new Date().toISOString().slice(0, 10);
+    const via = { card: 'Card (Stripe)', wise: 'Wise', bank: 'Bank transfer', cash: 'Cash' };
+    const fmt = v => '€' + Number(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fid = esc(String(familyId));
+    const rows = plan.installments.map(i => {
+      const k = esc(i.key);
+      const paid = i.status === 'paid';
+      return `<tr>
+        <td><strong>${esc(i.label || i.key)}</strong><div style="font-size:0.75rem;color:var(--gray-400)">Ref ${esc(i.reference || '-')} &middot; due ${esc(i.due || '-')}</div></td>
+        <td style="text-align:right;font-weight:700">${fmt(i.amount)}</td>
+        <td>${paid
+          ? `<span style="color:var(--green);font-weight:700">&#10003; Paid</span> <span style="font-size:0.78rem;color:var(--gray-500)">${esc(i.paidOn || '')} &middot; ${esc(via[i.paidVia] || i.paidVia || '')}</span>`
+          : '<span style="color:var(--red);font-weight:600">Due</span>'}</td>
+        <td style="white-space:nowrap">${paid
+          ? `<button class="btn btn-sm btn-outline" style="font-size:0.72rem;border-color:var(--gray-300);color:var(--gray-500)" onclick="Tours.setFamilyInstallment(${tourId},'${fid}','${k}',false)">Undo</button>`
+          : `<select id="fp-via-${k}" style="font-size:0.78rem;padding:0.2rem"><option value="wise">Wise</option><option value="bank">Bank transfer</option><option value="card">Card</option><option value="cash">Cash</option></select>
+             <input type="date" id="fp-date-${k}" value="${today}" style="font-size:0.78rem;padding:0.15rem">
+             <button class="btn btn-sm btn-primary" style="font-size:0.75rem" onclick="Tours.setFamilyInstallment(${tourId},'${fid}','${k}',true)">Mark paid</button>`}</td>
+      </tr>`;
+    }).join('');
+    container.innerHTML = shell(`
+      <div style="overflow-x:auto"><table class="data-table" style="font-size:0.84rem"><thead><tr><th>Instalment</th><th style="text-align:right">Amount</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p style="font-size:0.78rem;color:var(--gray-400);margin:0.6rem 0 0">Card payments made with the portal button are marked automatically. Mark Wise or bank transfers here once the money shows in Wise: the family's portal turns green straight away.</p>`);
+  },
+
+  async setFamilyInstallment(tourId, familyId, key, paid) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    const entry = t && (t.familyAccessCodes || {})[familyId];
+    if (!entry || !entry.code) return;
+    const via = paid ? ((document.getElementById('fp-via-' + key) || {}).value || 'bank') : null;
+    const on = paid ? ((document.getElementById('fp-date-' + key) || {}).value || new Date().toISOString().slice(0, 10)) : null;
+    if (!paid && !confirm('Set this instalment back to due? The family will see it as unpaid again.')) return;
+    const ref = DB.firestore.collection('accessCodes').doc(entry.code);
+    try {
+      await DB.firestore.runTransaction(async tx => {
+        const doc = await tx.get(ref);
+        const plan = doc.exists && doc.data().payment;
+        const it = plan && (plan.installments || []).find(i => i.key === key);
+        if (!it) throw new Error('Instalment not found');
+        if (paid && it.status === 'paid') throw new Error('It was already marked paid (maybe a card payment just came in).');
+        if (paid) {
+          it.status = 'paid'; it.paidOn = on; it.paidVia = via; it.markedBy = 'crm';
+        } else {
+          it.status = 'due';
+          ['paidOn', 'paidVia', 'markedBy', 'stripeSession'].forEach(f => delete it[f]);
+        }
+        plan.updatedAt = new Date().toISOString();
+        tx.update(ref, { payment: plan, updatedAt: plan.updatedAt });
+      });
+    } catch (e) { alert('Could not save: ' + e.message); }
+    await this.openFamilyPayments(tourId, familyId);
+    this._loadFamilyPayments(tourId);
+  },
+
   async _loadFamilyStatus(tourId) {
     const t = DB.getTours().find(x => x.id === tourId);
     if (!t || !DB._firebaseReady || !(t.individualClients || []).length) return;
+    this._loadFamilyPayments(tourId);
     try {
       const [passengers, flights, sigs] = await Promise.all([
         DB.getTourPassengers(String(tourId)).catch(() => []),
