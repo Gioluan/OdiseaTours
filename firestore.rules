@@ -189,6 +189,13 @@ service cloud.firestore {
         allow create, update: if isStaff() || (isClub(tourId) && sanePayload(30));
         allow delete: if isStaff();
       }
+      // ── Family paid status for the organiser: counts only, no amounts ──
+      // Written by the CRM (Mark paid / sync) and the Stripe webhook (admin).
+      match /familyPaid/{familyId} {
+        allow read: if seesWholeTour(tourId);
+        allow write: if isStaff();
+      }
+
       match /familyFlights/{familyId} {
         allow read: if seesWholeTour(tourId)
           || (isFamilyOf(tourId) && familyId == myFamilyId());

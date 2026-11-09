@@ -679,14 +679,23 @@ const Portal = {
     const families = t.individualClients || [];
     if (!families.length) { el.innerHTML = ''; return; }
     el.innerHTML = '<div style="text-align:center;padding:1rem"><div class="spinner"></div></div>';
-    let passengers = [], flights = [], sigs = {};
+    let passengers = [], flights = [], sigs = {}, paidById = {};
     try {
-      [passengers, flights, sigs] = await Promise.all([
+      [passengers, flights, sigs, paidById] = await Promise.all([
         DB.getTourPassengers(this.tourId).catch(() => []),
         DB.getAllFamilyFlights(this.tourId).catch(() => []),
-        DB.getTourSignatures(this.tourId).catch(() => ({}))
+        DB.getTourSignatures(this.tourId).catch(() => ({})),
+        DB.firestore.collection('tours').doc(String(this.tourId)).collection('familyPaid').get()
+          .then(snap => { const o = {}; snap.forEach(d => { o[d.id] = d.data() || {}; }); return o; }).catch(() => ({}))
       ]);
     } catch (e) {}
+    const paidCell = id => {
+      const p = paidById[String(id)];
+      if (!p || !p.count) return '<span style="color:var(--gray-300)">&middot;</span>';
+      if (p.paid >= p.count) return '<span style="color:var(--green);font-weight:700">&#10003;</span> <span style="color:var(--gray-400)">all</span>';
+      if (p.paid > 0) return '<span style="color:var(--green);font-weight:700">&#10003;</span> <span style="color:var(--gray-400)">' + p.paid + '/' + p.count + '</span>';
+      return '<span style="color:var(--red);font-weight:700">&times;</span> <span style="color:var(--gray-400)">0/' + p.count + '</span>';
+    };
     const rows = DB.familyStatusRows(t, families, passengers, flights, sigs, {});
     const done = rows.filter(r => r.complete).length;
     const mark = ok => ok ? '<span style="color:var(--green);font-weight:700">&#10003;</span>' : '<span style="color:var(--red);font-weight:700">&times;</span>';
@@ -703,6 +712,7 @@ const Portal = {
               <th style="padding:0.3rem 0.4rem">Family</th><th style="padding:0.3rem 0.4rem">Team</th>
               <th style="padding:0.3rem 0.4rem;text-align:center">Travelers</th><th style="padding:0.3rem 0.4rem;text-align:center">Passports</th>
               <th style="padding:0.3rem 0.4rem;text-align:center">Flights</th><th style="padding:0.3rem 0.4rem;text-align:center">Forms</th>
+              <th style="padding:0.3rem 0.4rem;text-align:center" title="Payments made (deposit, second, final)">Paid</th>
             </tr></thead>
             <tbody>${rows.map(r => `<tr style="border-top:1px solid var(--gray-100)">
               <td style="padding:0.35rem 0.4rem;font-weight:600;color:var(--navy)">${esc(r.name)}</td>
@@ -711,6 +721,7 @@ const Portal = {
               <td style="padding:0.35rem 0.4rem;text-align:center">${mark(r.passportsOk)}</td>
               <td style="padding:0.35rem 0.4rem;text-align:center">${mark(r.flightsOk)}</td>
               <td style="padding:0.35rem 0.4rem;text-align:center">${mark(r.formsOk)} <span style="color:var(--gray-400)">${r.formsSigned}/${r.formsRequired}</span></td>
+              <td style="padding:0.35rem 0.4rem;text-align:center;white-space:nowrap">${paidCell(r.id)}</td>
             </tr>`).join('')}</tbody>
           </table>
         </div>
