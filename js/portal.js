@@ -2878,6 +2878,9 @@ const Portal = {
 
   // ── Payment Status ──
   // ── Family pays Odisea directly: its own total, dates and how to pay ──
+  // Ground Agents' Wise "any amount" pay page (accepts bank transfer and Pay with Wise).
+  WISE_PAY_URL: 'https://wise.com/pay/business/groundagentssolutionssl',
+
   _familyPaymentNumbers() {
     const pay = this._familyPayment || {};
     const items = Array.isArray(pay.installments) ? pay.installments : [];
@@ -2917,6 +2920,11 @@ const Portal = {
       const cardUrl = /^https:\/\//.test(i.cardUrl || '') ? i.cardUrl : '';
       const cardAmount = Number(i.cardAmount) || amount;
       const usAmount = Number(i.usdAmount) || 0;
+      // Wise pay link with the amount, currency and reference pre-filled.
+      // The family can still change the fields, hence the note under the button.
+      const wiseUrl = n.pay.wise === false || !amount ? '' :
+        Portal.WISE_PAY_URL + '?currency=EUR&amount=' + amount.toFixed(2) +
+        '&description=' + encodeURIComponent(String(i.reference || '').slice(0, 35));
       return `
       <div style="background:white;border-radius:var(--radius-lg);padding:1.1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:0.9rem;${isNext ? 'border-left:4px solid var(--navy)' : ''}">
         <div style="display:flex;justify-content:space-between;gap:1rem;align-items:baseline">
@@ -2929,8 +2937,10 @@ const Portal = {
         ${paid ? '' : `
         <div style="margin-top:0.9rem;display:flex;flex-direction:column;gap:0.6rem">
           ${cardUrl ? `<a href="${Portal._escapeAttr(cardUrl)}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:0.7rem 1rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay by card${cardAmount !== amount ? ' &middot; ' + fmt(cardAmount) : ''}</a>${i.cardNote ? `<p style="font-size:0.8rem;color:var(--gray-500);margin:0">${esc(i.cardNote)}</p>` : ''}` : ''}
+          ${wiseUrl ? `<a href="${Portal._escapeAttr(wiseUrl)}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:0.7rem 1rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay by bank transfer with Wise &middot; ${fmt(amount)}</a>
+          <p style="font-size:0.8rem;color:var(--gray-500);margin:0">The Wise page opens with <strong>${fmt(amount)}</strong> in <strong>EUR</strong> and your reference already filled in. Please do not change the currency to USD: the amount is in euros. Your bank or Wise converts it from dollars and shows you the exact cost before you confirm.</p>` : ''}
           ${(eur || us) ? `<details style="border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:0.7rem 1rem">
-            <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:var(--navy)">Pay by bank transfer</summary>
+            <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:var(--navy)">${wiseUrl ? 'Or pay from your own bank (account details)' : 'Pay by bank transfer'}</summary>
             <div style="margin-top:0.7rem;font-size:0.84rem;color:var(--gray-600)">
               <p style="margin-bottom:0.6rem">Please always use this reference: <strong>${esc(i.reference)}</strong></p>
               ${us && usAmount ? `
@@ -2962,7 +2972,7 @@ const Portal = {
         <div><div style="font-size:0.7rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Balance</div><div style="font-weight:700;color:${n.balance > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(n.balance)}</div></div>
       </div>
       ${n.items.map(installment).join('')}
-      <p style="font-size:0.8rem;color:var(--gray-400);margin:0.4rem 0.2rem 1rem">Card payments made with the button above show here automatically within a few minutes. Bank transfers are added by hand once they reach our bank, usually within 3 to 6 working days. You do not need to send proof, but you are welcome to message us. Any questions? Send us a message from the Messages section.</p>`;
+      <p style="font-size:0.8rem;color:var(--gray-400);margin:0.4rem 0.2rem 1rem">Card payments made with the button above show here automatically within a few minutes. Bank transfers (including Wise) are added by hand once they reach our bank, usually within 3 to 6 working days. You do not need to send proof, but you are welcome to message us. Any questions? Send us a message from the Messages section.</p>`;
   },
 
   async renderPaymentStatus() {
