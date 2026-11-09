@@ -196,6 +196,18 @@ service cloud.firestore {
         allow write: if isStaff();
       }
 
+      // ── Confirmed / TBC travelers chosen by the family (js/family-plan.js) ──
+      // Amounts are never stored here: they come from Odisea's plan in accessCodes.
+      match /familyChoices/{familyId} {
+        allow read: if seesWholeTour(tourId)
+          || (isFamilyOf(tourId) && familyId == myFamilyId());
+        allow create, update: if isStaff()
+          || (isFamilyOf(tourId) && familyId == myFamilyId() && sanePayload(8)
+              && request.resource.data.keys().hasOnly(['status', 'added', 'confirmedCount', 'tbcCount', 'updatedAt', 'familyId'])
+              && request.resource.data.familyId == myFamilyId());
+        allow delete: if isStaff();
+      }
+
       match /familyFlights/{familyId} {
         allow read: if seesWholeTour(tourId)
           || (isFamilyOf(tourId) && familyId == myFamilyId());

@@ -1864,7 +1864,13 @@ const Tours = {
     if (!entry || !entry.code) return { code: null, plan: null };
     const doc = await DB.firestore.collection('accessCodes').doc(entry.code).get({ source: 'server' });
     const plan = doc.exists ? (doc.data().payment || null) : null;
-    return { code: entry.code, plan: plan && Array.isArray(plan.installments) && plan.installments.length ? plan : null };
+    if (!(plan && Array.isArray(plan.installments) && plan.installments.length)) return { code: entry.code, plan: null };
+    let choices = {};
+    if (FamilyPlan.isDynamic(plan)) {
+      const cd = await DB.firestore.collection('tours').doc(String(t.id)).collection('familyChoices').doc(String(familyId)).get({ source: 'server' });
+      choices = (cd.exists && cd.data()) || {};
+    }
+    return { code: entry.code, plan, choices, live: FamilyPlan.compute(plan, choices) };
   },
 
   async _loadFamilyPayments(tourId) {
@@ -1875,10 +1881,10 @@ const Tours = {
       const el = document.getElementById(`fs-pay-${tourId}-${ic.id}`);
       if (!el) return;
       try {
-        const { plan } = await this._getFamilyPlan(t, String(ic.id));
+        const { plan, live } = await this._getFamilyPlan(t, String(ic.id));
         if (!plan) { el.innerHTML = '<span style="color:var(--gray-300)">no plan</span>'; return; }
-        const items = plan.installments;
-        const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+        const items = live.items.filter(i => i.status === 'paid' || (Number(i.amount) || 0) > 0);
+        const total = live.total;
         const paidItems = items.filter(i => i.status === 'paid');
         const paid = paidItems.reduce((s, i) => s + (Number(i.amount) || 0), 0);
         const all = paidItems.length === items.length;
@@ -1901,7 +1907,7 @@ const Tours = {
     let res;
     try { res = await this._getFamilyPlan(t, String(familyId)); }
     catch (e) { container.innerHTML = `<div style="padding:1rem;color:var(--red)">Could not load the payment plan: ${esc(e.message)}</div>`; return; }
-    const { code, plan } = res;
+    const { code, plan, live } = res;
     const shell = inner => `<div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-top:1rem;border:1.5px solid var(--gray-200)">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:0.7rem">
           <h4 style="margin:0;font-size:0.95rem">Payments &mdash; ${esc(ic.name)} <span style="font-weight:400;color:var(--gray-400);font-size:0.8rem">${esc(code || '')}</span></h4>
@@ -1912,7 +1918,9 @@ const Tours = {
     const via = { card: 'Card (Stripe)', wise: 'Wise', bank: 'Bank transfer', cash: 'Cash' };
     const fmt = v => '€' + Number(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fid = esc(String(familyId));
-    const rows = plan.installments.map(i => {
+    const roleName = { player: 'Player', sibling: 'Sibling', adult: 'Adult' };
+    const who = live.dynamic ? `<p style="font-size:0.82rem;color:var(--gray-600);margin:0 0 0.6rem"><strong>${live.confirmed} confirmed</strong>${live.tbc ? ', ' + live.tbc + ' TBC' : ''} &middot; ${live.places.map(p => esc((p.label ? p.label + ' ' : '') + '(' + roleName[p.role] + (p.free ? ', free' : '') + ')') + ' <span style="color:' + (p.status === 'confirmed' ? 'var(--green)' : 'var(--amber)') + '">' + (p.status === 'confirmed' ? '&#10003;' : 'TBC') + '</span>').join(', ')}${live.credit ? ' &middot; <span style="color:var(--red)">credit ' + fmt(live.credit) + '</span>' : ''}</p>` : '';
+    const rows = live.items.map(i => {
       const k = esc(i.key);
       const paid = i.status === 'paid';
       return `<tr>
@@ -1929,7 +1937,7 @@ const Tours = {
       </tr>`;
     }).join('');
     container.innerHTML = shell(`
-      <div style="overflow-x:auto"><table class="data-table" style="font-size:0.84rem"><thead><tr><th>Instalment</th><th style="text-align:right">Amount</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${who}<div style="overflow-x:auto"><table class="data-table" style="font-size:0.84rem"><thead><tr><th>Instalment</th><th style="text-align:right">Amount</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <p style="font-size:0.78rem;color:var(--gray-400);margin:0.6rem 0 0">Card payments made with the portal button are marked automatically. Mark Wise or bank transfers here once the money shows in Wise: the family's portal turns green straight away.</p>`);
   },
 
@@ -1942,14 +1950,27 @@ const Tours = {
     if (!paid && !confirm('Set this instalment back to due? The family will see it as unpaid again.')) return;
     const ref = DB.firestore.collection('accessCodes').doc(entry.code);
     try {
+      const choicesRef = DB.firestore.collection('tours').doc(String(tourId)).collection('familyChoices').doc(String(familyId));
       await DB.firestore.runTransaction(async tx => {
         const doc = await tx.get(ref);
         const plan = doc.exists && doc.data().payment;
-        const it = plan && (plan.installments || []).find(i => i.key === key);
+        if (!plan) throw new Error('No payment plan');
+        plan.installments = plan.installments || [];
+        let it = plan.installments.find(i => i.key === key);
+        if (paid && FamilyPlan.isDynamic(plan) && (!it || it.status !== 'paid')) {
+          const cd = await tx.get(choicesRef);
+          const liveIt = FamilyPlan.compute(plan, (cd.exists && cd.data()) || {}).items.find(i => i.key === key);
+          if (!liveIt) throw new Error('This payment is no longer due (travelers changed). Reopen the panel.');
+          if (!it) { it = { key: liveIt.key, label: liveIt.label, due: liveIt.due, reference: liveIt.reference, status: 'due' }; plan.installments.push(it); }
+          it.amount = liveIt.amount;
+        }
         if (!it) throw new Error('Instalment not found');
         if (paid && it.status === 'paid') throw new Error('It was already marked paid (maybe a card payment just came in).');
         if (paid) {
           it.status = 'paid'; it.paidOn = on; it.paidVia = via; it.markedBy = 'crm';
+        } else if (/^(extra|balance)\d+$/.test(key)) {
+          // Added instalments only exist once paid: undo removes them again.
+          plan.installments = plan.installments.filter(i => i.key !== key);
         } else {
           it.status = 'due';
           ['paidOn', 'paidVia', 'markedBy', 'stripeSession'].forEach(f => delete it[f]);

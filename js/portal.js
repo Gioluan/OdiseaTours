@@ -415,6 +415,14 @@ const Portal = {
       const ics = this.tourData.individualClients || [];
       this._familyData = ics.find(ic => String(ic.id) === String(this._familyId)) || null;
       this._familyPayment = await DB.getFamilyPayment(code);
+      this._familyCode = code;
+      this._familyChoices = {};
+      if (this._familyPayment && FamilyPlan.isDynamic(this._familyPayment)) {
+        try {
+          const cd = await DB.firestore.collection('tours').doc(String(this.tourId)).collection('familyChoices').doc(String(this._familyId)).get();
+          this._familyChoices = (cd.exists && cd.data()) || {};
+        } catch (e) { console.warn('Family choices read failed:', e.message); }
+      }
       DB.touchAccessCode(code);
     }
 
@@ -679,16 +687,24 @@ const Portal = {
     const families = t.individualClients || [];
     if (!families.length) { el.innerHTML = ''; return; }
     el.innerHTML = '<div style="text-align:center;padding:1rem"><div class="spinner"></div></div>';
-    let passengers = [], flights = [], sigs = {}, paidById = {};
+    let passengers = [], flights = [], sigs = {}, paidById = {}, goingById = {};
+    const tourCol = name => DB.firestore.collection('tours').doc(String(this.tourId)).collection(name).get()
+      .then(snap => { const o = {}; snap.forEach(d => { o[d.id] = d.data() || {}; }); return o; }).catch(() => ({}));
     try {
-      [passengers, flights, sigs, paidById] = await Promise.all([
+      [passengers, flights, sigs, paidById, goingById] = await Promise.all([
         DB.getTourPassengers(this.tourId).catch(() => []),
         DB.getAllFamilyFlights(this.tourId).catch(() => []),
         DB.getTourSignatures(this.tourId).catch(() => ({})),
         DB.firestore.collection('tours').doc(String(this.tourId)).collection('familyPaid').get()
-          .then(snap => { const o = {}; snap.forEach(d => { o[d.id] = d.data() || {}; }); return o; }).catch(() => ({}))
+          .then(snap => { const o = {}; snap.forEach(d => { o[d.id] = d.data() || {}; }); return o; }).catch(() => ({})),
+        tourCol('familyChoices')
       ]);
     } catch (e) {}
+    const goingCell = id => {
+      const g = goingById[String(id)];
+      if (!g || g.confirmedCount == null) return '<span style="color:var(--gray-300)">&middot;</span>';
+      return '<strong style="color:var(--navy)">' + g.confirmedCount + '</strong>' + (g.tbcCount ? ' <span style="color:var(--amber, #d97706)">+' + g.tbcCount + ' TBC</span>' : '');
+    };
     const paidCell = id => {
       const p = paidById[String(id)];
       if (!p || !p.count) return '<span style="color:var(--gray-300)">&middot;</span>';
@@ -712,6 +728,7 @@ const Portal = {
               <th style="padding:0.3rem 0.4rem">Family</th><th style="padding:0.3rem 0.4rem">Team</th>
               <th style="padding:0.3rem 0.4rem;text-align:center">Travelers</th><th style="padding:0.3rem 0.4rem;text-align:center">Passports</th>
               <th style="padding:0.3rem 0.4rem;text-align:center">Flights</th><th style="padding:0.3rem 0.4rem;text-align:center">Forms</th>
+              <th style="padding:0.3rem 0.4rem;text-align:center" title="Travelers confirmed by the family, and possible extra travelers (TBC)">Going</th>
               <th style="padding:0.3rem 0.4rem;text-align:center" title="Payments made (deposit, second, final)">Paid</th>
             </tr></thead>
             <tbody>${rows.map(r => `<tr style="border-top:1px solid var(--gray-100)">
@@ -721,6 +738,7 @@ const Portal = {
               <td style="padding:0.35rem 0.4rem;text-align:center">${mark(r.passportsOk)}</td>
               <td style="padding:0.35rem 0.4rem;text-align:center">${mark(r.flightsOk)}</td>
               <td style="padding:0.35rem 0.4rem;text-align:center">${mark(r.formsOk)} <span style="color:var(--gray-400)">${r.formsSigned}/${r.formsRequired}</span></td>
+              <td style="padding:0.35rem 0.4rem;text-align:center;white-space:nowrap">${goingCell(r.id)}</td>
               <td style="padding:0.35rem 0.4rem;text-align:center;white-space:nowrap">${paidCell(r.id)}</td>
             </tr>`).join('')}</tbody>
           </table>
@@ -2894,11 +2912,112 @@ const Portal = {
 
   _familyPaymentNumbers() {
     const pay = this._familyPayment || {};
-    const items = Array.isArray(pay.installments) ? pay.installments : [];
-    const total = items.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    const paid = items.filter(i => i.status === 'paid').reduce((s, i) => s + (Number(i.amount) || 0), 0);
-    return { pay, items, total, paid, balance: total - paid, cur: pay.currency || 'EUR',
-             next: items.find(i => i.status !== 'paid') || null };
+    const r = FamilyPlan.compute(pay, this._familyChoices || {});
+    const items = r.items;
+    return { pay, items, total: r.total, paid: r.paid, balance: r.balance, cur: pay.currency || 'EUR', plan: r,
+             next: items.find(i => i.status !== 'paid' && (Number(i.amount) || 0) > 0) || null };
+  },
+
+  // Card link for a deposit-type instalment: the shared 500 EUR Stripe link,
+  // with the quantity to set and the family/instalment reference.
+  _depositCard(i, n) {
+    const d = (n.pay.installments || []).find(x => x.key === 'deposit');
+    const baseUrl = String((d && d.cardUrl) || '').split('?')[0];
+    if (!/^https:\/\//.test(baseUrl) || !this._familyCode) return null;
+    const per = Number(n.pay.depositPerTraveler) || 500;
+    const qty = Math.round((Number(i.amount) || 0) / per);
+    if (qty < 1) return null;
+    return { url: baseUrl + '?client_reference_id=' + encodeURIComponent('OT-' + this._familyCode + '-' + i.key),
+             note: 'On the payment page, please set the quantity to ' + qty + ' (' + qty + ' x ' + per + ' euros).' };
+  },
+
+  async setTravelerStatus(placeId, status) {
+    const n = this._familyPaymentNumbers();
+    const p = (n.plan.places || []).find(x => x.id === placeId);
+    if (!p || (status === 'tbc' && !p.canTbc) || (status === 'confirmed' && !p.canConfirm)) return;
+    const ch = Object.assign({ status: {}, added: [] }, this._familyChoices || {});
+    ch.status = Object.assign({}, ch.status, { [placeId]: status });
+    await this._saveFamilyChoices(ch);
+  },
+
+  async addPossibleTraveler() {
+    const role = (document.getElementById('tbc-new-role') || {}).value;
+    const label = String((document.getElementById('tbc-new-name') || {}).value || '').trim().slice(0, 60);
+    if (!FamilyPlan.ROLES.includes(role)) return;
+    const ch = Object.assign({ status: {}, added: [] }, this._familyChoices || {});
+    const added = (ch.added || []).slice();
+    if (added.length >= 10) return;
+    const id = 'x' + Date.now().toString(36);
+    added.push({ id, role, label });
+    ch.added = added;
+    ch.status = Object.assign({}, ch.status, { [id]: 'tbc' });
+    await this._saveFamilyChoices(ch);
+  },
+
+  async removePossibleTraveler(id) {
+    const ch = Object.assign({ status: {}, added: [] }, this._familyChoices || {});
+    const p = (this._familyPaymentNumbers().plan.places || []).find(x => x.id === id);
+    if (!p || !p.added || p.status !== 'tbc' || p.closed) return;
+    ch.added = (ch.added || []).filter(a => a.id !== id);
+    const st = Object.assign({}, ch.status); delete st[id]; ch.status = st;
+    await this._saveFamilyChoices(ch);
+  },
+
+  async _saveFamilyChoices(ch) {
+    const prev = this._familyChoices;
+    this._familyChoices = ch;
+    const r = FamilyPlan.compute(this._familyPayment || {}, ch);
+    const doc = { status: ch.status || {}, added: ch.added || [], confirmedCount: r.confirmed, tbcCount: r.tbc,
+                  updatedAt: new Date().toISOString(), familyId: String(this._familyId) };
+    try {
+      await DB.firestore.collection('tours').doc(String(this.tourId)).collection('familyChoices').doc(String(this._familyId)).set(doc);
+    } catch (e) {
+      this._familyChoices = prev;
+      Portal._toast ? Portal._toast('Could not save, please try again.') : console.warn(e);
+    }
+    this.renderFamilyPaymentPanel();
+    const sum = document.getElementById('overview-payment-summary');
+    if (sum) sum.innerHTML = this._familyPaymentSummaryHtml();
+  },
+
+  _travelersCardHtml(n) {
+    const r = n.plan;
+    if (!r || !r.dynamic) return '';
+    const esc = s => Portal._escapeHtml(String(s == null ? '' : s));
+    const fmt = v => Portal._fmtCurrency(v, n.cur);
+    const roleName = { player: 'Player', sibling: 'Sibling', adult: 'Adult' };
+    const closed = r.places.some(p => p.closed);
+    const btn = (on, label, click, enabled, color) => `<button ${enabled ? `onclick="${click}"` : 'disabled'} style="padding:0.35rem 0.7rem;font-size:0.8rem;font-weight:600;border-radius:999px;cursor:${enabled ? 'pointer' : 'default'};border:1.5px solid ${on ? color : 'var(--gray-200)'};background:${on ? color : 'white'};color:${on ? 'white' : (enabled ? 'var(--gray-500)' : 'var(--gray-300)')}">${label}</button>`;
+    const rows = r.places.map(p => {
+      const conf = p.status === 'confirmed';
+      const who = (p.label ? esc(p.label) + ' &middot; ' : '') + roleName[p.role];
+      const price = p.free ? 'Included' : fmt(p.price);
+      const lockNote = conf && !p.canTbc && !p.free && !p.closed ? '<div style="font-size:0.72rem;color:var(--gray-400)">Deposit paid: to change, message us</div>' : '';
+      const closedNote = p.closed && !conf ? '<div style="font-size:0.72rem;color:var(--gray-400)">Not travelling</div>' : '';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;padding:0.55rem 0;border-top:1px solid var(--gray-100);flex-wrap:wrap">
+        <div style="min-width:0"><div style="font-weight:600;color:var(--navy);font-size:0.9rem">${who}</div>
+          <div style="font-size:0.78rem;color:${conf ? 'var(--gray-500)' : 'var(--gray-400)'}">${conf ? price : (p.free ? 'Included' : price + ' if confirmed, not charged yet')}</div>${lockNote}${closedNote}</div>
+        <div style="display:flex;gap:0.35rem;align-items:center">
+          ${btn(conf, 'Confirmed', `Portal.setTravelerStatus('${p.id}','confirmed')`, p.canConfirm, 'var(--green)')}
+          ${btn(!conf, 'TBC', `Portal.setTravelerStatus('${p.id}','tbc')`, p.canTbc, 'var(--amber, #d97706)')}
+          ${p.added && !conf && !p.closed ? `<button onclick="Portal.removePossibleTraveler('${p.id}')" title="Remove" style="border:none;background:none;color:var(--gray-300);font-size:1.1rem;cursor:pointer">&times;</button>` : ''}
+        </div></div>`;
+    }).join('');
+    const add = closed ? '' : `
+      <details style="margin-top:0.6rem"><summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:var(--navy)">+ Add a possible traveler (TBC)</summary>
+        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem">
+          <select id="tbc-new-role" style="padding:0.4rem;border:1px solid var(--gray-200);border-radius:8px;font-size:0.85rem">
+            <option value="adult">Adult (${fmt(n.pay.prices.adult)})</option><option value="sibling">Sibling under 12 (${fmt(n.pay.prices.sibling)})</option><option value="player">Player (${fmt(n.pay.prices.player)})</option></select>
+          <input id="tbc-new-name" maxlength="60" placeholder="Name (optional)" style="flex:1;min-width:8rem;padding:0.4rem;border:1px solid var(--gray-200);border-radius:8px;font-size:0.85rem">
+          <button onclick="Portal.addPossibleTraveler()" style="padding:0.4rem 0.9rem;background:var(--navy);color:white;border:none;border-radius:8px;font-weight:600;font-size:0.85rem;cursor:pointer">Add</button>
+        </div></details>`;
+    return `
+      <div style="background:white;border-radius:var(--radius-lg);padding:1.1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:1rem">
+        <div style="font-weight:700;color:var(--navy);margin-bottom:0.2rem">Who is travelling</div>
+        <p style="font-size:0.8rem;color:var(--gray-500);margin:0 0 0.4rem">You only pay for <strong>Confirmed</strong> travelers. Mark anyone not sure yet as <strong>TBC</strong>: it costs nothing now${r.tbcDeadline ? `, and you can confirm them until <strong>${Portal._fmtDate(r.tbcDeadline)}</strong>` : ''}. Your total and payments below update straight away.</p>
+        ${rows}${add}
+        ${closed ? `<p style="font-size:0.78rem;color:var(--gray-400);margin:0.6rem 0 0">The deadline for TBC travelers has passed. To make a change, please message us.</p>` : ''}
+      </div>`;
   },
 
   _familyPaymentSummaryHtml() {
@@ -2928,7 +3047,17 @@ const Portal = {
       const amount = Number(i.amount) || 0;
       const paid = i.status === 'paid';
       const isNext = n.next && n.next === i;
-      const cardUrl = /^https:\/\//.test(i.cardUrl || '') ? i.cardUrl : '';
+      if (!paid && !amount) {
+        return `<div style="background:white;border-radius:var(--radius-lg);padding:1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:0.9rem;opacity:0.7">
+          <div style="display:flex;justify-content:space-between;gap:1rem"><div><div style="font-weight:700;color:var(--navy)">${esc(i.label)}</div>
+          <div style="font-size:0.8rem;color:var(--gray-400)">Nothing to pay with no confirmed travelers</div></div><div style="font-weight:700">${fmt(0)}</div></div></div>`;
+      }
+      const dyn = n.plan && n.plan.dynamic;
+      const depCard = dyn && (i.key === 'deposit' || /^extra\d+$/.test(i.key)) ? this._depositCard(i, n) : null;
+      // In a Confirmed/TBC plan only the 500-per-traveler deposit link fits a
+      // changing amount; fixed card links for later payments are not shown.
+      const cardUrl = dyn ? (depCard ? depCard.url : '') : (/^https:\/\//.test(i.cardUrl || '') ? i.cardUrl : '');
+      if (depCard) i = Object.assign({}, i, { cardNote: depCard.note, cardAmount: 0 });
       const cardAmount = Number(i.cardAmount) || amount;
       const usAmount = Number(i.usdAmount) || 0;
       // Wise pay link with the amount, currency and reference pre-filled.
@@ -2982,7 +3111,9 @@ const Portal = {
         <div><div style="font-size:0.7rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Paid</div><div style="font-weight:700;color:var(--green)">${fmt(n.paid)}</div></div>
         <div><div style="font-size:0.7rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Balance</div><div style="font-weight:700;color:${n.balance > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(n.balance)}</div></div>
       </div>
+      ${this._travelersCardHtml(n)}
       ${n.items.map(installment).join('')}
+      ${n.plan && n.plan.credit ? `<p style="font-size:0.85rem;color:var(--green);margin:0 0.2rem 0.8rem">You have ${fmt(n.plan.credit)} in credit. We will contact you about it.</p>` : ''}
       <p style="font-size:0.8rem;color:var(--gray-400);margin:0.4rem 0.2rem 1rem">Card payments made with the button above show here automatically within a few minutes. Bank transfers (including Wise) are added by hand once they reach our bank, usually within 3 to 6 working days. You do not need to send proof, but you are welcome to message us. Any questions? Send us a message from the Messages section.</p>`;
   },
 
