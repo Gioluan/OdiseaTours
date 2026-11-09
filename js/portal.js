@@ -1043,6 +1043,15 @@ const Portal = {
 
     this._selectedPax = new Set();
 
+    // Confirmed / TBC per traveler (js/family-plan.js).
+    const tbc = await this._paxTravelStatus(passengers);
+    const travelTag = p => {
+      const x = tbc.byPax.get(p.id);
+      if (!x) return '';
+      if (x.status === 'confirmed') return '<span class="pax-tag pax-tag-green">Confirmed</span>';
+      return x.closed ? '<span class="pax-tag pax-tag-gray">Not travelling</span>' : '<span class="pax-tag pax-tag-amber">TBC</span>';
+    };
+
     if (passengers.length) {
       html += `
         <div id="pax-select-toolbar" style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.8rem;flex-wrap:wrap">
@@ -1117,6 +1126,7 @@ const Portal = {
                 })()}
                 ${p.groupBreakdown ? '<div class="pax-detail" style="color:var(--gray-400);font-size:0.78rem;margin-top:2px">Group: ' + Portal._escapeHtml(p.groupBreakdown) + '</div>' : ''}
                 <div class="pax-tags">
+                  ${travelTag(p)}
                   ${p.role ? '<span class="pax-tag pax-tag-role-' + Portal._roleSlug(p.role) + '">' + Portal._escapeHtml(p.role.toUpperCase() === 'TOUR DIRECTOR' ? 'TOUR DIRECTOR' : p.role) + '</span>' : ''}
                   ${p.family ? '<span class="pax-tag pax-tag-family">' + Portal._escapeHtml(p.family) + '</span>' : ''}
                   ${paymentStatus}
@@ -1162,8 +1172,51 @@ const Portal = {
     } else {
       html += '<div class="empty-state"><p>No passengers registered yet. Be the first to register!</p></div>';
     }
+    if (tbc.unregistered.length) {
+      const roleName = { player: 'Player', sibling: 'Sibling', adult: 'Adult' };
+      const esc = v => Portal._escapeHtml(String(v || ''));
+      html += `<div style="margin-top:1rem;background:white;border-radius:var(--radius-lg);padding:0.9rem 1.1rem;box-shadow:var(--shadow)">
+        <div style="font-weight:700;color:var(--navy);font-size:0.9rem;margin-bottom:0.3rem">Not registered yet</div>
+        <p style="font-size:0.78rem;color:var(--gray-400);margin:0 0 0.4rem">Travelers from the Who is travelling list with no passenger details yet. TBC travelers only need details once confirmed.</p>
+        ${tbc.unregistered.map(x => `<div style="display:flex;justify-content:space-between;gap:0.5rem;padding:0.35rem 0;border-top:1px solid var(--gray-100);font-size:0.85rem">
+          <span><strong>${esc(x.label || roleName[x.role])}</strong> <span style="color:var(--gray-400)">${roleName[x.role]}${x.family ? ' &middot; ' + esc(x.family) : ''}</span></span>
+          ${x.status === 'confirmed' ? '<span class="pax-tag pax-tag-green">Confirmed</span>' : (x.closed ? '<span class="pax-tag pax-tag-gray">Not travelling</span>' : '<span class="pax-tag pax-tag-amber">TBC</span>')}</div>`).join('')}
+      </div>`;
+    }
 
     container.innerHTML = html;
+  },
+
+  // Travelers' Confirmed / TBC status for the passenger list. The family uses
+  // its own plan; the organiser, guide and Odisea read every family's copy in
+  // familyPaid (no prices) plus the family's choices.
+  async _paxTravelStatus(passengers) {
+    const out = { byPax: new Map(), unregistered: [] };
+    try {
+      const fams = {};
+      if (this._portalMode === 'family') {
+        const pay = this._familyPayment;
+        if (!pay || !FamilyPlan.isDynamic(pay)) return out;
+        fams[String(this._familyId)] = FamilyPlan.compute(pay, this._familyChoices || {}).places;
+      } else {
+        const col = name => DB.firestore.collection('tours').doc(String(this.tourId)).collection(name).get()
+          .then(snap => { const o = {}; snap.forEach(d => { o[d.id] = d.data() || {}; }); return o; }).catch(() => ({}));
+        const [paid, choices] = await Promise.all([col('familyPaid'), col('familyChoices')]);
+        Object.entries(paid).forEach(([fid, f]) => {
+          const ppl = FamilyPlan.people(f.places, choices[fid] || {}, f.tbcDeadline);
+          if (ppl.length) fams[fid] = ppl;
+        });
+      }
+      const names = {};
+      ((this.tourData && this.tourData.individualClients) || []).forEach(ic => { names[String(ic.id)] = ic.name || ''; });
+      Object.entries(fams).forEach(([fid, ppl]) => {
+        const mine = (passengers || []).filter(p => String(p.familyId || '') === fid && !Portal._isTourDirector(p));
+        const m = FamilyPlan.match(ppl, mine);
+        m.byPax.forEach((v, k) => out.byPax.set(k, v));
+        m.unmatched.forEach(x => out.unregistered.push(Object.assign({}, x, { family: this._portalMode === 'family' ? '' : names[fid] })));
+      });
+    } catch (e) { console.warn('Travel status failed:', e.message); }
+    return out;
   },
 
   // Odisea's own people on the trip. They occupy a bed and appear on the hotel

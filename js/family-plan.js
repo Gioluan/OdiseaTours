@@ -48,6 +48,34 @@ const FamilyPlan = {
     });
   },
 
+  // Organiser / Odisea view of one family's travelers, without prices:
+  // basePlaces is the copy kept in tours/{id}/familyPaid/{familyId}.places.
+  people(basePlaces, choices, tbcDeadline, today) {
+    if (!Array.isArray(basePlaces) || !basePlaces.length) return [];
+    return this.places({ places: basePlaces, prices: {}, tbcDeadline: tbcDeadline || '' }, choices, today);
+  },
+
+  // Pairs registered passengers with travelers: first by first name, then by role.
+  // Returns { byPax: Map(passengerId -> traveler), unmatched: [travelers] }.
+  match(people, passengers) {
+    const left = (people || []).slice();
+    const byPax = new Map();
+    const first = v => String(v || '').trim().split(/\s+/)[0].toLowerCase();
+    const role = v => { v = String(v || 'player').toLowerCase(); return v === 'student' ? 'player' : (v === 'coach' ? 'adult' : v); };
+    const pax = passengers || [];
+    pax.forEach(p => {
+      const i = left.findIndex(x => x.label && first(x.label) && first(x.label) === first(p.firstName));
+      if (i >= 0) byPax.set(p.id, left.splice(i, 1)[0]);
+    });
+    pax.forEach(p => {
+      if (byPax.has(p.id)) return;
+      let i = left.findIndex(x => x.role === role(p.role) && x.status === 'confirmed');
+      if (i < 0) i = left.findIndex(x => x.role === role(p.role));
+      if (i >= 0) byPax.set(p.id, left.splice(i, 1)[0]);
+    });
+    return { byPax, unmatched: left };
+  },
+
   // Live instalments: paid ones stay exactly as paid, the rest follow the
   // confirmed travelers.
   compute(plan, choices, today) {

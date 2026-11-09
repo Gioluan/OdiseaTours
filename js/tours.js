@@ -1890,7 +1890,10 @@ const Tours = {
         const all = paidItems.length === items.length;
         // Mirror the tick (counts only, no amounts) for the organiser's club portal.
         DB.firestore.collection('tours').doc(String(tourId)).collection('familyPaid').doc(String(ic.id))
-          .set({ paid: paidItems.length, count: items.length, updatedAt: new Date().toISOString() }).catch(() => {});
+          .set(Object.assign({ paid: paidItems.length, count: items.length, updatedAt: new Date().toISOString() },
+            // Travelers without prices, so the club portal can tag Confirmed / TBC.
+            FamilyPlan.isDynamic(plan) ? { places: plan.places.map(p => ({ id: p.id, role: p.role, label: p.label || '', free: !!p.free })), tbcDeadline: plan.tbcDeadline || '' } : {}),
+            { merge: true }).catch(() => {});
         el.innerHTML = `<span style="color:${all ? 'var(--green)' : paid > 0 ? 'var(--amber)' : 'var(--red)'};font-weight:700">${all ? '&#10003;' : paidItems.length + '/' + items.length}</span> <span style="color:var(--gray-400)">${eur(paid)} / ${eur(total)}</span>`;
       } catch (e) { el.innerHTML = '<span style="color:var(--gray-300)">?</span>'; }
     }));
