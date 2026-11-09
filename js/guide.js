@@ -93,6 +93,9 @@ const Guide = {
     this.tourId = String(tourId);
     sessionStorage.setItem('guide_code', code);
     sessionStorage.setItem('guide_tourId', this.tourId);
+    // Same session record as the family portal: lets the rules give a guide
+    // code the tour's passenger list and room plan without opening them to all.
+    await DB.ensurePortalSession(code);
 
     try {
       // Public projection only. The tour document holds costs and margins and
@@ -1065,7 +1068,9 @@ const Guide = {
 
     // Set up real-time listener
     if (this._messageListener) { this._messageListener(); this._messageListener = null; }
-    this._messageListener = DB.listenToTourMessages(this.tourId, (messages) => {
+    // Odisea's announcements plus the guide's own thread with the office;
+    // families' and the organiser's private threads are not the guide's.
+    this._messageListener = DB.listenToGuideMessages(this.tourId, (messages) => {
       this._renderMessages(messages);
     });
   },
@@ -1103,11 +1108,13 @@ const Guide = {
     if (!text) return;
     input.value = '';
 
-    await DB.sendTourMessage(this.tourId, {
+    const saved = await DB.sendTourMessage(this.tourId, {
       text: text,
       sender: 'guide',
-      senderName: 'Tour Guide'
+      senderName: 'Tour Guide',
+      type: 'guide'
     });
+    if (!saved) { input.value = text; alert('Message not sent. Check your connection and try again.'); }
   }
 };
 

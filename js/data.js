@@ -1016,6 +1016,99 @@ const DB = {
     } catch (e) { /* a stale or admin-revoked code should not break the portal */ }
   },
 
+  // Headers for calls to odisea-tours.com APIs that only staff may use.
+  async staffAuthHeaders(base) {
+    const h = Object.assign({}, base || {});
+    try {
+      const u = this.auth && this.auth.currentUser;
+      if (u) h['Authorization'] = 'Bearer ' + await u.getIdToken();
+    } catch (e) { /* the API will answer 401 and the caller shows the error */ }
+    return h;
+  },
+
+  // ── Portal sessions ──
+  // portal.html and guide.html have no real accounts. To let the rules tell one
+  // family from another, each browser signs in anonymously and records which
+  // code it used in portalSessions/{uid}. The rules only accept that record if
+  // the code exists and its tourId / familyId / kind match, so holding a code
+  // is still the proof, but now each family can be limited to its own data.
+  // A signed-in CRM user (Juan) is left alone: staff already see everything,
+  // and signing in anonymously would log him out of the CRM in this browser.
+  // Returns the session, 'staff', or null when it could not be set up (old
+  // rules, anonymous sign-in disabled, offline): the portal then carries on as
+  // before and the rules decide what still works.
+  async ensurePortalSession(code) {
+    if (!this._firebaseReady || !code || typeof firebase === 'undefined' || typeof firebase.auth !== 'function') return null;
+    try {
+      const auth = firebase.auth();
+      const current = await new Promise(resolve => {
+        const stop = auth.onAuthStateChanged(u => { stop(); resolve(u); });
+      });
+      if (current && !current.isAnonymous) return 'staff';
+      const user = current || (await auth.signInAnonymously()).user;
+      const codeDoc = await this.firestore.collection('accessCodes').doc(String(code)).get();
+      if (!codeDoc.exists) return null;
+      const e = codeDoc.data() || {};
+      const session = {
+        code: String(code),
+        tourId: String(e.tourId),
+        kind: e.kind || 'tour',
+        familyId: e.familyId != null ? e.familyId : null,
+        createdAt: new Date().toISOString()
+      };
+      await this.firestore.collection('portalSessions').doc(user.uid).set(session);
+      this._portalSession = session;
+      return session;
+    } catch (err) {
+      console.warn('Portal session not set up:', err.code || '', err.message);
+      return null;
+    }
+  },
+
+  // This family's travellers only. The rules refuse any query that could
+  // return another family's passengers, so the filter has to be in the query.
+  async getFamilyPassengers(tourId, familyId) {
+    if (!this._firebaseReady) return [];
+    const snap = await this.firestore.collection('tours').doc(String(tourId))
+      .collection('passengers').where('familyId', '==', String(familyId)).get();
+    const items = [];
+    snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+    return items.filter(p => !p._removed)
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  },
+
+  // A family's own signature docs (its fam_ doc and any code_ doc from before
+  // per-family docs), shaped like getTourSignatures so the same helpers work.
+  async getFamilySignatureDocs(tourId, familyId, code) {
+    const out = {};
+    if (!this._firebaseReady) return out;
+    const ids = [this.consentDocId(null, familyId)];
+    if (code) ids.push(this.consentDocId(code));
+    await Promise.all(ids.map(async id => {
+      try {
+        const d = await this.firestore.collection('tours').doc(String(tourId)).collection('consent').doc(id).get();
+        if (d.exists) out[id] = d.data() || {};
+      } catch (e) { /* not ours or not there */ }
+    }));
+    return out;
+  },
+
+  // Emails Juan when a family or the club writes from the portal. The website
+  // endpoint only ever sends to Odisea's own inbox, never to an address the
+  // caller chooses. Failure is silent: the message is already saved.
+  async notifyPortalMessage(info) {
+    try {
+      const user = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
+      if (!user) return;
+      const token = await user.getIdToken();
+      await fetch('https://odisea-tours.com/api/portal/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify(info)
+      });
+    } catch (e) { /* best effort */ }
+  },
+
   // A family's private payment plan lives on its own access-code document. Rules
   // allow `get` but not `list` there, so only someone holding this code can read
   // it. Deliberately NOT in the tour projection or portalInvoices, which any code
@@ -1105,21 +1198,54 @@ const DB = {
     return all.filter(inv => String(inv.individualClientRef) === String(familyId));
   },
 
-  // Real-time listener for family messages (group + this family's private)
+  // Real-time listener for family messages: Odisea's group announcements plus
+  // this family's private thread. Two queries, because the rules only let a
+  // family read those two kinds; a single listener on the whole collection
+  // (which used to download every family's private messages) is refused.
   listenToFamilyMessages(tourId, familyId, callback) {
     if (!this._firebaseReady) return () => {};
-    return this.firestore.collection('tours').doc(String(tourId))
-      .collection('messages').orderBy('timestamp', 'asc')
-      .onSnapshot(snapshot => {
+    const col = this.firestore.collection('tours').doc(String(tourId)).collection('messages');
+    const parts = { group: [], mine: [] };
+    const emit = () => {
+      const all = parts.group.concat(parts.mine)
+        .sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
+      callback(all, all);
+    };
+    const onErr = err => console.warn('Family message listener error:', err.message);
+    const stopGroup = col.where('type', '==', 'group').onSnapshot(s => {
+      parts.group = []; s.forEach(d => parts.group.push({ id: d.id, ...d.data() })); emit();
+    }, onErr);
+    const stopMine = col.where('familyId', '==', String(familyId)).onSnapshot(s => {
+      parts.mine = []; s.forEach(d => { const m = d.data(); if (m.type === 'family') parts.mine.push({ id: d.id, ...m }); }); emit();
+    }, onErr);
+    return () => { stopGroup(); stopMine(); };
+  },
+
+  // Guide app: announcements plus the guide's thread with the office.
+  listenToGuideMessages(tourId, callback) {
+    if (!this._firebaseReady) return () => {};
+    return this.firestore.collection('tours').doc(String(tourId)).collection('messages')
+      .where('type', 'in', ['group', 'guide'])
+      .onSnapshot(s => {
         const all = [];
-        snapshot.forEach(doc => all.push({ id: doc.id, ...doc.data() }));
-        // Filter: include group messages + this family's private messages
-        const filtered = all.filter(m =>
-          !m.type || m.type === 'group' ||
-          (m.type === 'family' && String(m.familyId) === String(familyId))
-        );
-        callback(filtered, all);
-      }, err => console.warn('Family message listener error:', err.message));
+        s.forEach(d => all.push({ id: d.id, ...d.data() }));
+        all.sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
+        callback(all);
+      }, err => console.warn('Guide message listener error:', err.message));
+  },
+
+  // The club / organiser code: Odisea's announcements plus its own thread with
+  // Odisea. Families' private threads are not the organiser's to read.
+  listenToClubMessages(tourId, callback) {
+    if (!this._firebaseReady) return () => {};
+    return this.firestore.collection('tours').doc(String(tourId)).collection('messages')
+      .where('type', 'in', ['group', 'club'])
+      .onSnapshot(s => {
+        const all = [];
+        s.forEach(d => all.push({ id: d.id, ...d.data() }));
+        all.sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
+        callback(all);
+      }, err => console.warn('Club message listener error:', err.message));
   },
 
   // Save a passenger to tour's subcollection (portal use)
@@ -1129,12 +1255,6 @@ const DB = {
       passenger.createdAt = new Date().toISOString();
       const ref = await this.firestore.collection('tours').doc(String(tourId))
         .collection('passengers').add(passenger);
-      // Try to increment unread count (may fail if user is unauthenticated)
-      try {
-        await this.firestore.collection('tours').doc(String(tourId)).update({
-          unreadPassengersCount: firebase.firestore.FieldValue.increment(1)
-        });
-      } catch (_) { /* ignore — portal users lack write access to tour docs */ }
       return { id: ref.id, ...passenger };
     } catch (e) {
       console.warn('saveTourPassenger failed:', e.message);
@@ -1238,14 +1358,9 @@ const DB = {
       message.timestamp = new Date().toISOString();
       const ref = await this.firestore.collection('tours').doc(String(tourId))
         .collection('messages').add(message);
-      // Try to increment unread count (may fail if user is unauthenticated)
-      if (message.sender !== 'admin') {
-        try {
-          await this.firestore.collection('tours').doc(String(tourId)).update({
-            unreadMessagesCount: firebase.firestore.FieldValue.increment(1)
-          });
-        } catch (_) { /* ignore — portal users lack write access to tour docs */ }
-      }
+      // Unread is worked out in the CRM from message timestamps against
+      // tours/{id}.msgReadAt (see Tours.viewMessages), not from a counter the
+      // portal was never allowed to write.
       return { id: ref.id, ...message };
     } catch (e) {
       console.warn('sendTourMessage failed:', e.message);
@@ -1330,6 +1445,46 @@ const DB = {
     } catch (e) {
       console.warn('deleteTourDocument failed:', e.message);
     }
+  },
+
+  // ── Message read state (CRM) ──
+  // Which conversation a message belongs to: 'group' (announcements to all),
+  // 'club' (the organiser code and Odisea), or a familyId. Untyped messages
+  // from before this split are organiser chat if a client sent them.
+  messageThread(m) {
+    if (!m) return 'group';
+    if (m.type === 'family' && m.familyId != null) return String(m.familyId);
+    if (m.type === 'club') return 'club';
+    if (m.type === 'group') return 'group';
+    if (m.type === 'guide' || m.sender === 'guide') return 'guide';
+    return m.sender === 'admin' ? 'group' : 'club';
+  },
+
+  // Client messages newer than the last time Juan opened that thread.
+  unreadByThread(messages, readAt) {
+    const out = {};
+    (messages || []).forEach(m => {
+      if (m.sender === 'admin') return;
+      const key = this.messageThread(m);
+      const seen = (readAt || {})[key] || '';
+      if (String(m.timestamp || '') > seen) out[key] = (out[key] || 0) + 1;
+    });
+    return out;
+  },
+
+  async getMessageReadAt(tourId) {
+    if (!this._firebaseReady) return {};
+    try {
+      const doc = await this.firestore.collection('tours').doc(String(tourId)).get();
+      return (doc.exists && doc.data().msgReadAt) || {};
+    } catch (e) { return {}; }
+  },
+
+  async markThreadRead(tourId, key) {
+    if (!this._firebaseReady || !key) return;
+    try {
+      await this.firestore.collection('tours').doc(String(tourId)).update({ ['msgReadAt.' + key]: new Date().toISOString() });
+    } catch (e) { console.warn('markThreadRead failed:', e.message); }
   },
 
   // Reset unread counters on a tour

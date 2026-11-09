@@ -294,7 +294,10 @@ const Dashboard = {
           const p = d.data();
           return p.firstName && p.lastName && p.dateOfBirth && p.nationality && p.passportNumber;
         }).length;
-        const clientMsgCount = msgSnap.docs.filter(d => d.data().sender !== 'admin').length;
+        // Unread, not total: client messages newer than the last time each
+        // thread was opened in the CRM (tours/{id}.msgReadAt).
+        const unreadMap = DB.unreadByThread(msgSnap.docs.map(d => d.data()), t.msgReadAt || {});
+        const clientMsgCount = Object.values(unreadMap).reduce((s, n) => s + n, 0);
         const totalMsgCount = msgSnap.size;
         totalPassengers += paxCount;
         totalMessages += clientMsgCount;
@@ -326,7 +329,7 @@ const Dashboard = {
                 <div style="font-size:1.5rem;font-weight:700;margin-top:0.2rem">${totalPassengers}</div>
               </div>
               <div style="background:linear-gradient(135deg,var(--amber),var(--amber-dark));color:white;padding:0.8rem 1.2rem;border-radius:var(--radius-lg);flex:1;min-width:140px">
-                <div style="font-size:0.75rem;opacity:0.8;text-transform:uppercase;letter-spacing:0.05em">Client Messages</div>
+                <div style="font-size:0.75rem;opacity:0.8;text-transform:uppercase;letter-spacing:0.05em">Unread Messages</div>
                 <div style="font-size:1.5rem;font-weight:700;margin-top:0.2rem">${totalMessages}</div>
               </div>
               <div style="background:linear-gradient(135deg,var(--green),#1e8449);color:white;padding:0.8rem 1.2rem;border-radius:var(--radius-lg);flex:1;min-width:140px">
@@ -347,7 +350,7 @@ const Dashboard = {
                   <td><strong>${d.paxCount}</strong>${d.expected ? ' / ' + d.expected : ''}</td>
                   <td style="min-width:100px">${d.expected ? '<div style="background:var(--gray-100);border-radius:10px;height:8px;overflow:hidden"><div style="background:' + barColor + ';height:100%;width:' + pct + '%;border-radius:10px;transition:width 0.5s"></div></div><span style="font-size:0.72rem;color:var(--gray-400)">' + pct + '%</span>' : '<span style="color:var(--gray-300)">—</span>'}</td>
                   <td style="min-width:90px">${d.paxCount > 0 ? (() => { const cPct = Math.round(d.completeCount / d.paxCount * 100); const cColor = cPct >= 100 ? 'var(--green)' : cPct >= 50 ? 'var(--amber)' : 'var(--red)'; return '<strong>' + d.completeCount + '</strong> / ' + d.paxCount + '<div style="background:var(--gray-100);border-radius:10px;height:6px;overflow:hidden;margin-top:2px"><div style="background:' + cColor + ';height:100%;width:' + cPct + '%;border-radius:10px;transition:width 0.5s"></div></div><span style="font-size:0.72rem;color:var(--gray-400)">' + cPct + '% complete</span>'; })() : '<span style="color:var(--gray-300)">—</span>'}</td>
-                  <td>${d.totalMsgCount > 0 ? '<span style="font-weight:600">' + d.totalMsgCount + '</span>' + (d.clientMsgCount > 0 ? ' <span style="background:var(--red);color:white;font-size:0.68rem;font-weight:700;padding:0.1rem 0.35rem;border-radius:8px">' + d.clientMsgCount + ' from client</span>' : '') : '<span style="color:var(--gray-300)">0</span>'}</td>
+                  <td>${d.totalMsgCount > 0 ? '<span style="font-weight:600">' + d.totalMsgCount + '</span>' + (d.clientMsgCount > 0 ? ' <span style="background:var(--red);color:white;font-size:0.68rem;font-weight:700;padding:0.1rem 0.35rem;border-radius:8px">' + d.clientMsgCount + ' unread</span>' : '') : '<span style="color:var(--gray-300)">0</span>'}</td>
                   <td><button class="btn btn-sm btn-outline" onclick="App.switchTab('tours');setTimeout(()=>Tours.viewTour(${d.tour.id}),100)">View</button></td>
                 </tr>`;
               }).join('')}</tbody>

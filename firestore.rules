@@ -3,171 +3,250 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ─────────────────────────────────────────────────────────────────────
-    // THREAT MODEL
+    // THREAT MODEL (rewritten 9-Nov-2026 after the family portal audit)
     //
-    // portal.html and guide.html run unauthenticated in a client's browser.
     // firebase-config.js ships the API key to everyone, so "has the API key"
-    // grants nothing: any rule that says `if true` is open to the whole
-    // internet, not just to people holding an access code. Rules cannot read
-    // an access code, and they cannot hide individual fields - only whole
-    // documents.
+    // grants nothing. Three kinds of caller:
     //
-    // So the model is:
-    //   - Business documents (tours, invoices, quotes, providers, clients,
-    //     leads, rates) are ADMIN-ONLY. They carry costs.margin, costs.profit,
-    //     providerExpenses[].amount and per-family amountDue.
-    //   - The portal reads a cut-down projection written by the CRM:
-    //     tours/{tourId}/portal/public - see DB.PORTAL_SAFE_FIELDS in data.js.
-    //   - Access codes resolve through accessCodes/{code}, which allows `get`
-    //     but not `list`. You must know a code to use one; you can no longer
-    //     discover tours by querying the collection.
+    //   STAFF   - the CRM, signed in with Juan's email account. Identified by
+    //             uid, NOT by "is signed in": anyone can obtain an anonymous
+    //             session (portal) and, while public sign-up is enabled, an
+    //             email account too. `request.auth != null` used to mean
+    //             admin, which handed the whole database to any sign-up.
+    //   PORTAL  - portal.html / guide.html. Each browser signs in anonymously
+    //             and writes portalSessions/{uid} with the access code it holds.
+    //             That record is only accepted when the code exists and its
+    //             tourId / familyId / kind match (see portalSessions below), so
+    //             knowing a code is still the proof. From it the rules know:
+    //               kind 'family' -> one family, sees only its own data
+    //               kind 'tour'   -> the club / organiser, sees the whole tour
+    //               kind 'guide'  -> Odisea's guide, sees the whole tour
+    //   ANYONE  - may resolve a code (accessCodes get) and read a tour's public
+    //             projection (portal/public: itinerary, dates, family names and
+    //             counts, no money, no personal data). Nothing else.
     //
-    // KNOWN LIMIT: anyone holding one valid family code can still read that
-    // tour's other passengers and invoices, because rules have no identity to
-    // scope on. Closing that needs real auth - a Cloud Function issuing a
-    // custom token per family, which needs the Blaze plan. Until then a code
-    // is a shared secret for the whole tour, so treat codes as sensitive and
-    // rotate them if one leaks.
+    // Families never see another family's travellers, passports, medical
+    // notes, flights, signatures or private messages, and cannot write them.
     //
     // Deploy: firebase deploy --only firestore:rules
     // ─────────────────────────────────────────────────────────────────────
 
-    function signedIn() {
-      return request.auth != null;
+    // Juan's CRM account. Add a uid here for each new staff login.
+    function isStaff() {
+      return request.auth != null
+        && request.auth.uid in ['mN1vaWN1pjWzzdlBlxie8YyQAj02'];
     }
 
-    // Public writes must not grow without bound or carry junk payloads.
+    function sessionPath() {
+      return /databases/$(database)/documents/portalSessions/$(request.auth.uid);
+    }
+    function hasSession(tourId) {
+      return request.auth != null
+        && exists(sessionPath())
+        && get(sessionPath()).data.tourId == tourId;
+    }
+    function sess() {
+      return get(sessionPath()).data;
+    }
+    function isClub(tourId) {
+      return hasSession(tourId) && sess().kind == 'tour';
+    }
+    function isGuide(tourId) {
+      return hasSession(tourId) && sess().kind == 'guide';
+    }
+    // Staff, the organiser or the guide: people allowed to see the whole tour.
+    function seesWholeTour(tourId) {
+      return isStaff() || isClub(tourId) || isGuide(tourId);
+    }
+    function isFamilyOf(tourId) {
+      return hasSession(tourId) && sess().kind == 'family';
+    }
+    function myFamilyId() {
+      return string(sess().familyId);
+    }
+
     function sanePayload(maxFields) {
       return request.resource.data.size() <= maxFields;
     }
+    function saneNames() {
+      return request.resource.data.firstName is string
+        && request.resource.data.lastName is string
+        && request.resource.data.firstName.size() <= 100
+        && request.resource.data.lastName.size() <= 100;
+    }
 
-    // ── Default: admin only. Everything not matched below lands here, so a
-    // new collection is private until someone deliberately opens it. ──
+    // ── Default: staff only. A new collection is private until opened here. ──
     match /{document=**} {
-      allow read, write: if signedIn();
+      allow read, write: if isStaff();
     }
 
     // ── Access codes: get by id, never list ──
-    // The document id IS the code, so a `get` requires knowing it. `list` is
-    // denied, which is what stops the collection being enumerated.
     match /accessCodes/{code} {
       allow get: if true;
-      allow list: if signedIn();
+      allow list: if isStaff();
       // Portal bumps lastAccess / accessCount and nothing else.
-      allow update: if signedIn()
+      allow update: if isStaff()
         || request.resource.data.diff(resource.data)
              .affectedKeys().hasOnly(['lastAccess', 'accessCount']);
-      allow create, delete: if signedIn();
+      allow create, delete: if isStaff();
     }
 
-    // ── Tours: admin-only to READ. ──
-    // Writing roomPlan stays open because the group leader rearranges rooms in
-    // the portal, and Firestore does not require read access to update.
-    match /tours/{tourId} {
-      allow get, list: if signedIn();
-      allow create, delete: if signedIn();
-      allow update: if signedIn()
-        || request.resource.data.diff(resource.data)
-             .affectedKeys().hasOnly(['roomPlan', 'tourFlightDetails', 'flightLegs']);
+    // ── Portal sessions: "this browser holds code X" ──
+    // Accepted only if code X exists and the record copies its tourId, kind and
+    // familyId exactly. Each browser can only write its own record.
+    match /portalSessions/{uid} {
+      function codeDoc() {
+        return get(/databases/$(database)/documents/accessCodes/$(request.resource.data.code)).data;
+      }
+      allow get: if isStaff() || (request.auth != null && request.auth.uid == uid);
+      allow list, delete: if isStaff();
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['code', 'tourId', 'kind', 'familyId', 'createdAt'])
+        && request.resource.data.code is string
+        && exists(/databases/$(database)/documents/accessCodes/$(request.resource.data.code))
+        && request.resource.data.tourId == string(codeDoc().tourId)
+        && request.resource.data.kind == codeDoc().get('kind', 'tour')
+        && request.resource.data.familyId == codeDoc().get('familyId', null);
+    }
 
-      // ── The public projection the portal and guide actually read ──
+    // ── Tours ──
+    // The tour document carries costs and margins: staff only to read. The
+    // organiser and the guide may rearrange rooms and flight legs.
+    match /tours/{tourId} {
+      allow get, list: if isStaff();
+      allow create, delete: if isStaff();
+      allow update: if isStaff()
+        || ((isClub(tourId) || isGuide(tourId))
+            && request.resource.data.diff(resource.data)
+                 .affectedKeys().hasOnly(['roomPlan', 'tourFlightDetails', 'flightLegs']));
+
+      // Public projection: no money, no personal data (DB.PORTAL_SAFE_FIELDS).
       match /portal/{docId} {
         allow get: if true;
-        allow list: if signedIn();
-        allow create, delete: if signedIn();
-        allow update: if signedIn()
-          || request.resource.data.diff(resource.data)
-               .affectedKeys().hasOnly(['roomPlan']);
+        allow list: if isStaff();
+        allow create, delete: if isStaff();
+        allow update: if isStaff()
+          || ((isClub(tourId) || isGuide(tourId))
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['roomPlan']));
       }
 
-      // ── Invoice projection: amounts and payments for this tour only ──
-      // Listing requires the tourId, which now requires a code.
+      // Invoice projection: Odisea and the organiser. Families paying Odisea
+      // directly read their plan from their own access-code document instead.
       match /portalInvoices/{invoiceId} {
-        allow read: if true;
-        allow write: if signedIn();
+        allow read: if isStaff() || isClub(tourId);
+        allow write: if isStaff();
       }
 
-      // ── Passengers: families fill in their own travellers ──
-      // Delete stays admin-only; the portal soft-deletes with _removed.
+      // ── Passengers ──
+      // A family reads and writes only travellers tagged with its familyId,
+      // and cannot move one to another family. Delete stays staff-only; the
+      // portal soft-deletes with _removed.
       match /passengers/{passengerId} {
-        allow read: if true;
-        allow create: if signedIn()
-          || (sanePayload(40)
-              && request.resource.data.firstName is string
-              && request.resource.data.lastName is string
-              && request.resource.data.firstName.size() <= 100
-              && request.resource.data.lastName.size() <= 100);
-        allow update: if signedIn()
-          || (sanePayload(40)
-              && request.resource.data.firstName is string
-              && request.resource.data.lastName is string
-              && request.resource.data.firstName.size() <= 100
-              && request.resource.data.lastName.size() <= 100);
-        allow delete: if signedIn();
+        allow read: if seesWholeTour(tourId)
+          || (isFamilyOf(tourId) && resource.data.familyId == myFamilyId());
+        allow create: if isStaff()
+          || ((isClub(tourId) || isGuide(tourId)) && sanePayload(40) && saneNames())
+          || (isFamilyOf(tourId) && sanePayload(40) && saneNames()
+              && request.resource.data.familyId == myFamilyId());
+        allow update: if isStaff()
+          || ((isClub(tourId) || isGuide(tourId)) && sanePayload(40) && saneNames())
+          || (isFamilyOf(tourId) && sanePayload(40) && saneNames()
+              && resource.data.familyId == myFamilyId()
+              && request.resource.data.familyId == myFamilyId());
+        allow delete: if isStaff();
       }
 
-      // ── Messages: families write to the group thread ──
+      // ── Messages ──
+      // type 'group'  : Odisea's announcements, readable by everyone on the tour
+      // type 'club'   : the organiser's thread with Odisea
+      // type 'family' : one family's thread with Odisea
+      // type 'guide'  : the guide app's thread with the office
+      // Only staff can write as Odisea ('admin') or post announcements.
       match /messages/{messageId} {
-        allow read: if true;
-        allow create: if signedIn()
+        allow read: if isStaff()
+          || (isClub(tourId) && resource.data.type in ['group', 'club'])
+          || (isGuide(tourId) && resource.data.type in ['group', 'guide'])
+          || (isFamilyOf(tourId)
+              && (resource.data.type == 'group' || resource.data.familyId == myFamilyId()));
+        allow create: if isStaff()
           || (sanePayload(15)
               && request.resource.data.text is string
-              && request.resource.data.text.size() <= 2000);
-        allow update, delete: if signedIn();
+              && request.resource.data.text.size() > 0
+              && request.resource.data.text.size() <= 2000
+              && request.resource.data.sender in ['client', 'guide']
+              && ((isClub(tourId) && request.resource.data.type == 'club')
+                  || (isGuide(tourId) && request.resource.data.sender == 'guide'
+                      && request.resource.data.type == 'guide')
+                  || (isFamilyOf(tourId) && request.resource.data.type == 'family'
+                      && request.resource.data.familyId == myFamilyId())));
+        allow update, delete: if isStaff();
       }
 
-      // ── Flight details ──
+      // ── Flights ──
       match /tourFlights/{docId} {
-        allow read: if true;
-        allow create, update: if signedIn() || sanePayload(30);
-        allow delete: if signedIn();
+        allow read: if seesWholeTour(tourId);
+        allow create, update: if isStaff() || (isClub(tourId) && sanePayload(30));
+        allow delete: if isStaff();
       }
       match /familyFlights/{familyId} {
-        allow read: if true;
-        allow create, update: if signedIn() || sanePayload(30);
-        allow delete: if signedIn();
+        allow read: if seesWholeTour(tourId)
+          || (isFamilyOf(tourId) && familyId == myFamilyId());
+        allow create, update: if isStaff()
+          || (isClub(tourId) && sanePayload(30))
+          || (isFamilyOf(tourId) && familyId == myFamilyId() && sanePayload(30)
+              && request.resource.data.familyId == myFamilyId());
+        allow delete: if isStaff();
       }
 
-      // ── Consent signatures and feedback, written from the portal ──
+      // ── Signatures ──
+      // fam_<familyId> per family; code_<CODE> for the organiser code and for
+      // anything a family signed under its code before per-family docs.
       match /consent/{docId} {
-        allow read: if true;
-        allow create, update: if signedIn() || sanePayload(60);
-        allow delete: if signedIn();
+        allow read: if seesWholeTour(tourId)
+          || (isFamilyOf(tourId)
+              && (docId == 'fam_' + myFamilyId() || docId == 'code_' + sess().code));
+        allow create, update: if isStaff()
+          || (isClub(tourId) && docId == 'code_' + sess().code && sanePayload(60))
+          || (isFamilyOf(tourId) && docId == 'fam_' + myFamilyId() && sanePayload(60));
+        allow delete: if isStaff();
       }
+
+      // ── Feedback: one document per code ──
       match /feedback/{docId} {
-        allow read: if true;
-        allow create, update: if signedIn() || sanePayload(40);
-        allow delete: if signedIn();
+        allow read: if seesWholeTour(tourId)
+          || (hasSession(tourId) && docId == sess().code);
+        allow create, update: if isStaff()
+          || (hasSession(tourId) && docId == sess().code && sanePayload(40));
+        allow delete: if isStaff();
       }
 
       // ── Documents handed to families and guides ──
       match /documents/{docId} {
-        allow read: if true;
-        allow write: if signedIn();
+        allow read: if isStaff() || hasSession(tourId);
+        allow write: if isStaff();
       }
       match /guideDocuments/{docId} {
-        allow read: if true;
-        allow write: if signedIn();
+        allow read: if isStaff() || isGuide(tourId);
+        allow write: if isStaff();
       }
 
       // ── Guide app: expenses and notes are created on the road ──
       match /guideExpenses/{expenseId} {
-        allow read: if true;
-        allow create: if signedIn() || sanePayload(30);
-        allow update, delete: if signedIn();
+        allow read: if isStaff() || isGuide(tourId);
+        allow create: if isStaff() || (isGuide(tourId) && sanePayload(30));
+        allow update, delete: if isStaff();
       }
       match /guideNotes/{noteId} {
-        allow read: if true;
-        allow create: if signedIn() || sanePayload(20);
-        allow update, delete: if signedIn();
+        allow read: if isStaff() || isGuide(tourId);
+        allow create: if isStaff() || (isGuide(tourId) && sanePayload(20));
+        allow update, delete: if isStaff();
       }
     }
 
-    // ── Invoices: admin only. ──
-    // This collection held every client's billing across every tour and used to
-    // be world-readable. The portal now reads tours/{tourId}/portalInvoices.
+    // ── Invoices: staff only ──
     match /invoices/{invoiceId} {
-      allow read, write: if signedIn();
+      allow read, write: if isStaff();
     }
   }
 }

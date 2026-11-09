@@ -5,7 +5,9 @@ const Providers = {
   async _sendViaGmail(to, subject, text, replyTo) {
     const res = await fetch(this.EMAIL_API_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // The endpoint only sends for a signed-in staff login (see the website's
+      // app/api/email/send/route.ts), so pass this session's Firebase ID token.
+      headers: await DB.staffAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ to, subject, text, replyTo }),
     });
     if (!res.ok) {

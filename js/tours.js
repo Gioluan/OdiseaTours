@@ -2811,40 +2811,53 @@ juan@odisea-tours.com`;
     // the new content off-screen and looked like nothing happened.
     container.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    await DB.resetUnreadCount(String(tourId), 'unreadMessagesCount');
     await DB.markGuideMessagesRead(String(tourId));
 
     const allMessages = await DB.getTourMessages(String(tourId));
-    console.log('viewMessages: loaded', allMessages.length, 'messages for tour', tourId);
     const t = DB.getTours().find(x => x.id === tourId);
     const families = (t && t.individualClients) || [];
-    const activeTab = this._adminMsgTab[tourId] || 'group';
+    const readAt = await DB.getMessageReadAt(String(tourId));
+    const unread = DB.unreadByThread(allMessages, readAt);
+    const famName = id => { const f = families.find(x => String(x.id) === String(id)); return f ? (f.name || 'Family') : 'Family ' + id; };
 
-    // Filter messages for active tab
-    let filtered;
-    if (activeTab === 'group') {
-      filtered = allMessages.filter(m => !m.type || m.type === 'group');
-    } else {
-      filtered = allMessages.filter(m => m.type === 'family' && String(m.familyId) === String(activeTab));
+    // Open the first thread with something unread, else where we were.
+    let activeTab = this._adminMsgTab[tourId];
+    if (!activeTab) {
+      const firstUnread = Object.keys(unread).find(k => unread[k] > 0);
+      activeTab = firstUnread || (allMessages.some(m => DB.messageThread(m) === 'club') ? 'club' : 'group');
+      this._adminMsgTab[tourId] = activeTab;
     }
 
-    // Count unread per family thread
-    const familyMsgCounts = {};
-    families.forEach(ic => {
-      familyMsgCounts[ic.id] = allMessages.filter(m => m.type === 'family' && String(m.familyId) === String(ic.id)).length;
-    });
+    const filtered = allMessages.filter(m => DB.messageThread(m) === activeTab);
+    // Opening a thread marks it read.
+    if (unread[activeTab]) {
+      await DB.markThreadRead(String(tourId), activeTab);
+      unread[activeTab] = 0;
+    }
+
+    const count = key => allMessages.filter(m => DB.messageThread(m) === key).length;
+    const badge = key => unread[key] ? `<span style="background:var(--red);color:white;border-radius:10px;padding:0 0.45rem;margin-left:0.3rem;font-size:0.72rem;font-weight:700">${unread[key]} new</span>` : '';
+    const esc = v => String(v || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    // Families with unread first, then the ones that have written, then the rest.
+    const famOrder = families.slice().sort((x, y) => (unread[String(y.id)] || 0) - (unread[String(x.id)] || 0) || count(String(y.id)) - count(String(x.id)));
+    const tab = (key, label) => `<button class="admin-msg-tab${activeTab === key ? ' active' : ''}" style="white-space:nowrap" onclick="Tours._switchAdminMsgTab(${tourId},'${key}')">${esc(label)} (${count(key)})${badge(key)}</button>`;
+    const placeholder = activeTab === 'group' ? 'Announcement to ALL families and the organiser...'
+      : activeTab === 'club' ? 'Reply to the organiser (families do not see this)...'
+      : 'Reply to ' + famName(activeTab) + ' (only this family sees it)...';
+    const totalUnread = Object.values(unread).reduce((s, n) => s + n, 0);
 
     container.innerHTML = `
       <div style="background:white;border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-lg);margin-bottom:1rem">
         <div style="background:var(--navy);color:white;padding:0.8rem 1rem;font-weight:600;display:flex;justify-content:space-between;align-items:center">
-          <span>Messages</span>
+          <span>Messages${totalUnread ? ' &middot; ' + totalUnread + ' unread' : ''}</span>
           <button style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:0.85rem" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">&times; Close</button>
         </div>
-        ${families.length ? `
         <div style="display:flex;gap:0;border-bottom:1px solid var(--gray-100);overflow-x:auto">
-          <button class="admin-msg-tab${activeTab === 'group' ? ' active' : ''}" onclick="Tours._switchAdminMsgTab(${tourId},'group')">Group Announcements (${allMessages.filter(m => !m.type || m.type === 'group').length})</button>
-          ${families.map(ic => `<button class="admin-msg-tab${activeTab === String(ic.id) ? ' active' : ''}" onclick="Tours._switchAdminMsgTab(${tourId},'${ic.id}')">${(ic.name||'Family').replace(/'/g,"\\'")} (${familyMsgCounts[ic.id]||0})</button>`).join('')}
-        </div>` : ''}
+          ${tab('group', 'Announcements (all)')}
+          ${tab('club', 'Organiser')}
+          ${allMessages.some(m => DB.messageThread(m) === 'guide') ? tab('guide', 'Guide') : ''}
+          ${famOrder.map(ic => tab(String(ic.id), ic.name || 'Family')).join('')}
+        </div>
         <div style="max-height:350px;overflow-y:auto;padding:1rem;background:var(--gray-50)" id="admin-chat-${tourId}">
           ${filtered.length ? filtered.map(m => `
             <div style="max-width:85%;padding:0.6rem 0.8rem;border-radius:10px;margin-bottom:0.5rem;font-size:0.85rem;line-height:1.5;${
@@ -2852,20 +2865,24 @@ juan@odisea-tours.com`;
                 ? 'background:var(--navy);color:white;margin-left:auto;border-bottom-right-radius:3px'
                 : 'background:white;border:1px solid var(--gray-100);border-bottom-left-radius:3px'
             }">
-              ${m.type === 'group' || !m.type ? '<div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.05em;opacity:0.5;margin-bottom:0.2rem">Announcement</div>' : ''}
-              <div>${(m.text||'').replace(/</g,'&lt;')}</div>
-              <div style="font-size:0.7rem;opacity:0.6;margin-top:0.2rem">${m.sender === 'admin' ? 'You' : (m.senderName || 'Client')} &bull; ${m.timestamp ? new Date(m.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
+              <div style="white-space:pre-wrap">${esc(m.text)}</div>
+              <div style="font-size:0.7rem;opacity:0.6;margin-top:0.2rem">${m.sender === 'admin' ? 'You' : esc(m.senderName || 'Client')} &bull; ${m.timestamp ? new Date(m.timestamp).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</div>
             </div>
           `).join('') : '<div style="text-align:center;color:var(--gray-400);padding:1rem;font-size:0.85rem">No messages yet.</div>'}
         </div>
         <form style="display:flex;gap:0.5rem;padding:0.8rem 1rem;border-top:1px solid var(--gray-100)" onsubmit="Tours.sendAdminMessage(${tourId},event)">
-          <input type="text" id="admin-msg-input-${tourId}" placeholder="${activeTab === 'group' ? 'Send group announcement...' : 'Reply to family...'}" style="flex:1;padding:0.5rem 0.8rem;border:1.5px solid var(--gray-200);border-radius:20px;font-size:0.85rem">
+          <input type="text" id="admin-msg-input-${tourId}" placeholder="${esc(placeholder)}" style="flex:1;padding:0.5rem 0.8rem;border:1.5px solid var(--gray-200);border-radius:20px;font-size:0.85rem">
           <button type="submit" class="btn btn-sm btn-primary" style="border-radius:20px;padding:0.5rem 1rem">Send</button>
         </form>
       </div>`;
 
     const chatEl = document.getElementById('admin-chat-' + tourId);
     if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+    const msgBadge = document.getElementById('msg-badge-' + tourId);
+    if (msgBadge) {
+      msgBadge.textContent = totalUnread ? totalUnread + ' new' : '';
+      msgBadge.style.display = totalUnread ? 'inline-block' : 'none';
+    }
   },
 
   async sendAdminMessage(tourId, event) {
@@ -2873,20 +2890,18 @@ juan@odisea-tours.com`;
     const input = document.getElementById('admin-msg-input-' + tourId);
     const text = input.value.trim();
     if (!text) return;
-    input.value = '';
     const activeTab = this._adminMsgTab[tourId] || 'group';
-    const msg = {
-      text: text,
-      sender: 'admin',
-      senderName: 'Odisea Tours'
-    };
-    if (activeTab === 'group') {
-      msg.type = 'group';
-    } else {
-      msg.type = 'family';
-      msg.familyId = activeTab;
-    }
-    await DB.sendTourMessage(String(tourId), msg);
+    const msg = { text: text, sender: 'admin', senderName: 'Odisea Tours' };
+    if (activeTab === 'group') msg.type = 'group';
+    else if (activeTab === 'club') msg.type = 'club';
+    else if (activeTab === 'guide') msg.type = 'guide';
+    else { msg.type = 'family'; msg.familyId = String(activeTab); }
+    input.disabled = true;
+    const saved = await DB.sendTourMessage(String(tourId), msg);
+    input.disabled = false;
+    if (!saved) { alert('Message not sent. Check your connection and try again.'); return; }
+    input.value = '';
+    await DB.markThreadRead(String(tourId), activeTab);
     this.viewMessages(tourId);
   },
 

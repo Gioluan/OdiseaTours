@@ -8,7 +8,7 @@ const Portal = {
   _portalMode: 'tour',  // 'tour' (full access) or 'family' (scoped)
   _familyId: null,
   _familyData: null,
-  _messageTab: 'announcements', // 'announcements' or 'private'
+  _messageTab: 'private', // 'private' (talk to Odisea) or 'announcements'
   _allMessages: [],
   _flightData: null,
   _translations: {
@@ -45,8 +45,22 @@ const Portal = {
       roomAssignments: 'Room assignments for your tour', noRoomPlan: 'Room plan is being prepared.',
       unassigned: 'Unassigned',
       familyTravelers: 'Your Travelers', registerFamilyTravelers: 'Register your family travelers',
-      announcements: 'Announcements', privateChat: 'Private Chat',
-      familyMessagesDesc: 'Group announcements and private messages',
+      announcements: 'Announcements', privateChat: 'Message Odisea Tours',
+      familyMessagesDesc: 'Write to us here: only your family and Odisea Tours see this conversation.',
+      clubMessagesDesc: 'Write to Odisea Tours here. Families do not see this conversation.',
+      msgSendFailed: 'Your message could not be sent. Please check your connection and try again.',
+      flightsSaveFailed: 'Flight details could not be saved. Please check your connection and try again.',
+      contactUs: 'Questions? Send us a message here, or email', sendUsMessage: 'Send us a message',
+      formsTitle: 'Forms & Consent', formsIntro: 'Please review and sign the required forms below',
+      formsBefore: 'before', signed: 'Signed', pending: 'Pending', signedBy: 'Signed by', signedOn: 'on',
+      agree: 'I agree to the above', signerName: 'Full name of the person signing', signerPlaceholder: 'First and last name',
+      signBelow: 'Sign below with your finger or mouse:', clear: 'Clear', submit: 'Submit',
+      waiverAgree: 'I am the parent or legal guardian of the minors listed above and I have read and agree to this waiver on their behalf.',
+      waiverMinors: 'Minors covered by this waiver', waiverNoMinors: 'Register your travelers first (Passengers section): the waiver lists every player and sibling under 18 by name.',
+      formFor: 'For', checkBoxFirst: 'Please tick the agreement box first.', signFirst: 'Please sign in the signature area.',
+      typeFullName: 'Please type your first and last name.', saveConsentFailed: 'The form could not be saved. Please try again.',
+      passportValidUntil: 'Spain needs the passport valid at least 3 months after you leave, so until at least',
+      passportsTooSoon: 'Spain requires every passport to be valid until at least',
       chatWithOperator: 'Chat with your tour operator',
       announcementsReadOnly: 'Announcements are read-only. Switch to Private Chat to send a message.',
       announcement: 'Announcement',
@@ -130,8 +144,23 @@ const Portal = {
       roomAssignments: 'Asignacion de habitaciones', noRoomPlan: 'El plan de habitaciones se esta preparando.',
       unassigned: 'Sin asignar',
       familyTravelers: 'Tus Viajeros', registerFamilyTravelers: 'Registra los viajeros de tu familia',
-      announcements: 'Anuncios', privateChat: 'Chat Privado',
-      familyMessagesDesc: 'Anuncios del grupo y mensajes privados',
+      announcements: 'Anuncios', privateChat: 'Escribir a Odisea Tours',
+      familyMessagesDesc: 'Escribenos aqui: solo tu familia y Odisea Tours ven esta conversacion.',
+      clubMessagesDesc: 'Escribe a Odisea Tours aqui. Las familias no ven esta conversacion.',
+      msgSendFailed: 'No se pudo enviar tu mensaje. Revisa tu conexion e intentalo de nuevo.',
+      flightsSaveFailed: 'No se pudieron guardar los datos de vuelo. Revisa tu conexion e intentalo de nuevo.',
+      contactUs: 'Preguntas? Envianos un mensaje aqui, o escribe a', sendUsMessage: 'Envianos un mensaje',
+      formsTitle: 'Formularios y Consentimientos', formsIntro: 'Revisa y firma los formularios siguientes',
+      formsBefore: 'antes del', signed: 'Firmado', pending: 'Pendiente', signedBy: 'Firmado por', signedOn: 'el',
+      agree: 'Acepto lo anterior', signerName: 'Nombre completo de quien firma', signerPlaceholder: 'Nombre y apellido',
+      signBelow: 'Firma abajo con el dedo o el raton:', clear: 'Borrar', submit: 'Enviar',
+      waiverAgree: 'Soy el padre, la madre o el tutor legal de los menores indicados arriba, he leido esta autorizacion y la acepto en su nombre.',
+      waiverMinors: 'Menores incluidos en esta autorizacion', waiverNoMinors: 'Primero registra a tus viajeros (seccion Pasajeros): la autorizacion incluye por nombre a cada jugador y hermano menor de 18.',
+      formFor: 'Para', checkBoxFirst: 'Marca primero la casilla de aceptacion.', signFirst: 'Firma en el recuadro de firma.',
+      typeFullName: 'Escribe tu nombre y apellido.', saveConsentFailed: 'No se pudo guardar el formulario. Intentalo de nuevo.',
+      legalEnglishNote: 'El texto legal de los formularios esta en ingles, que es la version valida.',
+      passportValidUntil: 'Espana exige que el pasaporte sea valido al menos 3 meses despues de tu salida, es decir, hasta al menos el',
+      passportsTooSoon: 'Espana exige que cada pasaporte sea valido hasta al menos el',
       chatWithOperator: 'Chatea con tu operador turistico',
       announcementsReadOnly: 'Los anuncios son de solo lectura. Cambia a Chat Privado para enviar un mensaje.',
       announcement: 'Anuncio',
@@ -336,6 +365,9 @@ const Portal = {
     this.tourId = String(tourId);
     sessionStorage.setItem('portal_code', code);
     sessionStorage.setItem('portal_tourId', this.tourId);
+    // Tell the rules which code this browser holds, so a family only ever
+    // reads and writes its own travellers, flights, forms and messages.
+    this._session = await DB.ensurePortalSession(code);
 
     // Fetch the public projection, never the tour document itself. The tour doc
     // carries costs, margins and provider amounts and is admin-only.
@@ -399,7 +431,7 @@ const Portal = {
     this._familyId = null;
     this._familyData = null;
     this._familyPayment = null;
-    this._messageTab = 'announcements';
+    this._messageTab = 'private';
     this._allMessages = [];
     this._flightData = null;
     document.getElementById('portal-login').style.display = 'flex';
@@ -445,6 +477,8 @@ const Portal = {
 
   showSection(name) {
     if (name === 'payments' && !this._paymentsVisible()) name = 'overview';
+    // The full room plan is for Odisea and the organiser, not for families.
+    if (name === 'roomplan' && this._portalMode === 'family') name = 'overview';
     this.currentSection = name;
     // Toggle active nav items
     document.querySelectorAll('.nav-drawer-links li').forEach(li => {
@@ -571,10 +605,13 @@ const Portal = {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5 5.1 3 -1.9 1.9-2.1-.5-.6.6 2.6 1.5 1.5 2.6.6-.6-.5-2.1 1.9-1.9 3 5.1.5-.3c.4-.2.6-.6.5-1.1z"/></svg>
           <span>${Portal._t('flights')}</span>
         </button>
-        <button class="action-btn" onclick="Portal.showSection('roomplan')">
+        ${isFamily ? `<button class="action-btn" onclick="Portal.showSection('forms')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+          <span>${Portal._t('formsConsent')}</span>
+        </button>` : `<button class="action-btn" onclick="Portal.showSection('roomplan')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
           <span>${Portal._t('roomPlan')}</span>
-        </button>
+        </button>`}
         <button class="action-btn" onclick="Portal.showSection('messages')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           <span>${Portal._t('messages')}</span>
@@ -605,7 +642,8 @@ const Portal = {
       <div class="contact-card">
         <h4>${Portal._t('tourOperator')}</h4>
         <p><strong>Odisea Tours</strong></p>
-        <p>For any questions, use the Messages section or contact us directly.</p>
+        <p>${Portal._t('contactUs')} <a href="mailto:juan@odisea-tours.com" style="color:var(--navy);font-weight:600">juan@odisea-tours.com</a>.</p>
+        <button class="btn-primary btn-sm" style="margin-top:0.6rem" onclick="Portal._messageTab='private';Portal.showSection('messages')">${Portal._t('sendUsMessage')}</button>
       </div>`;
 
     // Load payment summary and checklist async
@@ -867,8 +905,9 @@ const Portal = {
 
     // Load passengers and invoices in parallel
     const [allPassengers, invoices] = await Promise.all([
-      DB.getTourPassengers(this.tourId),
-      Portal._paymentsVisible() ? DB.getTourInvoices(this.tourId) : Promise.resolve([])
+      isFamily ? DB.getFamilyPassengers(this.tourId, this._familyId).catch(() => [])
+               : DB.getTourPassengers(this.tourId),
+      (Portal._paymentsVisible() && !isFamily) ? DB.getTourInvoices(this.tourId) : Promise.resolve([])
     ]);
     this._passengers = allPassengers.filter(p => !p._removed);
     this._invoices = invoices;
@@ -936,7 +975,7 @@ const Portal = {
 
       ${expiringSoon ? `<div style="background:#fff4e5;border:1px solid #ffd8a8;border-radius:8px;padding:0.7rem 0.9rem;margin:0.6rem 0;font-size:0.85rem;line-height:1.45">
         <strong>${expiringSoon} passport${expiringSoon > 1 ? 's expire' : ' expires'} too soon.</strong>
-        Spain requires validity until at least 13 January 2027. Please renew and send us the new details.
+        ${Portal._t('passportsTooSoon')} ${Portal._fmtDate(Portal._passportMinDate())}. Please renew and update the details here.
       </div>` : ''}
 
       <button class="add-pax-btn" onclick="Portal.showPassengerForm()">
@@ -984,18 +1023,19 @@ const Portal = {
 
         // Try to match passenger to an individual client invoice by name. Tour directors
         // have no invoice by design, so "No Invoice" would read as a missing payment.
+        // Payment tags come from organiser invoices; a family's own payments
+        // live on its Payments page, so no "No Invoice" tag here.
         const paymentStatus = isDirector
           ? '<span class="pax-tag pax-tag-green">Not charged</span>'
-          : (Portal._paymentsVisible() ? this._getPaymentStatus(fullName) : '');
+          : ((Portal._paymentsVisible() && !isFamily) ? this._getPaymentStatus(fullName) : '');
 
         // Passport status
         let passportTag = '';
         if (p.passportNumber) {
           if (p.passportExpiry) {
             const exp = new Date(p.passportExpiry);
-            const monthsLeft = (exp - new Date()) / (1000*60*60*24*30);
-            if (monthsLeft < 0) passportTag = '<span class="pax-tag pax-tag-red">Expired</span>';
-            else if (monthsLeft < 6) passportTag = '<span class="pax-tag pax-tag-amber">Expiring Soon</span>';
+            if (exp < new Date()) passportTag = '<span class="pax-tag pax-tag-red">Expired</span>';
+            else if (Portal._paxPassportTooSoon(p)) passportTag = '<span class="pax-tag pax-tag-red">Expires too soon for this trip</span>';
             else passportTag = '<span class="pax-tag pax-tag-green">Valid</span>';
           } else {
             passportTag = '<span class="pax-tag pax-tag-gray">No Expiry</span>';
@@ -1109,10 +1149,19 @@ const Portal = {
     return Portal._paxMissing(p).length === 0;
   },
 
-  // Passport must outlast the trip by three months (Schengen), i.e. 13 Jan 2027.
+  // Schengen: the passport must stay valid 3 months after leaving, so the
+  // date comes from this trip's end date (it used to be hardcoded for one tour).
+  _passportMinDate() {
+    const end = this.tourData && this.tourData.endDate ? new Date(this.tourData.endDate) : null;
+    if (!end || isNaN(end)) return null;
+    const d = new Date(end); d.setMonth(d.getMonth() + 3);
+    return d.toISOString().slice(0, 10);
+  },
+
   _paxPassportTooSoon(p) {
-    if (!p || !p.passportExpiry) return false;
-    return new Date(p.passportExpiry) < new Date('2027-01-13');
+    const min = Portal._passportMinDate();
+    if (!p || !p.passportExpiry || !min) return false;
+    return p.passportExpiry < min;
   },
 
   // What to call a traveller we have not been told the name of yet.
@@ -1224,7 +1273,7 @@ const Portal = {
               <option value="Sibling" ${(p.role||'')==='Sibling'?'selected':''}>Sibling</option>
               <option value="Adult" ${(p.role||'')==='Adult'?'selected':''}>Adult</option>
               <option value="Coach" ${(p.role||'')==='Coach'?'selected':''}>Coach</option>
-              <option value="Tour Director" ${(p.role||'')==='Tour Director'?'selected':''}>Tour Director (Odisea, not charged)</option>
+              ${(p.role === 'Tour Director' || this._isAdmin) ? `<option value="Tour Director" ${(p.role||'')==='Tour Director'?'selected':''}>Tour Director (Odisea, not charged)</option>` : ''}
             </select>
           </div>
           <div class="form-group">
@@ -1262,9 +1311,9 @@ const Portal = {
           <div class="form-group">
             <label>Passport Expiry</label>
             <input id="pf-passport-exp" type="date" value="${p.passportExpiry || ''}">
-            <small style="color:var(--gray-400);font-size:0.72rem;line-height:1.3;display:block;margin-top:0.25rem">
-              Spain needs the passport valid at least 3 months after you leave, so not before 13 Jan 2027.
-            </small>
+            ${Portal._passportMinDate() ? `<small style="color:var(--gray-400);font-size:0.72rem;line-height:1.3;display:block;margin-top:0.25rem">
+              ${Portal._t('passportValidUntil')} ${Portal._fmtDate(Portal._passportMinDate())}.
+            </small>` : ''}
           </div>
           <div class="form-group"><label>Mobile (with country code)</label><input id="pf-mobile" type="tel" placeholder="+1 808 555 0123" value="${Portal._escapeAttr(p.mobile || '')}"></div>
         </div>
@@ -2271,8 +2320,8 @@ const Portal = {
           <p>${Portal._t('familyMessagesDesc')}</p>
         </div>
         <div class="msg-tabs">
-          <button class="msg-tab${this._messageTab === 'announcements' ? ' active' : ''}" onclick="Portal.switchMessageTab('announcements')">${Portal._t('announcements')}</button>
           <button class="msg-tab${this._messageTab === 'private' ? ' active' : ''}" onclick="Portal.switchMessageTab('private')">${Portal._t('privateChat')}</button>
+          <button class="msg-tab${this._messageTab === 'announcements' ? ' active' : ''}" onclick="Portal.switchMessageTab('announcements')">${Portal._t('announcements')}</button>
         </div>
         <div class="chat-container">
           <div class="chat-messages" id="chat-messages">
@@ -2292,7 +2341,7 @@ const Portal = {
       container.innerHTML = `
         <div class="section-header">
           <h2>${Portal._t('messages')}</h2>
-          <p>${Portal._t('chatWithOperator')}</p>
+          <p>${Portal._t('clubMessagesDesc')}</p>
         </div>
         <div class="chat-container">
           <div class="chat-messages" id="chat-messages">
@@ -2358,7 +2407,8 @@ const Portal = {
         this._renderFilteredMessages(filtered);
       });
     } else {
-      this._messageListener = DB.listenToTourMessages(this.tourId, messages => {
+      // Organiser code: Odisea's announcements and its own thread with us.
+      this._messageListener = DB.listenToClubMessages(this.tourId, messages => {
         this._allMessages = messages;
         this._renderFilteredMessages(messages);
       });
@@ -2371,20 +2421,34 @@ const Portal = {
     const text = input.value.trim();
     if (!text) return;
 
-    input.value = '';
+    if (text.length > 2000) { this._showToast('Please keep messages under 2,000 characters.'); return; }
     const isFamily = this._portalMode === 'family' && this._familyId;
     const msg = {
       text: text,
       sender: 'client',
-      senderName: isFamily ? (this._familyData ? this._familyData.name : 'Family') : (this.tourData.groupName || 'Client')
+      senderName: isFamily ? (this._familyData ? this._familyData.name : 'Family') : (this.tourData.groupName || 'Client'),
+      // Organiser messages get their own type so they never show up to the
+      // families as an "announcement".
+      type: isFamily ? 'family' : 'club'
     };
+    if (isFamily) msg.familyId = String(this._familyId);
 
-    if (isFamily) {
-      msg.type = 'family';
-      msg.familyId = this._familyId;
+    const btn = document.querySelector('.chat-send-btn');
+    input.disabled = true; if (btn) btn.disabled = true;
+    const saved = await DB.sendTourMessage(this.tourId, msg);
+    input.disabled = false; if (btn) btn.disabled = false;
+    if (!saved) {
+      // Keep what they typed: losing a message silently is worse than no portal.
+      input.value = text;
+      this._showToast(Portal._t('msgSendFailed'));
+      return;
     }
-
-    await DB.sendTourMessage(this.tourId, msg);
+    input.value = '';
+    input.focus();
+    DB.notifyPortalMessage({
+      tourId: this.tourId, tourName: this.tourData.tourName || '',
+      from: msg.senderName, kind: isFamily ? 'family' : 'club', text: text
+    });
   },
 
   // ── Forms & Consent ──
@@ -2398,7 +2462,8 @@ const Portal = {
     const allRequired = t.requiredForms || ['terms', 'medical', 'photo'];
 
     const [allSigs, minors] = await Promise.all([
-      DB.getTourSignatures(this.tourId),
+      isFamily ? DB.getFamilySignatureDocs(this.tourId, this._familyId, sessionStorage.getItem('portal_code'))
+               : DB.getTourSignatures(this.tourId),
       isFamily && allRequired.includes('waiver') ? this._familyMinors() : Promise.resolve([])
     ]);
     if (isFamily) await DB.migrateFamilySignatures(this.tourId, allSigs, this._familyId, sessionStorage.getItem('portal_code'));
@@ -2410,8 +2475,9 @@ const Portal = {
 
     container.innerHTML = `
       <div class="section-header">
-        <h2>Forms & Consent</h2>
-        <p>Please review and sign the required forms below${t.portalDataDeadline ? ` before <strong>${Portal._fmtDate(t.portalDataDeadline)}</strong>` : ''}</p>
+        <h2>${Portal._t('formsTitle')}</h2>
+        <p>${Portal._t('formsIntro')}${t.portalDataDeadline ? ` ${Portal._t('formsBefore')} <strong>${Portal._fmtDate(t.portalDataDeadline)}</strong>` : ''}</p>
+        ${Portal._lang === 'es' ? `<p style="font-size:0.8rem;color:var(--gray-400);margin-top:0.3rem">${Portal._t('legalEnglishNote')}</p>` : ''}
       </div>
       ${!isFamily && allRequired.includes('waiver') && (t.individualClients || []).length ? `
         <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1rem;font-size:0.86rem;color:var(--gray-500)">
@@ -2426,38 +2492,38 @@ const Portal = {
           <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-bottom:1rem;box-shadow:var(--shadow);border-left:4px solid ${signed ? 'var(--green)' : 'var(--amber)'}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;gap:0.5rem">
               <h3 style="font-size:1rem;color:var(--navy)">${def.title}</h3>
-              ${signed ? '<span style="background:var(--green);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">Signed</span>' : '<span style="background:var(--amber);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">Pending</span>'}
+              ${signed ? `<span style="background:var(--green);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">${Portal._t('signed')}</span>` : `<span style="background:var(--amber);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">${Portal._t('pending')}</span>`}
             </div>
             ${isWaiver ? `
               <div style="font-size:0.84rem;color:var(--gray-500);line-height:1.5;max-height:${signed ? '9rem' : '22rem'};overflow:auto;border:1px solid var(--gray-100);border-radius:var(--radius);padding:0.8rem;margin-bottom:0.8rem">${def.body(t)}</div>
               ${signed ? '' : `
               <div style="margin-bottom:0.8rem;font-size:0.86rem">
-                <strong style="color:var(--navy)">Minors covered by this waiver</strong>
+                <strong style="color:var(--navy)">${Portal._t('waiverMinors')}</strong>
                 ${minors.length
                   ? `<ul style="margin:0.3rem 0 0 1.1rem">${minors.map(m => `<li>${esc(m)}</li>`).join('')}</ul>`
-                  : `<p style="color:var(--red);margin-top:0.3rem">Register your travelers first (Passengers section): the waiver lists every player and sibling under 18 by name.</p>`}
+                  : `<p style="color:var(--red);margin-top:0.3rem">${Portal._t('waiverNoMinors')}</p>`}
               </div>`}
             ` : `<p style="font-size:0.88rem;color:var(--gray-500);margin-bottom:1rem">${descText}</p>`}
             ${signed ? `
               <div style="background:var(--gray-50);padding:0.8rem;border-radius:var(--radius)">
-                <p style="font-size:0.82rem;color:var(--gray-400)">Signed${signed.signerName ? ' by <strong>' + esc(signed.signerName) + '</strong>' : ''} on ${Portal._fmtDate(signed.date)}</p>
-                ${signed.minors && signed.minors.length ? `<p style="font-size:0.82rem;color:var(--gray-400)">For: ${signed.minors.map(esc).join(', ')}</p>` : ''}
+                <p style="font-size:0.82rem;color:var(--gray-400)">${signed.signerName ? Portal._t('signedBy') + ' <strong>' + esc(signed.signerName) + '</strong>' : Portal._t('signed')} ${Portal._t('signedOn')} ${Portal._fmtDate(signed.date)}</p>
+                ${signed.minors && signed.minors.length ? `<p style="font-size:0.82rem;color:var(--gray-400)">${Portal._t('formFor')}: ${signed.minors.map(esc).join(', ')}</p>` : ''}
                 <img src="${signed.signature}" style="max-width:200px;max-height:60px;border:1px solid var(--gray-200);border-radius:var(--radius);margin-top:0.3rem" alt="Signature">
               </div>
             ` : `
               <label style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:0.8rem;font-size:0.88rem;cursor:pointer">
-                <input type="checkbox" id="consent-check-${formId}" style="margin-top:0.2rem"> ${isWaiver ? 'I am the parent or legal guardian of the minors listed above and I have read and agree to this waiver on their behalf.' : 'I agree to the above'}
+                <input type="checkbox" id="consent-check-${formId}" style="margin-top:0.2rem;width:20px;height:20px;flex-shrink:0"> ${isWaiver ? Portal._t('waiverAgree') : Portal._t('agree')}
               </label>
               <div style="margin-bottom:0.8rem">
-                <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Full name of the person signing</label>
-                <input id="consent-name-${formId}" type="text" autocomplete="name" placeholder="First and last name" style="width:100%;max-width:300px;padding:0.5rem 0.6rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-size:0.9rem">
+                <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">${Portal._t('signerName')}</label>
+                <input id="consent-name-${formId}" type="text" autocomplete="name" placeholder="${Portal._t('signerPlaceholder')}" style="width:100%;max-width:300px;padding:0.5rem 0.6rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-size:0.9rem">
               </div>
               <div style="margin-bottom:0.5rem">
-                <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">Sign below:</label>
+                <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">${Portal._t('signBelow')}</label>
                 <canvas id="sig-canvas-${formId}" width="300" height="100" style="border:1.5px solid var(--gray-200);border-radius:var(--radius);cursor:crosshair;touch-action:none;background:white;max-width:100%"></canvas>
                 <div style="display:flex;gap:0.5rem;margin-top:0.3rem">
-                  <button class="btn-outline btn-sm" onclick="Portal.clearSignature('${formId}')">Clear</button>
-                  <button class="btn-primary btn-sm" onclick="Portal.submitConsent('${formId}')">Submit</button>
+                  <button class="btn-outline btn-sm" onclick="Portal.clearSignature('${formId}')">${Portal._t('clear')}</button>
+                  <button class="btn-primary btn-sm" onclick="Portal.submitConsent('${formId}')">${Portal._t('submit')}</button>
                 </div>
               </div>
             `}
@@ -2547,11 +2613,13 @@ const Portal = {
     const ctx = canvas.getContext('2d');
     let drawing = false;
 
+    // The canvas is drawn at 300x100 but CSS can shrink it on a narrow phone,
+    // so scale finger positions to canvas pixels or the line lands off the finger.
     const getPos = (e) => {
       const rect = canvas.getBoundingClientRect();
       const clientX = e.touches ? e.touches[0].clientX : e.clientX;
       const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-      return { x: clientX - rect.left, y: clientY - rect.top };
+      return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
     };
 
     const start = (e) => { e.preventDefault(); drawing = true; const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); };
@@ -2578,7 +2646,7 @@ const Portal = {
 
   async submitConsent(formId) {
     const checkbox = document.getElementById('consent-check-' + formId);
-    if (!checkbox || !checkbox.checked) { alert('Please check the agreement box first.'); return; }
+    if (!checkbox || !checkbox.checked) { this._showToast(Portal._t('checkBoxFirst')); return; }
 
     const canvas = document.getElementById('sig-canvas-' + formId);
     if (!canvas) return;
@@ -2587,11 +2655,11 @@ const Portal = {
     const ctx = canvas.getContext('2d');
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const hasContent = imageData.data.some((val, i) => i % 4 === 3 && val > 0);
-    if (!hasContent) { alert('Please sign in the signature area.'); return; }
+    if (!hasContent) { this._showToast(Portal._t('signFirst')); return; }
 
     const nameInput = document.getElementById('consent-name-' + formId);
     const signerName = nameInput ? nameInput.value.trim() : '';
-    if (signerName.split(/\s+/).filter(Boolean).length < 2) { alert('Please type your first and last name.'); return; }
+    if (signerName.split(/\s+/).filter(Boolean).length < 2) { this._showToast(Portal._t('typeFullName')); return; }
 
     const record = {
       signature: canvas.toDataURL('image/png'),
@@ -2614,7 +2682,7 @@ const Portal = {
       await DB.saveSignature(this.tourId, docId, formId, record);
       this.renderForms();
     } catch (e) {
-      alert('Failed to save consent. Please try again.');
+      this._showToast(Portal._t('saveConsentFailed'));
     }
   },
 
@@ -3176,6 +3244,8 @@ const Portal = {
         setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 2000);
       }
       this._flightData = flightData;
+    } else {
+      this._showToast(Portal._t('flightsSaveFailed'));
     }
   },
 
@@ -3190,14 +3260,14 @@ const Portal = {
 
     // Load data in parallel
     let passengers = [], flights = null, invoicesRaw = null, roomPlan = [], signatures = {};
-    const sigPromise = DB._firebaseReady ? DB.getTourSignatures(this.tourId) : Promise.resolve({});
+    const sigPromise = (DB._firebaseReady && !isFamily) ? DB.getTourSignatures(this.tourId) : Promise.resolve({});
     try {
       if (isFamily) {
         [passengers, flights, invoicesRaw, signatures] = await Promise.all([
-          DB.firestore ? DB.firestore.collection('tours').doc(this.tourId).collection('passengers').where('familyId', '==', this._familyId).get().then(s => { const a=[]; s.forEach(d => a.push({id:d.id,...d.data()})); return a; }).catch(() => []) : Promise.resolve([]),
+          DB.getFamilyPassengers(this.tourId, this._familyId).catch(() => []),
           DB.getFamilyFlight(this.tourId, this._familyId),
-          DB._firebaseReady && this._familyData ? Promise.resolve(DB.getInvoices().find(i => i.individualClientRef === this._familyId && i.tourId === this.tourId) || null) : Promise.resolve(null),
-          sigPromise
+          Promise.resolve(null),
+          DB.getFamilySignatureDocs(this.tourId, this._familyId, sessionStorage.getItem('portal_code'))
         ]);
       } else {
         [passengers, flights, signatures] = await Promise.all([
@@ -3230,9 +3300,11 @@ const Portal = {
     const flightsOk = !!(flights && flights.arrival && flights.arrival.flightNumber);
     items.push({ done: flightsOk, label: Portal._t('clFlightDetails'), section: 'flights' });
 
-    // 3. Room plan assigned
-    const roomOk = roomPlan.length > 0 && assignedCount.size > 0;
-    items.push({ done: roomOk, label: Portal._t('roomAssignments').split(' for ')[0] || 'Room plan', detail: roomOk ? `${assignedCount.size} assigned` : '', section: 'roomplan' });
+    // 3. Room plan assigned (organiser only: families do not arrange rooms)
+    if (!isFamily) {
+      const roomOk = roomPlan.length > 0 && assignedCount.size > 0;
+      items.push({ done: roomOk, label: Portal._t('roomAssignments').split(' for ')[0] || 'Room plan', detail: roomOk ? `${assignedCount.size} assigned` : '', section: 'roomplan' });
+    }
 
     // 4. Forms & Consent signed
     if (isFamily) await DB.migrateFamilySignatures(this.tourId, signatures || {}, this._familyId, sessionStorage.getItem('portal_code'));
@@ -3250,9 +3322,10 @@ const Portal = {
       const emergencyOk = passengers.length > 0 && passengers.every(p => p.emergencyContact);
       items.push({ done: emergencyOk, label: Portal._t('clEmergencyContacts'), section: 'passengers' });
 
-      if (Portal._paymentsVisible()) {
-        const paymentOk = !!(invoicesRaw && invoicesRaw.amount && (invoicesRaw.payments || []).reduce((s,p) => s + Number(p.amount), 0) >= Number(invoicesRaw.amount));
-        items.push({ done: paymentOk, label: Portal._t('clPaymentComplete'), section: 'payments' });
+      if (this._familyPayment) {
+        const n = this._familyPaymentNumbers();
+        const paymentOk = !!(n && n.total > 0 && n.paid >= n.total - 0.005);
+        items.push({ done: paymentOk, label: Portal._t('clPaymentComplete'), detail: n ? Portal._fmtCurrency(n.paid, n.cur) + ' / ' + Portal._fmtCurrency(n.total, n.cur) : '', section: 'payments' });
       }
     }
 
