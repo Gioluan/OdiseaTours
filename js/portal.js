@@ -2479,9 +2479,17 @@ const Portal = {
     if (!t) return;
 
     const isFamily = Portal._portalMode === 'family' && !!this._familyId;
-    const requiredForms = this._requiredFormsFor(t, isFamily);
+    const requiredForms = this._formsToShow(t, isFamily);
     const allRequired = t.requiredForms || ['terms', 'medical', 'photo'];
 
+    // Adults-only parties (e.g. a coach travelling alone) sign the waiver for themselves.
+    this._familyAdultsOnly = false;
+    if (isFamily) {
+      try {
+        const mine = await DB.getFamilyPassengers(this.tourId, this._familyId);
+        this._familyAdultsOnly = mine.length > 0 && !mine.some(p => ['player', 'student', 'sibling'].includes(String(p.role || '').toLowerCase()));
+      } catch (e) {}
+    }
     const [allSigs, minors] = await Promise.all([
       isFamily ? DB.getFamilySignatureDocs(this.tourId, this._familyId, sessionStorage.getItem('portal_code'))
                : DB.getTourSignatures(this.tourId),
@@ -2509,6 +2517,7 @@ const Portal = {
         const descText = def.descFamily && isFamily ? def.descFamily : (def.descTour || def.desc || '');
         const signed = mySignatures[formId];
         const isWaiver = formId === 'waiver';
+        if (DB.OPTIONAL_FORMS.includes(formId)) return Portal._optionalFormCard(formId, def, signed, esc);
         return `
           <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-bottom:1rem;box-shadow:var(--shadow);border-left:4px solid ${signed ? 'var(--green)' : 'var(--amber)'}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;gap:0.5rem">
@@ -2516,15 +2525,15 @@ const Portal = {
               ${signed ? `<span style="background:var(--green);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">${Portal._t('signed')}</span>` : `<span style="background:var(--amber);color:white;padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">${Portal._t('pending')}</span>`}
             </div>
             ${isWaiver ? `
-              <div style="font-size:0.84rem;color:var(--gray-500);line-height:1.5;max-height:${signed ? '9rem' : '22rem'};overflow:auto;border:1px solid var(--gray-100);border-radius:var(--radius);padding:0.8rem;margin-bottom:0.8rem">${def.body(t)}</div>
+              <div id="form-text-${formId}" style="font-size:0.84rem;color:var(--gray-500);line-height:1.5;max-height:${signed ? '9rem' : '22rem'};overflow:auto;border:1px solid var(--gray-100);border-radius:var(--radius);padding:0.8rem;margin-bottom:0.8rem">${def.body(t)}</div>
               ${signed ? '' : `
               <div style="margin-bottom:0.8rem;font-size:0.86rem">
                 <strong style="color:var(--navy)">${Portal._t('waiverMinors')}</strong>
                 ${minors.length
                   ? `<ul style="margin:0.3rem 0 0 1.1rem">${minors.map(m => `<li>${esc(m)}</li>`).join('')}</ul>`
-                  : `<p style="color:var(--red);margin-top:0.3rem">${Portal._t('waiverNoMinors')}</p>`}
+                  : (Portal._familyAdultsOnly ? `<p style="margin-top:0.3rem;color:var(--gray-500)">No minors in your party: you sign for yourself.</p>` : `<p style="color:var(--red);margin-top:0.3rem">${Portal._t('waiverNoMinors')}</p>`)}
               </div>`}
-            ` : `<p style="font-size:0.88rem;color:var(--gray-500);margin-bottom:1rem">${descText}</p>`}
+            ` : `<p id="form-text-${formId}" style="font-size:0.88rem;color:var(--gray-500);margin-bottom:1rem">${descText}</p>`}
             ${signed ? `
               <div style="background:var(--gray-50);padding:0.8rem;border-radius:var(--radius)">
                 <p style="font-size:0.82rem;color:var(--gray-400)">${signed.signerName ? Portal._t('signedBy') + ' <strong>' + esc(signed.signerName) + '</strong>' : Portal._t('signed')} ${Portal._t('signedOn')} ${Portal._fmtDate(signed.date)}</p>
@@ -2533,7 +2542,7 @@ const Portal = {
               </div>
             ` : `
               <label style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:0.8rem;font-size:0.88rem;cursor:pointer">
-                <input type="checkbox" id="consent-check-${formId}" style="margin-top:0.2rem;width:20px;height:20px;flex-shrink:0"> ${isWaiver ? Portal._t('waiverAgree') : Portal._t('agree')}
+                <input type="checkbox" id="consent-check-${formId}" style="margin-top:0.2rem;width:20px;height:20px;flex-shrink:0"> ${isWaiver ? (Portal._familyAdultsOnly ? 'I have read and agree to this waiver for myself.' : Portal._t('waiverAgree')) : Portal._t('agree')}
               </label>
               <div style="margin-bottom:0.8rem">
                 <label style="font-size:0.82rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:0.3rem">${Portal._t('signerName')}</label>
@@ -2562,10 +2571,24 @@ const Portal = {
   // The waiver is signed per family (a parent for their own minors), so the
   // group / organiser code never has to sign it.
   _requiredFormsFor(t, isFamily) {
-    const forms = (t && t.requiredForms) || ['terms', 'medical', 'photo'];
     const hasFamilies = !!(t && t.individualClients && t.individualClients.length);
-    return forms.filter(f => !(f === 'waiver' && !isFamily && hasFamilies));
+    const forms = DB.requiredFormIds(t);
+    // The waiver includes the medical declaration, so families with a waiver
+    // sign one form instead of two.
+    const waiverCoversMedical = isFamily && forms.includes('waiver');
+    return forms.filter(f => !(f === 'waiver' && !isFamily && hasFamilies))
+                .filter(f => !(f === 'medical' && waiverCoversMedical));
   },
+
+  // Every form shown, required first, then the optional ones (photo consent).
+  _formsToShow(t, isFamily) {
+    const all = (t && t.requiredForms) || ['terms', 'medical', 'photo'];
+    return this._requiredFormsFor(t, isFamily).concat(all.filter(f => DB.OPTIONAL_FORMS.includes(f)));
+  },
+
+  // Bumped whenever a form's wording changes; saved with each signature together
+  // with the exact text, so we can always show what a family agreed to.
+  FORM_VERSIONS: { terms: '2026-11-09', medical: '2026-11-09', photo: '2026-11-09', waiver: '2026-11-09' },
 
   // This session's signatures: the family doc in family mode (plus anything the
   // family signed under its code before per-family docs), else the code doc.
@@ -2604,25 +2627,67 @@ const Portal = {
   },
 
   FORM_DEFS: {
-    terms: { title: 'Terms & Conditions', desc: 'I accept the tour terms and conditions, including <a href="#" onclick="event.preventDefault();Portal.showSection(\'terms\')" style="color:var(--navy);font-weight:600;text-decoration:underline">cancellation policy</a> and <a href="#" onclick="event.preventDefault();Portal.showSection(\'terms\')" style="color:var(--navy);font-weight:600;text-decoration:underline">travel insurance requirements</a>.' },
+    terms: { title: 'Terms & Conditions', desc: 'I accept the tour terms and conditions, including <a href="#" onclick="event.preventDefault();Portal.showSection(\'terms\')" style="color:var(--navy);font-weight:600;text-decoration:underline">cancellation policy</a> and <a href="#" onclick="event.preventDefault();Portal.showSection(\'terms\')" style="color:var(--navy);font-weight:600;text-decoration:underline">travel insurance recommendation</a>.' },
     medical: { title: 'Medical Declaration', descTour: 'I acknowledge that each family/traveler is solely responsible for disclosing any medical conditions in their passenger registration forms and for confirming that all members of their party are fit to travel. Odisea Tours and the group organizer accept no liability for undisclosed medical conditions.', descFamily: 'I confirm that all medical conditions have been disclosed in the passenger registration forms and that all travelers in my party are fit to travel.' },
-    photo: { title: 'Photo Consent', desc: 'I consent to photographs and videos being taken during the tour for promotional and record-keeping purposes.' },
+    photo: { title: 'Photo Consent', desc: 'Odisea Tours may take photos and videos during the tour. May we use photos and videos in which members of my party appear, including minors, on our website and social media? This is optional and does not affect your place on the trip. You can change your answer at any time.' },
     // DRAFT wording - to be reviewed by Odisea's insurer / lawyer before use.
     waiver: {
       title: 'Participation Waiver & Parental Consent',
       body: t => {
+        // Version 2026-11-09: includes the medical declaration; insurance recommended, not required.
         const club = t.groupName || t.organization || t.clientName || 'the club';
         return `
           <p><strong>Tour:</strong> ${t.tourName || ''}${t.startDate ? ' &middot; ' + Portal._fmtDate(t.startDate) + ' to ' + Portal._fmtDate(t.endDate) : ''}. Organised by ${club} with Odisea Tours (Ground Agents Solutions SL) as tour operator in Spain.</p>
           <p style="margin-top:0.5rem"><strong>1. Participation.</strong> I give permission for the minors listed below to take part in all tour activities, including football training sessions, matches and tournaments with professional clubs and local teams, stadium tours, sightseeing and coach travel.</p>
-          <p style="margin-top:0.5rem"><strong>2. Risks.</strong> I understand that football and travel involve risks, including injury, and I accept these risks on behalf of the minors. I confirm they are fit to take part and that any medical condition, allergy or medication has been declared in their traveler registration.</p>
+          <p style="margin-top:0.5rem"><strong>2. Risks and medical declaration.</strong> I understand that football and travel involve risks, including injury, and I accept these risks for myself and on behalf of the minors. I confirm that every traveler in my party is fit to travel and to take part, and that all medical conditions, allergies and medication have been declared in their traveler registration. Odisea Tours and the club are not responsible for conditions that were not declared.</p>
           <p style="margin-top:0.5rem"><strong>3. Emergency medical treatment.</strong> If I cannot be reached, I authorise the tour staff and the club's staff to obtain emergency medical care, treatment or hospitalisation that a doctor considers necessary, and I accept responsibility for its cost where not covered by insurance.</p>
           <p style="margin-top:0.5rem"><strong>4. Supervision and conduct.</strong> The minors will follow the instructions of their coaches, the club's staff and the tour directors. Minors may not leave the group without an authorised adult. Serious misconduct may lead to removal from activities at the family's cost.</p>
-          <p style="margin-top:0.5rem"><strong>5. Insurance.</strong> I confirm the minors will hold valid travel and medical insurance for the whole trip.</p>
+          <p style="margin-top:0.5rem"><strong>5. Insurance.</strong> I understand that Odisea Tours strongly recommends that every traveler holds travel and medical insurance for the whole trip, including cancellation, medical care and repatriation, and that any cost not covered by insurance is my responsibility.</p>
           <p style="margin-top:0.5rem"><strong>6. Release.</strong> To the extent permitted by law, I release Odisea Tours, its staff and partner clubs from liability for injury, loss or damage arising from ordinary participation in the activities, except where caused by their negligence or wilful misconduct.</p>
           <p style="margin-top:0.5rem"><strong>7. Programme changes.</strong> Activities, training sessions, matches, stadium tours, visits and tickets are subject to availability. If any of them is not available at the time of booking, or is cancelled or rescheduled by the provider (clubs, LaLiga, venues or local authorities), Odisea Tours will replace it with an activity of the same or higher quality. These substitutions are part of the service and do not give rise to any refund or compensation.</p>
           <p style="margin-top:0.5rem">This waiver is governed by Spanish law.</p>`;
       }
+    }
+  },
+
+  // Photo consent: a free Yes / No choice, saved with name, date and version.
+  // Changing it later is allowed and simply records the new choice.
+  _optionalFormCard(formId, def, rec, esc) {
+    const choice = rec ? rec.choice || (rec.agreed ? 'yes' : '') : '';
+    const desc = def.descFamily && Portal._portalMode === 'family' ? def.descFamily : (def.descTour || def.desc || '');
+    return `
+      <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-bottom:1rem;box-shadow:var(--shadow);border-left:4px solid var(--gray-200)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;gap:0.5rem">
+          <h3 style="font-size:1rem;color:var(--navy)">${def.title}</h3>
+          <span style="background:var(--gray-100);color:var(--gray-500);padding:0.2rem 0.8rem;border-radius:12px;font-size:0.78rem;font-weight:600">Optional</span>
+        </div>
+        <p id="form-text-${formId}" style="font-size:0.88rem;color:var(--gray-500);margin-bottom:0.8rem">${desc}</p>
+        ${choice ? `<p style="font-size:0.84rem;margin-bottom:0.6rem">Your answer: <strong>${choice === 'yes' ? 'Yes, I consent' : 'No, I do not consent'}</strong>${rec.signerName ? ' (' + esc(rec.signerName) + ', ' + Portal._fmtDate(rec.date) + ')' : ''}. You can change it below.</p>` : ''}
+        <input id="consent-name-${formId}" type="text" autocomplete="name" placeholder="${Portal._t('signerPlaceholder')}" value="${esc(rec && rec.signerName || '')}" style="width:100%;max-width:300px;padding:0.5rem 0.6rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-size:0.9rem;margin-bottom:0.6rem">
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+          <button class="${choice === 'yes' ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="Portal.submitOptionalForm('${formId}','yes')">Yes, I consent</button>
+          <button class="${choice === 'no' ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="Portal.submitOptionalForm('${formId}','no')">No, I do not consent</button>
+        </div>
+      </div>`;
+  },
+
+  async submitOptionalForm(formId, choice) {
+    const nameInput = document.getElementById('consent-name-' + formId);
+    const signerName = nameInput ? nameInput.value.trim() : '';
+    if (signerName.split(/\s+/).filter(Boolean).length < 2) { this._showToast(Portal._t('typeFullName')); return; }
+    const textEl = document.getElementById('form-text-' + formId);
+    const record = { choice, agreed: choice === 'yes', signerName, date: new Date().toISOString(),
+                     version: Portal.FORM_VERSIONS[formId] || '', text: textEl ? textEl.innerText.trim().slice(0, 2000) : '' };
+    const sessionCode = sessionStorage.getItem('portal_code') || 'client';
+    const isFamily = this._portalMode === 'family' && this._familyId;
+    const docId = isFamily ? DB.consentDocId(null, this._familyId) : DB.consentDocId(sessionCode);
+    if (isFamily) record.familyId = String(this._familyId);
+    try {
+      await DB.saveSignature(this.tourId, docId, formId, record);
+      this._showToast('Saved, thank you');
+      this.renderForms();
+    } catch (e) {
+      this._showToast(Portal._t('saveConsentFailed'));
     }
   },
 
@@ -2690,9 +2755,13 @@ const Portal = {
     };
     if (formId === 'waiver') {
       const minors = this._waiverMinors || [];
-      if (!minors.length) { alert('Please register your travelers first: the waiver must list every minor by name.'); return; }
+      if (!minors.length && !this._familyAdultsOnly) { this._showToast(Portal._t('waiverNoMinors')); return; }
       record.minors = minors;
     }
+    // What exactly was agreed: version stamp plus the text on screen.
+    record.version = Portal.FORM_VERSIONS[formId] || '';
+    const textEl = document.getElementById('form-text-' + formId);
+    if (textEl) record.text = textEl.innerText.trim().slice(0, 9000);
 
     const sessionCode = sessionStorage.getItem('portal_code') || 'client';
     const isFamily = this._portalMode === 'family' && this._familyId;

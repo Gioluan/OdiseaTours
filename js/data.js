@@ -904,18 +904,41 @@ const DB = {
     }
   },
 
+  // A code is the only key to a family's passports and medical notes, so the
+  // random part is 8 characters from a crypto source (32^8, about 1.1 trillion),
+  // in two groups of 4 so it is easy to read. The prefix is just a label.
+  // No 0/O/1/I to avoid misreading.
+  _randomCodePart(n) {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const bytes = new Uint8Array(n);
+    (window.crypto || window.msCrypto).getRandomValues(bytes);
+    return Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+  },
+
   // Generate a unique access code for a tour
   generateAccessCode(tourName) {
     const base = (tourName || 'TOUR').replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase();
-    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
-    return base + '-' + rand;
+    const r = this._randomCodePart(8);
+    return base + '-' + r.slice(0, 4) + '-' + r.slice(4);
   },
 
   // Generate a unique family access code (F-prefix distinguishes from tour codes)
   generateFamilyAccessCode(familyName) {
     const base = (familyName || 'FMLY').replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase();
-    const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
-    return 'F' + base + '-' + rand;
+    const r = this._randomCodePart(8);
+    return 'F' + base + '-' + r.slice(0, 4) + '-' + r.slice(4);
+  },
+
+  // Forms a family may sign but does not have to (photo consent must be a free
+  // choice under GDPR). They never count towards "forms complete".
+  OPTIONAL_FORMS: ['photo'],
+  // Per family: the waiver includes the medical declaration, so on trips with
+  // family portals and a waiver, families owe terms + waiver only.
+  requiredFormIds(t) {
+    const forms = (t && t.requiredForms) || ['terms', 'medical', 'photo'];
+    const families = !!(t && t.individualClients && t.individualClients.length);
+    return forms.filter(f => !this.OPTIONAL_FORMS.includes(f))
+                .filter(f => !(f === 'medical' && families && forms.includes('waiver')));
   },
 
   // Query Firestore for a tour by access code (tour code or family code).
@@ -1521,8 +1544,8 @@ const DB = {
   // Generate a unique guide access code for a tour
   generateGuideAccessCode(tourName) {
     const base = (tourName || 'GUIDE').replace(/[^a-zA-Z0-9]/g, '').substring(0, 3).toUpperCase();
-    const rand = Math.random().toString(36).substring(2, 7).toUpperCase();
-    return 'G' + base + '-' + rand;
+    const r = this._randomCodePart(8);
+    return 'G' + base + '-' + r.slice(0, 4) + '-' + r.slice(4);
   },
 
   // Query Firestore for a tour by guide access code
@@ -1734,7 +1757,7 @@ const DB = {
   // codesById (CRM only) maps familyId -> access code, to pick up signatures a
   // family made under its code before per-family consent docs existed.
   familyStatusRows(t, families, passengers, flights, sigs, codesById) {
-    const required = (t && t.requiredForms) || ['terms', 'medical', 'photo'];
+    const required = this.requiredFormIds(t);
     return (families || []).map(ic => {
       const id = String(ic.id);
       const pax = (passengers || []).filter(p => !p._removed && String(p.familyId || '') === id);
@@ -1758,7 +1781,7 @@ const DB = {
   // familyAccessCodes). With families, every family owes every required form;
   // otherwise each signer (group code) owes them.
   formsProgress(t, sigs) {
-    const required = (t && t.requiredForms) || ['terms', 'medical', 'photo'];
+    const required = this.requiredFormIds(t);
     const families = (t && t.individualClients) || [];
     const signers = Object.values(sigs || {}).filter(f => f && Object.keys(f).length).length;
     if (families.length) {
