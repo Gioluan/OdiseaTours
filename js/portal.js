@@ -59,6 +59,15 @@ const Portal = {
       waiverMinors: 'Minors covered by this waiver', waiverNoMinors: 'Register your travelers first (Passengers section): the waiver lists every player and sibling under 18 by name.',
       formFor: 'For', checkBoxFirst: 'Please tick the agreement box first.', signFirst: 'Please sign in the signature area.',
       typeFullName: 'Please type your first and last name.', saveConsentFailed: 'The form could not be saved. Please try again.',
+      itinDraftTitle: 'Provisional itinerary',
+      itinDraftNote: 'This is a draft programme: times, the order of the days and some activities may still change (club and tournament schedules, venue availability). We will confirm the final itinerary closer to the trip.',
+      daysNights: 'days', flightsIntro: 'Airport transfers are included on the arrival and departure days of the tour only.',
+      groupArrivalDay: 'Group arrival day', groupDepartureDay: 'Group departure day',
+      arriveEarlier: 'We are arriving on an earlier date (own arrangements)',
+      arriveEarlierNote: 'No problem. The group airport transfer runs on the arrival day only, so we will let you know where and when to meet the group that day. Please still enter your flight below.',
+      leaveLater: 'We are leaving on a later date (own arrangements)',
+      leaveLaterNote: 'No problem. The group airport transfer runs on the departure day only, so please organise your own way to the airport. Please still enter your flight below.',
+      yourArrivalDate: 'Your arrival date', yourDepartureDate: 'Your departure date',
       passportValidUntil: 'Spain needs the passport valid at least 3 months after you leave, so until at least',
       passportsTooSoon: 'Spain requires every passport to be valid until at least',
       chatWithOperator: 'Chat with your tour operator',
@@ -159,6 +168,15 @@ const Portal = {
       formFor: 'Para', checkBoxFirst: 'Marca primero la casilla de aceptacion.', signFirst: 'Firma en el recuadro de firma.',
       typeFullName: 'Escribe tu nombre y apellido.', saveConsentFailed: 'No se pudo guardar el formulario. Intentalo de nuevo.',
       legalEnglishNote: 'El texto legal de los formularios esta en ingles, que es la version valida.',
+      itinDraftTitle: 'Itinerario provisional',
+      itinDraftNote: 'Este es un programa provisional: los horarios, el orden de los dias y algunas actividades pueden cambiar (calendarios del club y del torneo, disponibilidad de instalaciones). Confirmaremos el itinerario final mas cerca del viaje.',
+      daysNights: 'dias', flightsIntro: 'Los traslados al aeropuerto estan incluidos solo en los dias de llegada y salida del grupo.',
+      groupArrivalDay: 'Dia de llegada del grupo', groupDepartureDay: 'Dia de salida del grupo',
+      arriveEarlier: 'Llegamos antes (por nuestra cuenta)',
+      arriveEarlierNote: 'Sin problema. El traslado del grupo desde el aeropuerto es solo el dia de llegada, asi que os diremos donde y a que hora uniros al grupo ese dia. Indica igualmente tu vuelo abajo.',
+      leaveLater: 'Nos vamos mas tarde (por nuestra cuenta)',
+      leaveLaterNote: 'Sin problema. El traslado del grupo al aeropuerto es solo el dia de salida, asi que tendreis que organizar vuestro traslado. Indica igualmente tu vuelo abajo.',
+      yourArrivalDate: 'Tu fecha de llegada', yourDepartureDate: 'Tu fecha de salida',
       passportValidUntil: 'Espana exige que el pasaporte sea valido al menos 3 meses despues de tu salida, es decir, hasta al menos el',
       passportsTooSoon: 'Espana exige que cada pasaporte sea valido hasta al menos el',
       chatWithOperator: 'Chatea con tu operador turistico',
@@ -775,8 +793,11 @@ const Portal = {
 
     container.innerHTML = `
       <div class="section-header">
-        <h2>Itinerary</h2>
-        <p>${days.length} day${days.length!==1?'s':''} planned</p>
+        <h2>${Portal._t('itinerary')}</h2>
+        <p>${days.length} ${Portal._t('daysNights')}${t.nights ? ' &middot; ' + t.nights + ' ' + Portal._t('nights') : ''}${t.startDate ? ' &middot; ' + Portal._fmtDate(t.startDate) + ' – ' + Portal._fmtDate(t.endDate) : ''}</p>
+      </div>
+      <div style="background:#fff8e6;border:1px solid #f5d98b;border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:1rem;font-size:0.85rem;line-height:1.5">
+        <strong style="color:var(--navy)">${Portal._t('itinDraftTitle')}.</strong> ${Portal._t('itinDraftNote')}
       </div>
       ${days.map(day => `
         <div class="itin-day">
@@ -2872,7 +2893,7 @@ const Portal = {
         <div><div style="font-size:0.7rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Balance</div><div style="font-weight:700;color:${n.balance > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(n.balance)}</div></div>
       </div>
       ${n.items.map(installment).join('')}
-      <p style="font-size:0.8rem;color:var(--gray-400);margin:0.4rem 0.2rem 1rem">Payments can take a few working days to show here. Any questions? Send us a message from the Messages section.</p>`;
+      <p style="font-size:0.8rem;color:var(--gray-400);margin:0.4rem 0.2rem 1rem">We update this page by hand when your payment reaches us: card payments usually show within 1 to 2 working days, bank transfers within 3 to 6 working days. You do not need to send proof, but you are welcome to message us. Any questions? Send us a message from the Messages section.</p>`;
   },
 
   async renderPaymentStatus() {
@@ -3125,6 +3146,9 @@ const Portal = {
     const arr = f.arrival || {};
     const ret = f.return || {};
     const isSubmitted = !!(arr.flightNumber || ret.flightNumber);
+    const t = this.tourData || {};
+    const arrEarly = !!arr.ownArrangement;
+    const retLate = !!ret.ownArrangement;
     const statusTag = isSubmitted
       ? `<span style="background:rgba(46,204,113,0.12);color:#1e8449;padding:0.25rem 0.75rem;border-radius:12px;font-size:0.78rem;font-weight:600">${Portal._t('flightsSubmitted')}</span>`
       : `<span style="background:rgba(231,76,60,0.12);color:#c0392b;padding:0.25rem 0.75rem;border-radius:12px;font-size:0.78rem;font-weight:600">${Portal._t('flightsNotSubmitted')}</span>`;
@@ -3135,27 +3159,21 @@ const Portal = {
         <p style="display:flex;align-items:center;gap:0.5rem">${this._familyData ? this._familyData.name : ''} ${statusTag}</p>
       </div>
       <form onsubmit="Portal.saveFlights(event)">
-        <div class="flight-section">
-          <div class="flight-section-title">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            Booking reference
-          </div>
-          <div class="form-group">
-            <label>Booking reference (PNR)</label>
-            <input id="fl-pnr" placeholder="e.g. K3LM9P" value="${Portal._escapeAttr(f.bookingRef || '')}"
-                   style="text-transform:uppercase">
-            <small style="color:var(--gray-400);font-size:0.72rem;display:block;margin-top:0.25rem">
-              The code on your airline confirmation. It lets us find your booking if a flight changes.
-            </small>
-          </div>
+        <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.8rem 1rem;margin-bottom:1rem;font-size:0.85rem;line-height:1.5;color:var(--gray-500)">
+          ${Portal._t('flightsIntro')}
+          ${t.startDate ? `<div style="margin-top:0.3rem"><strong style="color:var(--navy)">${Portal._t('groupArrivalDay')}:</strong> ${Portal._fmtDate(t.startDate)} &middot; <strong style="color:var(--navy)">${Portal._t('groupDepartureDay')}:</strong> ${Portal._fmtDate(t.endDate)}</div>` : ''}
         </div>
         <div class="flight-section">
           <div class="flight-section-title">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5 5.1 3 -1.9 1.9-2.1-.5-.6.6 2.6 1.5 1.5 2.6.6-.6-.5-2.1 1.9-1.9 3 5.1.5-.3c.4-.2.6-.6.5-1.1z"/></svg>
             ${Portal._t('arrivalFlight')}
           </div>
+          <label style="display:flex;gap:0.5rem;align-items:flex-start;font-size:0.86rem;margin-bottom:0.6rem;cursor:pointer">
+            <input type="checkbox" id="fl-arr-early" ${arrEarly ? 'checked' : ''} onchange="Portal._toggleOwnDate('arr', this.checked)" style="width:18px;height:18px;margin-top:0.1rem;flex-shrink:0"> ${Portal._t('arriveEarlier')}
+          </label>
+          <div id="fl-arr-early-note" style="display:${arrEarly ? 'block' : 'none'};background:#eef6ff;border-radius:var(--radius);padding:0.6rem 0.8rem;font-size:0.82rem;margin-bottom:0.6rem;line-height:1.45">${Portal._t('arriveEarlierNote')}</div>
           <div class="form-row form-row-2">
-            <div class="form-group"><label>${Portal._t('flightDate')}</label><input type="date" id="fl-arr-date" value="${Portal._escapeAttr(arr.date || '')}"></div>
+            <div class="form-group"><label id="fl-arr-date-label">${arrEarly ? Portal._t('yourArrivalDate') : Portal._t('flightDate')}</label><input type="date" id="fl-arr-date" value="${Portal._escapeAttr(arrEarly ? (arr.date || '') : (t.startDate || arr.date || ''))}" ${arrEarly ? (t.startDate ? 'max="' + t.startDate + '"' : '') : 'readonly style="background:var(--gray-50)"'}></div>
             <div class="form-group"><label>${Portal._t('flightNumber')}</label><input id="fl-arr-number" placeholder="e.g. BA2472" value="${Portal._escapeAttr(arr.flightNumber || '')}"></div>
           </div>
           <div class="form-row form-row-2">
@@ -3178,8 +3196,12 @@ const Portal = {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform:scaleX(-1)"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5 5.1 3 -1.9 1.9-2.1-.5-.6.6 2.6 1.5 1.5 2.6.6-.6-.5-2.1 1.9-1.9 3 5.1.5-.3c.4-.2.6-.6.5-1.1z"/></svg>
             ${Portal._t('returnFlight')}
           </div>
+          <label style="display:flex;gap:0.5rem;align-items:flex-start;font-size:0.86rem;margin-bottom:0.6rem;cursor:pointer">
+            <input type="checkbox" id="fl-ret-late" ${retLate ? 'checked' : ''} onchange="Portal._toggleOwnDate('ret', this.checked)" style="width:18px;height:18px;margin-top:0.1rem;flex-shrink:0"> ${Portal._t('leaveLater')}
+          </label>
+          <div id="fl-ret-late-note" style="display:${retLate ? 'block' : 'none'};background:#eef6ff;border-radius:var(--radius);padding:0.6rem 0.8rem;font-size:0.82rem;margin-bottom:0.6rem;line-height:1.45">${Portal._t('leaveLaterNote')}</div>
           <div class="form-row form-row-2">
-            <div class="form-group"><label>${Portal._t('flightDate')}</label><input type="date" id="fl-ret-date" value="${Portal._escapeAttr(ret.date || '')}"></div>
+            <div class="form-group"><label id="fl-ret-date-label">${retLate ? Portal._t('yourDepartureDate') : Portal._t('flightDate')}</label><input type="date" id="fl-ret-date" value="${Portal._escapeAttr(retLate ? (ret.date || '') : (t.endDate || ret.date || ''))}" ${retLate ? (t.endDate ? 'min="' + t.endDate + '"' : '') : 'readonly style="background:var(--gray-50)"'}></div>
             <div class="form-group"><label>${Portal._t('flightNumber')}</label><input id="fl-ret-number" placeholder="e.g. BA2473" value="${Portal._escapeAttr(ret.flightNumber || '')}"></div>
           </div>
           <div class="form-row form-row-2">
@@ -3201,6 +3223,30 @@ const Portal = {
       </form>`;
   },
 
+  // Transfers run on the group's arrival and departure days only. A family
+  // arriving earlier / leaving later ticks the box and picks its own date.
+  _toggleOwnDate(which, own) {
+    const t = this.tourData || {};
+    const isArr = which === 'arr';
+    const input = document.getElementById(isArr ? 'fl-arr-date' : 'fl-ret-date');
+    const note = document.getElementById(isArr ? 'fl-arr-early-note' : 'fl-ret-late-note');
+    const label = document.getElementById(isArr ? 'fl-arr-date-label' : 'fl-ret-date-label');
+    const fixed = isArr ? t.startDate : t.endDate;
+    if (note) note.style.display = own ? 'block' : 'none';
+    if (label) label.textContent = own ? Portal._t(isArr ? 'yourArrivalDate' : 'yourDepartureDate') : Portal._t('flightDate');
+    if (!input) return;
+    if (own) {
+      input.readOnly = false; input.style.background = '';
+      if (isArr && fixed) input.max = fixed; if (!isArr && fixed) input.min = fixed;
+      if (input.value === fixed) input.value = '';
+      input.focus();
+    } else {
+      input.readOnly = true; input.style.background = 'var(--gray-50)';
+      input.removeAttribute('max'); input.removeAttribute('min');
+      if (fixed) input.value = fixed;
+    }
+  },
+
   async saveFlights(event) {
     if (event) event.preventDefault();
     if (!this.tourId) return;
@@ -3209,8 +3255,10 @@ const Portal = {
     const val = id => (document.getElementById(id) || {}).value || '';
     const flightData = {
       familyName: isFamily ? ((this._familyData && this._familyData.name) || '') : '',
-      bookingRef: val('fl-pnr').replace(/\s+/g, '').toUpperCase(),
+      // Kept from earlier saves; the field is no longer asked for.
+      bookingRef: (this._flightData && this._flightData.bookingRef) || '',
       arrival: {
+        ownArrangement: !!(document.getElementById('fl-arr-early') || {}).checked,
         date: val('fl-arr-date'), flightNumber: val('fl-arr-number').toUpperCase(),
         airline: val('fl-arr-airline'), departureAirport: val('fl-arr-dep-airport').toUpperCase(),
         arrivalAirport: val('fl-arr-arr-airport').toUpperCase(), departureTime: val('fl-arr-dep-time'),
@@ -3218,6 +3266,7 @@ const Portal = {
         notes: val('fl-arr-notes')
       },
       return: {
+        ownArrangement: !!(document.getElementById('fl-ret-late') || {}).checked,
         date: val('fl-ret-date'), flightNumber: val('fl-ret-number').toUpperCase(),
         airline: val('fl-ret-airline'), departureAirport: val('fl-ret-dep-airport').toUpperCase(),
         arrivalAirport: val('fl-ret-arr-airport').toUpperCase(), departureTime: val('fl-ret-dep-time'),
