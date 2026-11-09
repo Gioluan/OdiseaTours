@@ -1988,14 +1988,17 @@ const Tours = {
     if (!t || !DB._firebaseReady || !(t.individualClients || []).length) return;
     this._loadFamilyPayments(tourId);
     try {
-      const [passengers, flights, sigs] = await Promise.all([
+      const [passengers, flights, sigs, choices] = await Promise.all([
         DB.getTourPassengers(String(tourId)).catch(() => []),
         DB.getAllFamilyFlights(String(tourId)).catch(() => []),
-        DB.getTourSignatures(String(tourId), { source: 'server' })
+        DB.getTourSignatures(String(tourId), { source: 'server' }),
+        DB.firestore.collection('tours').doc(String(tourId)).collection('familyChoices').get({ source: 'server' })
+          .then(snap => { const o = {}; snap.forEach(d => { const c = d.data() || {}; if (c.confirmedCount != null) o[d.id] = c.confirmedCount; }); return o; })
+          .catch(() => ({}))
       ]);
       const codes = {};
       Object.entries(t.familyAccessCodes || {}).forEach(([id, e]) => { if (e && e.code) codes[String(id)] = e.code; });
-      const rows = DB.familyStatusRows(t, t.individualClients, passengers, flights, sigs, codes);
+      const rows = DB.familyStatusRows(t, t.individualClients, passengers, flights, sigs, codes, choices);
       const mark = (ok, extra) => `<span style="color:${ok ? 'var(--green)' : 'var(--red)'};font-weight:700">${ok ? '&#10003;' : '&times;'}</span>${extra ? ' <span style="color:var(--gray-400)">' + extra + '</span>' : ''}`;
       const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
       rows.forEach(r => {

@@ -1756,12 +1756,15 @@ const DB = {
   // Per-family completion, shared by the organiser portal and the CRM.
   // codesById (CRM only) maps familyId -> access code, to pick up signatures a
   // family made under its code before per-family consent docs existed.
-  familyStatusRows(t, families, passengers, flights, sigs, codesById) {
+  // expectedById (optional): confirmed travelers per family from the portal's
+  // Confirmed/TBC box (familyChoices.confirmedCount); TBC people are not expected.
+  familyStatusRows(t, families, passengers, flights, sigs, codesById, expectedById) {
     const required = this.requiredFormIds(t);
     return (families || []).map(ic => {
       const id = String(ic.id);
       const pax = (passengers || []).filter(p => !p._removed && String(p.familyId || '') === id);
-      const expected = (ic.numStudents || 0) + (ic.numSiblings || 0) + (ic.numAdults || 0);
+      const confirmed = expectedById && expectedById[id];
+      const expected = confirmed != null ? Number(confirmed) : (ic.numStudents || 0) + (ic.numSiblings || 0) + (ic.numAdults || 0);
       const fl = (flights || []).find(f => String(f.familyId || f.id) === id);
       const mine = this.familySignatures(sigs || {}, id, (codesById || {})[id]);
       const formsSigned = required.filter(f => mine[f]).length;

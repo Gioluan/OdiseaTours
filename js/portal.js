@@ -576,7 +576,7 @@ const Portal = {
     else countdownText = Portal._t('tourInProgress');
 
     const groupSize = (t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0);
-    const familyTravelers = isFamily ? ((this._familyData.numStudents||0) + (this._familyData.numSiblings||0) + (this._familyData.numAdults||0)) : 0;
+    const familyTravelers = isFamily ? Portal._familyExpected() : 0;
 
     container.innerHTML = `
       <div class="hero-card">
@@ -712,7 +712,9 @@ const Portal = {
       if (p.paid > 0) return '<span style="color:var(--green);font-weight:700">&#10003;</span> <span style="color:var(--gray-400)">' + p.paid + '/' + p.count + '</span>';
       return '<span style="color:var(--red);font-weight:700">&times;</span> <span style="color:var(--gray-400)">0/' + p.count + '</span>';
     };
-    const rows = DB.familyStatusRows(t, families, passengers, flights, sigs, {});
+    const expectedById = {};
+    Object.entries(goingById).forEach(([id, g]) => { if (g && g.confirmedCount != null) expectedById[id] = g.confirmedCount; });
+    const rows = DB.familyStatusRows(t, families, passengers, flights, sigs, {}, expectedById);
     const done = rows.filter(r => r.complete).length;
     const mark = ok => ok ? '<span style="color:var(--green);font-weight:700">&#10003;</span>' : '<span style="color:var(--red);font-weight:700">&times;</span>';
     const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -993,7 +995,7 @@ const Portal = {
 
     const t = this.tourData;
     const totalExpected = isFamily
-      ? ((this._familyData.numStudents || 0) + (this._familyData.numSiblings || 0) + (this._familyData.numAdults || 0))
+      ? Portal._familyExpected()
       : ((t.numStudents || 0) + (t.numSiblings || 0) + (t.numAdults || 0) + (t.numFOC || 0));
 
     // Progress is measured in completed passport records, not in rows. The
@@ -2931,6 +2933,52 @@ const Portal = {
              note: 'On the payment page, please set the quantity to ' + qty + ' (' + qty + ' x ' + per + ' euros).' };
   },
 
+  // How many travelers this family should register: the confirmed ones on a
+  // Confirmed/TBC plan, otherwise the numbers Odisea set in the CRM.
+  _familyExpected() {
+    const pay = this._familyPayment;
+    if (pay && FamilyPlan.isDynamic(pay)) return FamilyPlan.compute(pay, this._familyChoices || {}).confirmed;
+    const f = this._familyData || {};
+    return (f.numStudents || 0) + (f.numSiblings || 0) + (f.numAdults || 0);
+  },
+
+  // Confirmed travelers with no passenger record yet, matched by role.
+  _unregisteredPlaces(places) {
+    const pax = this._familyPaxList;
+    if (!Array.isArray(pax)) return new Set();
+    const norm = r => { r = String(r || '').toLowerCase(); return r === 'student' ? 'player' : (r === 'coach' ? 'adult' : r); };
+    const have = {};
+    pax.forEach(p => { const r = norm(p.role || 'player'); have[r] = (have[r] || 0) + 1; });
+    const out = new Set();
+    FamilyPlan.ROLES.forEach(role => {
+      places.filter(p => p.status === 'confirmed' && p.role === role).forEach((p, idx) => { if (idx >= (have[role] || 0)) out.add(p.id); });
+    });
+    return out;
+  },
+
+  async _loadFamilyPax() {
+    try {
+      const list = await DB.getFamilyPassengers(this.tourId, this._familyId);
+      this._familyPaxList = (list || []).filter(p => !p._removed && !Portal._isTourDirector(p));
+    } catch (e) { this._familyPaxList = null; }
+  },
+
+  // Opens Passengers with the registration form filled with the name and role.
+  async addTravelerFromPlace(placeId) {
+    const p = (this._familyPaymentNumbers().plan.places || []).find(x => x.id === placeId);
+    this.showSection('passengers');
+    for (let i = 0; i < 50 && !document.getElementById('pax-form-container'); i++) await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 300));
+    this.showPassengerForm();
+    if (!p) return;
+    const first = document.getElementById('pf-first');
+    const role = document.getElementById('pf-role');
+    if (first && p.label) first.value = p.label;
+    if (role) role.value = { player: 'Player', sibling: 'Sibling', adult: 'Adult' }[p.role] || 'Player';
+    const form = document.getElementById('pax-form-container');
+    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+
   async setTravelerStatus(placeId, status) {
     const n = this._familyPaymentNumbers();
     const p = (n.plan.places || []).find(x => x.id === placeId);
@@ -2988,15 +3036,21 @@ const Portal = {
     const roleName = { player: 'Player', sibling: 'Sibling', adult: 'Adult' };
     const closed = r.places.some(p => p.closed);
     const btn = (on, label, click, enabled, color) => `<button ${enabled ? `onclick="${click}"` : 'disabled'} style="padding:0.35rem 0.7rem;font-size:0.8rem;font-weight:600;border-radius:999px;cursor:${enabled ? 'pointer' : 'default'};border:1.5px solid ${on ? color : 'var(--gray-200)'};background:${on ? color : 'white'};color:${on ? 'white' : (enabled ? 'var(--gray-500)' : 'var(--gray-300)')}">${label}</button>`;
+    if (this._familyPaxList === undefined) { this._familyPaxList = null; this._loadFamilyPax().then(() => { if (this.currentSection === 'payments') this.renderFamilyPaymentPanel(); }); }
+    const missing = this._unregisteredPlaces(r.places);
     const rows = r.places.map(p => {
       const conf = p.status === 'confirmed';
+      const nm = p.label ? esc(p.label) + "'s" : 'their';
+      const regNote = conf && missing.has(p.id)
+        ? `<button onclick="Portal.addTravelerFromPlace('${p.id}')" style="margin-top:0.3rem;padding:0.25rem 0.6rem;font-size:0.75rem;font-weight:600;border:1px solid var(--navy);background:white;color:var(--navy);border-radius:999px;cursor:pointer">Now add ${nm} passport details &rarr;</button>`
+        : '';
       const who = (p.label ? esc(p.label) + ' &middot; ' : '') + roleName[p.role];
       const price = p.free ? 'Included' : fmt(p.price);
       const lockNote = conf && !p.canTbc && !p.free && !p.closed ? '<div style="font-size:0.72rem;color:var(--gray-400)">Deposit paid: to change, message us</div>' : '';
       const closedNote = p.closed && !conf ? '<div style="font-size:0.72rem;color:var(--gray-400)">Not travelling</div>' : '';
       return `<div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;padding:0.55rem 0;border-top:1px solid var(--gray-100);flex-wrap:wrap">
         <div style="min-width:0"><div style="font-weight:600;color:var(--navy);font-size:0.9rem">${who}</div>
-          <div style="font-size:0.78rem;color:${conf ? 'var(--gray-500)' : 'var(--gray-400)'}">${conf ? price : (p.free ? 'Included' : price + ' if confirmed, not charged yet')}</div>${lockNote}${closedNote}</div>
+          <div style="font-size:0.78rem;color:${conf ? 'var(--gray-500)' : 'var(--gray-400)'}">${conf ? price : (p.free ? 'Included' : price + ' if confirmed, not charged yet')}</div>${lockNote}${closedNote}${regNote}</div>
         <div style="display:flex;gap:0.35rem;align-items:center">
           ${btn(conf, 'Confirmed', `Portal.setTravelerStatus('${p.id}','confirmed')`, p.canConfirm, 'var(--green)')}
           ${btn(!conf, 'TBC', `Portal.setTravelerStatus('${p.id}','tbc')`, p.canTbc, 'var(--amber, #d97706)')}
@@ -3014,7 +3068,7 @@ const Portal = {
     return `
       <div style="background:white;border-radius:var(--radius-lg);padding:1.1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:1rem">
         <div style="font-weight:700;color:var(--navy);margin-bottom:0.2rem">Who is travelling</div>
-        <p style="font-size:0.8rem;color:var(--gray-500);margin:0 0 0.4rem">You only pay for <strong>Confirmed</strong> travelers. Mark anyone not sure yet as <strong>TBC</strong>: it costs nothing now${r.tbcDeadline ? `, and you can confirm them until <strong>${Portal._fmtDate(r.tbcDeadline)}</strong>` : ''}. Your total and payments below update straight away.</p>
+        <p style="font-size:0.8rem;color:var(--gray-500);margin:0 0 0.4rem">You only pay for <strong>Confirmed</strong> travelers. Mark anyone not sure yet as <strong>TBC</strong>: it costs nothing now${r.tbcDeadline ? `, and you can confirm them until <strong>${Portal._fmtDate(r.tbcDeadline)}</strong>` : ''}. Your total and payments below update straight away. TBC travelers do not need passport details until they are confirmed.</p>
         ${rows}${add}
         ${closed ? `<p style="font-size:0.78rem;color:var(--gray-400);margin:0.6rem 0 0">The deadline for TBC travelers has passed. To make a change, please message us.</p>` : ''}
       </div>`;
@@ -3119,6 +3173,7 @@ const Portal = {
 
   async renderPaymentStatus() {
     if (this._portalMode === 'family' && this._familyPayment) {
+      this._familyPaxList = undefined;   // re-read: they may have just registered someone
       this.renderFamilyPaymentPanel();
       return;
     }
@@ -3561,7 +3616,7 @@ const Portal = {
 
     // 1. Passengers added
     const expectedCount = isFamily
-      ? (this._familyData ? ((this._familyData.numStudents||0) + (this._familyData.numSiblings||0) + (this._familyData.numAdults||0)) : 0)
+      ? (this._familyData ? Portal._familyExpected() : 0)
       : ((t.numStudents||0) + (t.numSiblings||0) + (t.numAdults||0) + (t.numFOC||0));
     const paxOk = passengers.length > 0 && (!expectedCount || passengers.length >= expectedCount);
     items.push({ done: paxOk, label: Portal._t('clTravelersRegistered'), detail: expectedCount ? `${passengers.length}/${expectedCount}` : `${passengers.length}`, section: 'passengers' });
