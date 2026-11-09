@@ -559,7 +559,7 @@ const Portal = {
     const isFamily = this._portalMode === 'family' && this._familyData;
 
     // Calculate countdown
-    const start = new Date(t.startDate);
+    const start = Portal._day(t.startDate);
     const now = new Date();
     const diff = Math.ceil((start - now) / (1000 * 60 * 60 * 24));
     let countdownText = '';
@@ -1065,7 +1065,7 @@ const Portal = {
         let passportTag = '';
         if (p.passportNumber) {
           if (p.passportExpiry) {
-            const exp = new Date(p.passportExpiry);
+            const exp = Portal._day(p.passportExpiry);
             if (exp < new Date()) passportTag = '<span class="pax-tag pax-tag-red">Expired</span>';
             else if (Portal._paxPassportTooSoon(p)) passportTag = '<span class="pax-tag pax-tag-red">Expires too soon for this trip</span>';
             else passportTag = '<span class="pax-tag pax-tag-green">Valid</span>';
@@ -1184,7 +1184,7 @@ const Portal = {
   // Schengen: the passport must stay valid 3 months after leaving, so the
   // date comes from this trip's end date (it used to be hardcoded for one tour).
   _passportMinDate() {
-    const end = this.tourData && this.tourData.endDate ? new Date(this.tourData.endDate) : null;
+    const end = this.tourData && this.tourData.endDate ? Portal._day(this.tourData.endDate) : null;
     if (!end || isNaN(end)) return null;
     const d = new Date(end); d.setMonth(d.getMonth() + 3);
     return d.toISOString().slice(0, 10);
@@ -2615,7 +2615,7 @@ const Portal = {
     try {
       const snap = await DB.firestore.collection('tours').doc(this.tourId).collection('passengers')
         .where('familyId', '==', this._familyId).get();
-      const start = this.tourData && this.tourData.startDate ? new Date(this.tourData.startDate) : new Date();
+      const start = this.tourData && this.tourData.startDate ? Portal._day(this.tourData.startDate) : new Date();
       const out = [];
       snap.forEach(d => {
         const p = d.data() || {};
@@ -2623,7 +2623,7 @@ const Portal = {
         const role = String(p.role || '').toLowerCase();
         let minor = role === 'player' || role === 'student' || role === 'sibling';
         if (p.dateOfBirth || p.dob) {
-          const dob = new Date(p.dateOfBirth || p.dob);
+          const dob = Portal._day(p.dateOfBirth || p.dob);
           if (!isNaN(dob)) {
             const age = start.getFullYear() - dob.getFullYear() - ((start.getMonth() < dob.getMonth() || (start.getMonth() === dob.getMonth() && start.getDate() < dob.getDate())) ? 1 : 0);
             minor = age < 18;
@@ -2794,7 +2794,7 @@ const Portal = {
     if (!t) return;
 
     // Check if tour has ended
-    const tourEnd = new Date(t.endDate);
+    const tourEnd = Portal._day(t.endDate);
     const now = new Date();
     if (now < tourEnd) {
       container.innerHTML = `
@@ -3496,9 +3496,17 @@ const Portal = {
   },
 
   // ── Utility helpers ──
+  // A plain date such as '2027-06-24' is a calendar day, not a moment. new Date()
+  // reads it as midnight UTC, which in the Americas is still the day before, so
+  // US families saw every date one day early. Build it in the viewer's own zone.
+  _day(d) {
+    const m = typeof d === 'string' && /^(\d{4})-(\d{2})-(\d{2})$/.exec(d.trim());
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(d);
+  },
+
   _fmtDate(d) {
     if (!d) return '\u2014';
-    return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    return Portal._day(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   },
 
   _fmtTime(d) {
