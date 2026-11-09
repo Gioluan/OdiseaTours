@@ -2893,7 +2893,7 @@ const Portal = {
         <div><div style="font-size:0.7rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Balance</div><div style="font-weight:700;color:${n.balance > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(n.balance)}</div></div>
       </div>
       ${n.items.map(installment).join('')}
-      <p style="font-size:0.8rem;color:var(--gray-400);margin:0.4rem 0.2rem 1rem">We update this page by hand when your payment reaches us: card payments usually show within 1 to 2 working days, bank transfers within 3 to 6 working days. You do not need to send proof, but you are welcome to message us. Any questions? Send us a message from the Messages section.</p>`;
+      <p style="font-size:0.8rem;color:var(--gray-400);margin:0.4rem 0.2rem 1rem">Card payments made with the button above show here automatically within a few minutes. Bank transfers are added by hand once they reach our bank, usually within 3 to 6 working days. You do not need to send proof, but you are welcome to message us. Any questions? Send us a message from the Messages section.</p>`;
   },
 
   async renderPaymentStatus() {
