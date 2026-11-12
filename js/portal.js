@@ -2964,13 +2964,91 @@ const Portal = {
   // ── Family pays Odisea directly: its own total, dates and how to pay ──
   // Ground Agents' Wise "any amount" pay page (accepts bank transfer and Pay with Wise).
   WISE_PAY_URL: 'https://wise.com/pay/business/groundagentssolutionssl',
+  // Stripe link where the payer types any amount in euros (minimum 50).
+  // Each family's button adds client_reference_id=OT-<CODE>-pay, which the
+  // website's Stripe webhook adds to payment.payments (see js/family-plan.js).
+  CARD_ANY_URL: 'https://buy.stripe.com/9B6aEW0EU1Mt9yuaS94ko08',
+  CARD_ANY_MIN: 50,
 
   _familyPaymentNumbers() {
     const pay = this._familyPayment || {};
     const r = FamilyPlan.compute(pay, this._familyChoices || {});
     const items = r.items;
-    return { pay, items, total: r.total, paid: r.paid, balance: r.balance, cur: pay.currency || 'EUR', plan: r,
-             next: items.find(i => i.status !== 'paid' && (Number(i.amount) || 0) > 0) || null };
+    const next = items.find(i => i.status !== 'paid' && (Number(i.amount) || 0) > 0) || null;
+    return { pay, items, total: r.total, paid: r.paid, balance: r.balance, cur: pay.currency || 'EUR', plan: r, next,
+             // Still to pay on the next instalment (it may be partly paid already).
+             nextLeft: next ? FamilyPlan.r2((Number(next.amount) || 0) - (Number(next.paidPart) || 0)) : 0,
+             // Any-amount payments: one reference per family for every payment.
+             flex: pay.flex !== false,
+             familyRef: String(((pay.installments || []).find(x => x.key === 'deposit') || {}).reference || this._familyCode || '').replace(/-DEP$/, '') };
+  },
+
+  // "Make a payment": any amount, any time, by card, Wise or bank transfer.
+  _flexPayCardHtml(n) {
+    if (!n.flex || !n.next || !this._familyCode) return '';
+    const esc = s => Portal._escapeHtml(String(s == null ? '' : s));
+    const fmt = v => Portal._fmtCurrency(v, n.cur);
+    const row = (k, v) => v ? `<div style="display:flex;justify-content:space-between;gap:1rem;padding:0.25rem 0;font-size:0.84rem;border-bottom:1px solid var(--gray-100)"><span style="color:var(--gray-400)">${esc(k)}</span><strong style="text-align:right;word-break:break-word">${esc(v)}</strong></div>` : '';
+    const eur = (n.pay.bank && n.pay.bank.eur) || null;
+    const cardUrl = /^https:\/\//.test(Portal.CARD_ANY_URL) ? Portal.CARD_ANY_URL.split('?')[0] + '?client_reference_id=' + encodeURIComponent('OT-' + this._familyCode + '-pay') : '';
+    const wiseOn = n.pay.wise !== false;
+    // Milestones: what the total paid must reach by each date.
+    let run = 0;
+    const steps = n.items.filter(i => (Number(i.amount) || 0) > 0).map(i => { run = FamilyPlan.r2(run + Number(i.amount)); return { due: i.due, target: run, done: n.paid >= run - 0.005 }; });
+    const stepRows = steps.map(s => `<div style="display:flex;justify-content:space-between;gap:1rem;padding:0.3rem 0;font-size:0.84rem;border-bottom:1px solid var(--gray-100)">
+        <span style="color:var(--gray-500)">By ${Portal._fmtDate(s.due)}</span>
+        <span><strong style="color:${s.done ? 'var(--green)' : 'var(--navy)'}">${fmt(s.target)}</strong> paid in total${s.done ? ' &#10003;' : ''}</span></div>`).join('');
+    return `
+      <div style="background:white;border-radius:var(--radius-lg);padding:1.1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:1rem;border-left:4px solid var(--navy)">
+        <div style="font-weight:700;color:var(--navy);margin-bottom:0.2rem">Make a payment</div>
+        <p style="font-size:0.84rem;color:var(--gray-600);margin:0 0 0.6rem">You can pay <strong>any amount, whenever it suits you</strong>, in as many payments as you like. All that matters is that your total paid reaches each amount below by its date.</p>
+        ${stepRows}
+        <p style="font-size:0.9rem;color:var(--gray-600);margin:0.7rem 0 0.8rem">Still to pay by ${Portal._fmtDate(n.next.due)}: <strong style="color:var(--navy)">${fmt(n.nextLeft)}</strong></p>
+        <div style="display:flex;flex-direction:column;gap:0.6rem">
+          ${cardUrl ? `<a href="${Portal._escapeAttr(cardUrl)}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:0.7rem 1rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay any amount by card</a>
+          <p style="font-size:0.8rem;color:var(--gray-500);margin:0">On the card page, type the amount you want to pay <strong>in euros</strong> (minimum ${fmt(Portal.CARD_ANY_MIN)}). Your card converts it from dollars. Card payments show here automatically within a few minutes.</p>` : ''}
+          ${wiseOn ? `
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <label for="flex-wise-amt" style="font-size:0.84rem;color:var(--gray-600)">Amount in euros</label>
+            <input id="flex-wise-amt" type="number" min="1" step="0.01" value="${n.nextLeft.toFixed(2)}" style="width:8rem;padding:0.45rem;border:1px solid var(--gray-200);border-radius:8px;font-size:0.9rem">
+          </div>
+          <a href="#" onclick="Portal.openFlexWise(event)" style="display:block;text-align:center;padding:0.7rem 1rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay by bank transfer with Wise</a>
+          <p style="font-size:0.8rem;color:var(--gray-500);margin:0">The Wise page opens with your amount in <strong>EUR</strong> and your reference already filled in. Please keep the currency in EUR: your bank or Wise converts it from dollars and shows you the exact cost before you confirm.</p>` : ''}
+          ${eur ? `<details style="border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:0.7rem 1rem">
+            <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:var(--navy)">Or pay from your own bank (account details)</summary>
+            <div style="margin-top:0.7rem;font-size:0.84rem;color:var(--gray-600)">
+              <p style="margin-bottom:0.4rem">Send any amount in euros. Please choose the option where you cover all bank fees, so the full amount arrives.</p>
+              ${row('Account name', eur.name)}${row('IBAN', eur.iban)}${row('BIC / SWIFT', eur.bic)}${row('Bank', eur.bank)}${row('Bank address', eur.address)}${eur.tip ? `<p style="margin-top:0.6rem;font-size:0.8rem;color:var(--gray-500)">${esc(eur.tip)}</p>` : ''}
+            </div></details>` : ''}
+          <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.7rem 0.9rem;font-size:0.84rem;color:var(--gray-600)">
+            <div>Your payment reference: <strong style="color:var(--navy)">${esc(n.familyRef)}</strong></div>
+            <div style="margin-top:0.3rem">For transfers: always put this reference in the transfer description, and send us a quick message (Messages section) saying the amount, the date and whose account it came from. That way we can match it even if your bank cuts the reference.</div>
+          </div>
+        </div>
+      </div>`;
+  },
+
+  openFlexWise(ev) {
+    if (ev) ev.preventDefault();
+    const n = this._familyPaymentNumbers();
+    const v = Number((document.getElementById('flex-wise-amt') || {}).value);
+    const amount = v > 0 ? Math.round(v * 100) / 100 : n.nextLeft;
+    const url = Portal.WISE_PAY_URL + '?currency=EUR&amount=' + amount.toFixed(2) + '&description=' + encodeURIComponent(n.familyRef.slice(0, 35));
+    window.open(url, '_blank', 'noopener');
+  },
+
+  // Payments received so far (any-amount payments), newest first.
+  _flexHistoryHtml(n) {
+    const list = (n.plan && n.plan.payments) || [];
+    if (!list.length) return '';
+    const fmt = v => Portal._fmtCurrency(v, n.cur);
+    const via = { card: 'Card', wise: 'Wise', bank: 'Bank transfer', cash: 'Cash' };
+    return `
+      <div style="background:white;border-radius:var(--radius-lg);padding:1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:1rem">
+        <div style="font-weight:700;color:var(--navy);margin-bottom:0.4rem">Payments received</div>
+        ${list.slice().reverse().map(p => `<div style="display:flex;justify-content:space-between;gap:1rem;padding:0.3rem 0;font-size:0.84rem;border-bottom:1px solid var(--gray-100)">
+          <span style="color:var(--gray-500)">${p.on ? Portal._fmtDate(p.on) : ''} &middot; ${Portal._escapeHtml(via[p.via] || p.via || '')}</span><strong style="color:var(--green)">${fmt(p.amount)}</strong></div>`).join('')}
+      </div>`;
   },
 
   // Card link for a deposit-type instalment: the shared 500 EUR Stripe link,
@@ -3134,7 +3212,7 @@ const Portal = {
       <div style="background:white;border-radius:var(--radius-lg);padding:1.2rem;margin-top:1rem;box-shadow:var(--shadow);cursor:pointer" onclick="Portal.showSection('payments')">
         <h4 style="font-family:var(--font-display);color:var(--navy);margin-bottom:0.5rem;font-size:1.05rem">Payments</h4>
         ${n.next
-          ? `<p style="font-size:0.9rem;color:var(--gray-600)">Next payment: <strong>${fmt(Number(n.next.amount) || 0)}</strong> by ${Portal._fmtDate(n.next.due)}</p>`
+          ? `<p style="font-size:0.9rem;color:var(--gray-600)">${n.flex ? 'Still to pay' : 'Next payment'}: <strong>${fmt(n.nextLeft)}</strong> by ${Portal._fmtDate(n.next.due)}</p>`
           : `<p style="font-size:0.9rem;color:var(--green);font-weight:600">All paid. Thank you!</p>`}
         <p style="font-size:0.78rem;color:var(--gray-400);margin-top:0.3rem">Paid ${fmt(n.paid)} of ${fmt(n.total)} &mdash; tap for details and how to pay</p>
       </div>`;
@@ -3178,10 +3256,11 @@ const Portal = {
           <div>
             <div style="font-weight:700;color:var(--navy)">${esc(i.label)}</div>
             <div style="font-size:0.8rem;color:var(--gray-400)">${paid ? 'Received' + (i.paidOn ? ' ' + Portal._fmtDate(i.paidOn) : '') : 'Due by ' + Portal._fmtDate(i.due)}</div>
+            ${!paid && Number(i.paidPart) > 0 ? `<div style="font-size:0.8rem;color:var(--green);font-weight:600">${fmt(i.paidPart)} paid &middot; ${fmt(amount - Number(i.paidPart))} still to pay</div>` : ''}
           </div>
           <div style="font-weight:700;font-size:1.1rem;color:${paid ? 'var(--green)' : 'var(--navy)'}">${fmt(amount)}${paid ? ' &#10003;' : ''}</div>
         </div>
-        ${paid ? '' : `
+        ${paid || n.flex ? '' : `
         <div style="margin-top:0.9rem;display:flex;flex-direction:column;gap:0.6rem">
           ${cardUrl ? `<a href="${Portal._escapeAttr(cardUrl)}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:0.7rem 1rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay by card${cardAmount !== amount ? ' &middot; ' + fmt(cardAmount) : ''}</a>${i.cardNote ? `<p style="font-size:0.8rem;color:var(--gray-500);margin:0">${esc(i.cardNote)}</p>` : ''}` : ''}
           ${wiseUrl ? `<a href="${Portal._escapeAttr(wiseUrl)}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:0.7rem 1rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay by bank transfer with Wise &middot; ${fmt(amount)}</a>
@@ -3219,9 +3298,12 @@ const Portal = {
         <div><div style="font-size:0.7rem;color:var(--gray-400);text-transform:uppercase;font-weight:600">Balance</div><div style="font-weight:700;color:${n.balance > 0 ? 'var(--red)' : 'var(--green)'}">${fmt(n.balance)}</div></div>
       </div>
       ${this._travelersCardHtml(n)}
+      ${this._flexPayCardHtml(n)}
+      ${n.flex ? '<div style="font-weight:700;color:var(--navy);margin:0.4rem 0.2rem 0.6rem">Payment schedule</div>' : ''}
       ${n.items.map(installment).join('')}
+      ${this._flexHistoryHtml(n)}
       ${n.plan && n.plan.credit ? `<p style="font-size:0.85rem;color:var(--green);margin:0 0.2rem 0.8rem">You have ${fmt(n.plan.credit)} in credit. We will contact you about it.</p>` : ''}
-      <p style="font-size:0.8rem;color:var(--gray-400);margin:0.4rem 0.2rem 1rem">Card payments made with the button above show here automatically within a few minutes. Bank transfers (including Wise) are added by hand once they reach our bank, usually within 3 to 6 working days. You do not need to send proof, but you are welcome to message us. Any questions? Send us a message from the Messages section.</p>`;
+      <p style="font-size:0.8rem;color:var(--gray-400);margin:0.4rem 0.2rem 1rem">${n.flex ? 'Payments of any amount count towards the schedule in order: first the deposit, then the second payment, then the final balance. ' : ''}Card payments made with the button above show here automatically within a few minutes. Bank transfers (including Wise) are added by hand once they reach our bank, usually within 3 to 6 working days. You do not need to send proof, but you are welcome to message us. Any questions? Send us a message from the Messages section.</p>`;
   },
 
   async renderPaymentStatus() {

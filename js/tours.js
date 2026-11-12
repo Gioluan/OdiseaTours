@@ -1886,7 +1886,8 @@ const Tours = {
         const items = live.items.filter(i => i.status === 'paid' || (Number(i.amount) || 0) > 0);
         const total = live.total;
         const paidItems = items.filter(i => i.status === 'paid');
-        const paid = paidItems.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+        // Includes any-amount payments (live.paid), not only whole instalments.
+        const paid = live.paid;
         const all = paidItems.length === items.length;
         // Mirror the tick (counts only, no amounts) for the organiser's club portal.
         DB.firestore.collection('tours').doc(String(tourId)).collection('familyPaid').doc(String(ic.id))
@@ -1926,12 +1927,18 @@ const Tours = {
     const rows = live.items.map(i => {
       const k = esc(i.key);
       const paid = i.status === 'paid';
+      const part = !paid && Number(i.paidPart) > 0 ? `<div style="font-size:0.75rem;color:var(--green)">${fmt(i.paidPart)} paid by payments, ${fmt(i.amount - i.paidPart)} left</div>` : '';
+      if (paid && i.covered) {
+        return `<tr><td><strong>${esc(i.label || i.key)}</strong><div style="font-size:0.75rem;color:var(--gray-400)">due ${esc(i.due || '-')}</div></td>
+          <td style="text-align:right;font-weight:700">${fmt(i.amount)}</td>
+          <td><span style="color:var(--green);font-weight:700">&#10003; Covered</span> <span style="font-size:0.78rem;color:var(--gray-500)">by payments ${esc(i.paidOn || '')}</span></td><td></td></tr>`;
+      }
       return `<tr>
         <td><strong>${esc(i.label || i.key)}</strong><div style="font-size:0.75rem;color:var(--gray-400)">Ref ${esc(i.reference || '-')} &middot; due ${esc(i.due || '-')}</div></td>
         <td style="text-align:right;font-weight:700">${fmt(i.amount)}</td>
         <td>${paid
           ? `<span style="color:var(--green);font-weight:700">&#10003; Paid</span> <span style="font-size:0.78rem;color:var(--gray-500)">${esc(i.paidOn || '')} &middot; ${esc(via[i.paidVia] || i.paidVia || '')}</span>`
-          : '<span style="color:var(--red);font-weight:600">Due</span>'}</td>
+          : '<span style="color:var(--red);font-weight:600">Due</span>' + part}</td>
         <td style="white-space:nowrap">${paid
           ? `<button class="btn btn-sm btn-outline" style="font-size:0.72rem;border-color:var(--gray-300);color:var(--gray-500)" onclick="Tours.setFamilyInstallment(${tourId},'${fid}','${k}',false)">Undo</button>`
           : `<select id="fp-via-${k}" style="font-size:0.78rem;padding:0.2rem"><option value="wise">Wise</option><option value="bank">Bank transfer</option><option value="card">Card</option><option value="cash">Cash</option></select>
@@ -1939,9 +1946,24 @@ const Tours = {
              <button class="btn btn-sm btn-primary" style="font-size:0.75rem" onclick="Tours.setFamilyInstallment(${tourId},'${fid}','${k}',true)">Mark paid</button>`}</td>
       </tr>`;
     }).join('');
+    const pays = live.payments || [];
+    const payRows = pays.map(p => `<tr><td>${esc(p.on || '')}</td><td style="text-align:right;font-weight:700">${fmt(p.amount)}</td>
+        <td>${esc(via[p.via] || p.via || '')}${p.stripeSession ? ' <span style="font-size:0.72rem;color:var(--gray-400)">auto</span>' : ''}</td>
+        <td><button class="btn btn-sm btn-outline" style="font-size:0.72rem;border-color:var(--gray-300);color:var(--gray-500)" onclick="Tours.removeFamilyPayment(${tourId},'${fid}','${esc(p.id)}')">Remove</button></td></tr>`).join('');
     container.innerHTML = shell(`
-      ${who}<div style="overflow-x:auto"><table class="data-table" style="font-size:0.84rem"><thead><tr><th>Instalment</th><th style="text-align:right">Amount</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-      <p style="font-size:0.78rem;color:var(--gray-400);margin:0.6rem 0 0">Card payments made with the portal button are marked automatically. Mark Wise or bank transfers here once the money shows in Wise: the family's portal turns green straight away.</p>`);
+      ${who}<p style="font-size:0.84rem;margin:0 0 0.6rem"><strong>Paid ${fmt(live.paid)}</strong> of ${fmt(live.total)} &middot; balance <strong style="color:${live.balance > 0.005 ? 'var(--red)' : 'var(--green)'}">${fmt(live.balance)}</strong>${live.credit ? ' &middot; <span style="color:var(--red)">credit ' + fmt(live.credit) + '</span>' : ''}</p>
+      <div style="overflow-x:auto"><table class="data-table" style="font-size:0.84rem"><thead><tr><th>Instalment</th><th style="text-align:right">Amount</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div style="margin-top:0.9rem;padding:0.8rem;background:white;border-radius:var(--radius-lg);border:1px solid var(--gray-200)">
+        <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.4rem">Record a payment (any amount)</div>
+        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center">
+          <input type="number" id="fp-any-amt" min="0.01" step="0.01" placeholder="Amount EUR" style="width:8rem;font-size:0.82rem;padding:0.25rem">
+          <select id="fp-any-via" style="font-size:0.8rem;padding:0.2rem"><option value="wise">Wise</option><option value="bank">Bank transfer</option><option value="card">Card</option><option value="cash">Cash</option></select>
+          <input type="date" id="fp-any-date" value="${today}" style="font-size:0.8rem;padding:0.15rem">
+          <button class="btn btn-sm btn-primary" style="font-size:0.75rem" onclick="Tours.addFamilyPayment(${tourId},'${fid}')">Record</button>
+        </div>
+        ${pays.length ? `<table class="data-table" style="font-size:0.82rem;margin-top:0.6rem"><thead><tr><th>Date</th><th style="text-align:right">Amount</th><th>Via</th><th></th></tr></thead><tbody>${payRows}</tbody></table>` : ''}
+      </div>
+      <p style="font-size:0.78rem;color:var(--gray-400);margin:0.6rem 0 0">Card payments made with the portal buttons are recorded automatically. Record Wise or bank transfers of any amount here once the money arrives: they fill the deposit, then the second, then the final payment, and the family's portal updates straight away. "Mark paid" on an instalment means that whole instalment amount arrived as one payment.</p>`);
   },
 
   async setFamilyInstallment(tourId, familyId, key, paid) {
@@ -1978,6 +2000,50 @@ const Tours = {
           it.status = 'due';
           ['paidOn', 'paidVia', 'markedBy', 'stripeSession'].forEach(f => delete it[f]);
         }
+        plan.updatedAt = new Date().toISOString();
+        tx.update(ref, { payment: plan, updatedAt: plan.updatedAt });
+      });
+    } catch (e) { alert('Could not save: ' + e.message); }
+    await this.openFamilyPayments(tourId, familyId);
+    this._loadFamilyPayments(tourId);
+  },
+
+  async addFamilyPayment(tourId, familyId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    const entry = t && (t.familyAccessCodes || {})[familyId];
+    if (!entry || !entry.code) return;
+    const amount = Math.round(Number((document.getElementById('fp-any-amt') || {}).value) * 100) / 100;
+    const via = (document.getElementById('fp-any-via') || {}).value || 'bank';
+    const on = (document.getElementById('fp-any-date') || {}).value || new Date().toISOString().slice(0, 10);
+    if (!(amount > 0)) { alert('Type the amount received in euros.'); return; }
+    const ref = DB.firestore.collection('accessCodes').doc(entry.code);
+    try {
+      await DB.firestore.runTransaction(async tx => {
+        const doc = await tx.get(ref);
+        const plan = doc.exists && doc.data().payment;
+        if (!plan) throw new Error('No payment plan');
+        plan.payments = Array.isArray(plan.payments) ? plan.payments : [];
+        plan.payments.push({ id: 'm' + Date.now().toString(36), amount, on, via, markedBy: 'crm', recordedAt: new Date().toISOString() });
+        plan.updatedAt = new Date().toISOString();
+        tx.update(ref, { payment: plan, updatedAt: plan.updatedAt });
+      });
+    } catch (e) { alert('Could not save: ' + e.message); }
+    await this.openFamilyPayments(tourId, familyId);
+    this._loadFamilyPayments(tourId);
+  },
+
+  async removeFamilyPayment(tourId, familyId, payId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    const entry = t && (t.familyAccessCodes || {})[familyId];
+    if (!entry || !entry.code) return;
+    if (!confirm('Remove this payment? The family will see the amount as unpaid again.')) return;
+    const ref = DB.firestore.collection('accessCodes').doc(entry.code);
+    try {
+      await DB.firestore.runTransaction(async tx => {
+        const doc = await tx.get(ref);
+        const plan = doc.exists && doc.data().payment;
+        if (!plan) throw new Error('No payment plan');
+        plan.payments = (plan.payments || []).filter(p => p.id !== payId);
         plan.updatedAt = new Date().toISOString();
         tx.update(ref, { payment: plan, updatedAt: plan.updatedAt });
       });

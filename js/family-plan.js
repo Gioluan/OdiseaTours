@@ -19,6 +19,15 @@
 //   - after tbcDeadline, TBC travelers are not travelling and nothing can change
 //     from the portal (the family messages us).
 // A plan without `places` is a fixed plan and is shown exactly as stored.
+//
+// Payments of any amount (agreed with Juan, 12-Nov-2026):
+//   payment.payments: [{ id, amount, on: 'YYYY-MM-DD', via: card|wise|bank|cash, markedBy, stripeSession? }]
+//   Families may pay whatever they have, whenever they want; only the totals
+//   by each due date matter. These payments fill the unpaid instalments in
+//   order (deposit, extras, second, final): an instalment fully filled shows
+//   as paid ("covered"), one partly filled carries paidPart. Instalments
+//   themselves keep their amounts, so totals stay right whichever way a family
+//   pays (old fixed links, any amount, transfers).
 const FamilyPlan = {
   ROLES: ['player', 'sibling', 'adult'],
 
@@ -76,15 +85,50 @@ const FamilyPlan = {
     return { byPax, unmatched: left };
   },
 
+  // Valid any-amount payments, oldest first.
+  payments(plan) {
+    return (Array.isArray(plan && plan.payments) ? plan.payments : [])
+      .filter(p => p && (Number(p.amount) || 0) > 0)
+      .map(p => Object.assign({}, p, { amount: this.r2(p.amount) }))
+      .sort((a, b) => String(a.on || '').localeCompare(String(b.on || '')));
+  },
+
+  // Pours the any-amount payments into the unpaid instalments, in order.
+  // Returns the money that did not fit (credit) and the deposit money covered.
+  _applyPayments(items, pays) {
+    let pool = this.r2(pays.reduce((s, p) => s + p.amount, 0));
+    let used = 0, coveredDeposits = 0;
+    // Date the running total of payments first reached `amount`.
+    const reachedOn = amount => {
+      let run = 0;
+      for (const p of pays) { run = this.r2(run + p.amount); if (run >= amount - 0.005) return p.on || ''; }
+      return '';
+    };
+    const out = items.map(i => {
+      const amount = this.r2(i.amount);
+      if (i.status === 'paid' || amount <= 0 || pool <= 0.005) return i;
+      const take = this.r2(Math.min(pool, amount));
+      pool = this.r2(pool - take);
+      used = this.r2(used + take);
+      if (i.key === 'deposit' || /^extra\d+$/.test(i.key)) coveredDeposits = this.r2(coveredDeposits + take);
+      if (take >= amount - 0.005) return Object.assign({}, i, { status: 'paid', covered: true, paidPart: amount, paidVia: 'payments', paidOn: reachedOn(used) });
+      return Object.assign({}, i, { paidPart: take });
+    });
+    return { items: out, credit: pool, coveredDeposits };
+  },
+
   // Live instalments: paid ones stay exactly as paid, the rest follow the
-  // confirmed travelers.
+  // confirmed travelers; then any-amount payments fill them in order.
   compute(plan, choices, today) {
     today = today || this.today();
     const stored = Array.isArray(plan.installments) ? plan.installments : [];
+    const pays = this.payments(plan);
+    const paysSum = this.r2(pays.reduce((s, p) => s + p.amount, 0));
     if (!this.isDynamic(plan)) {
       const total = this.r2(stored.reduce((s, i) => s + (Number(i.amount) || 0), 0));
-      const paid = this.r2(stored.filter(i => i.status === 'paid').reduce((s, i) => s + (Number(i.amount) || 0), 0));
-      return { dynamic: false, items: stored, total, paid, balance: this.r2(total - paid), places: [] };
+      const paid = this.r2(stored.filter(i => i.status === 'paid').reduce((s, i) => s + (Number(i.amount) || 0), 0) + paysSum);
+      const a = this._applyPayments(stored, pays);
+      return { dynamic: false, items: a.items, total, paid, balance: this.r2(total - paid), credit: a.credit, places: [], payments: pays };
     }
     const dep = Number(plan.depositPerTraveler) || 500;
     const places = this.places(plan, choices, today);
@@ -134,16 +178,19 @@ const FamilyPlan = {
       const n = stored.filter(i => /^balance\d+$/.test(i.key)).length + 1;
       items.push({ key: 'balance' + n, label: 'Balance for added travelers', due: today, amount: rest, reference: ref('BAL' + n), status: 'due' });
     }
-    const credit = rest < -0.005 ? this.r2(-rest) : 0;
-    // Confirmed paying travelers whose deposit is already paid cannot go back to TBC.
-    const lockedPaying = Math.round(paidDeposits / dep);
+    const a = this._applyPayments(items, pays);
+    const credit = this.r2((rest < -0.005 ? -rest : 0) + a.credit);
+    // Confirmed paying travelers whose deposit is already paid (by a deposit
+    // payment or by any-amount payments) cannot go back to TBC.
+    const lockedPaying = Math.floor((paidDeposits + a.coveredDeposits) / dep + 0.0001);
     places.forEach(p => {
       p.canTbc = !p.closed && p.status === 'confirmed' && (p.free || paying > lockedPaying);
       p.canConfirm = !p.closed && p.status === 'tbc';
     });
     const shownTotal = this.r2(items.reduce((s, i) => s + (Number(i.amount) || 0), 0));
-    return { dynamic: true, items, total: shownTotal, paid, balance: this.r2(shownTotal - paid), credit, places,
-             confirmed: going.length, tbc: places.length - going.length, paying, depositDue, tbcDeadline: plan.tbcDeadline || '' };
+    const allPaid = this.r2(paid + paysSum);
+    return { dynamic: true, items: a.items, total: shownTotal, paid: allPaid, balance: this.r2(shownTotal - allPaid), credit, places,
+             confirmed: going.length, tbc: places.length - going.length, paying, depositDue, tbcDeadline: plan.tbcDeadline || '', payments: pays };
   }
 };
 if (typeof window !== 'undefined') window.FamilyPlan = FamilyPlan;
