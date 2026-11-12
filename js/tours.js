@@ -1918,7 +1918,7 @@ const Tours = {
           <button class="btn btn-sm btn-outline" onclick="document.getElementById('portal-detail-${tourId}').innerHTML=''">Close</button>
         </div>${inner}</div>`;
     if (!plan) { container.innerHTML = shell('<p style="font-size:0.85rem;color:var(--gray-500)">This family has no payment plan yet.</p>'); return; }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = FamilyPlan.today();
     const via = { card: 'Card (Stripe)', wise: 'Wise', bank: 'Bank transfer', cash: 'Cash' };
     const fmt = v => '€' + Number(v).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fid = esc(String(familyId));
@@ -1941,22 +1941,24 @@ const Tours = {
           : '<span style="color:var(--red);font-weight:600">Due</span>' + part}</td>
         <td style="white-space:nowrap">${paid
           ? `<button class="btn btn-sm btn-outline" style="font-size:0.72rem;border-color:var(--gray-300);color:var(--gray-500)" onclick="Tours.setFamilyInstallment(${tourId},'${fid}','${k}',false)">Undo</button>`
+          : Number(i.paidPart) > 0
+          ? `<span style="font-size:0.75rem;color:var(--gray-500)">Part paid: record the rest below as a payment</span>`
           : `<select id="fp-via-${k}" style="font-size:0.78rem;padding:0.2rem"><option value="wise">Wise</option><option value="bank">Bank transfer</option><option value="card">Card</option><option value="cash">Cash</option></select>
              <input type="date" id="fp-date-${k}" value="${today}" style="font-size:0.78rem;padding:0.15rem">
              <button class="btn btn-sm btn-primary" style="font-size:0.75rem" onclick="Tours.setFamilyInstallment(${tourId},'${fid}','${k}',true)">Mark paid</button>`}</td>
       </tr>`;
     }).join('');
     const pays = live.payments || [];
-    const payRows = pays.map(p => `<tr><td>${esc(p.on || '')}</td><td style="text-align:right;font-weight:700">${fmt(p.amount)}</td>
+    const payRows = pays.map(p => `<tr><td>${esc(p.on || '')}</td><td style="text-align:right;font-weight:700;color:${p.amount < 0 ? 'var(--red)' : 'inherit'}">${p.amount < 0 ? 'Refund ' : ''}${fmt(p.amount)}</td>
         <td>${esc(via[p.via] || p.via || '')}${p.stripeSession ? ' <span style="font-size:0.72rem;color:var(--gray-400)">auto</span>' : ''}</td>
-        <td><button class="btn btn-sm btn-outline" style="font-size:0.72rem;border-color:var(--gray-300);color:var(--gray-500)" onclick="Tours.removeFamilyPayment(${tourId},'${fid}','${esc(p.id)}')">Remove</button></td></tr>`).join('');
+        <td><button class="btn btn-sm btn-outline" style="font-size:0.72rem;border-color:var(--gray-300);color:var(--gray-500)" onclick="Tours.removeFamilyPayment(${tourId},'${fid}','${String(p.id || '').replace(/[^A-Za-z0-9_-]/g, '')}')">Remove</button></td></tr>`).join('');
     container.innerHTML = shell(`
       ${who}<p style="font-size:0.84rem;margin:0 0 0.6rem"><strong>Paid ${fmt(live.paid)}</strong> of ${fmt(live.total)} &middot; balance <strong style="color:${live.balance > 0.005 ? 'var(--red)' : 'var(--green)'}">${fmt(live.balance)}</strong>${live.credit ? ' &middot; <span style="color:var(--red)">credit ' + fmt(live.credit) + '</span>' : ''}</p>
       <div style="overflow-x:auto"><table class="data-table" style="font-size:0.84rem"><thead><tr><th>Instalment</th><th style="text-align:right">Amount</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <div style="margin-top:0.9rem;padding:0.8rem;background:white;border-radius:var(--radius-lg);border:1px solid var(--gray-200)">
         <div style="font-weight:700;font-size:0.88rem;margin-bottom:0.4rem">Record a payment (any amount)</div>
         <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center">
-          <input type="number" id="fp-any-amt" min="0.01" step="0.01" placeholder="Amount EUR" style="width:8rem;font-size:0.82rem;padding:0.25rem">
+          <input type="number" id="fp-any-amt" step="0.01" placeholder="Amount EUR" style="width:8rem;font-size:0.82rem;padding:0.25rem">
           <select id="fp-any-via" style="font-size:0.8rem;padding:0.2rem"><option value="wise">Wise</option><option value="bank">Bank transfer</option><option value="card">Card</option><option value="cash">Cash</option></select>
           <input type="date" id="fp-any-date" value="${today}" style="font-size:0.8rem;padding:0.15rem">
           <button class="btn btn-sm btn-primary" style="font-size:0.75rem" onclick="Tours.addFamilyPayment(${tourId},'${fid}')">Record</button>
@@ -2014,8 +2016,9 @@ const Tours = {
     if (!entry || !entry.code) return;
     const amount = Math.round(Number((document.getElementById('fp-any-amt') || {}).value) * 100) / 100;
     const via = (document.getElementById('fp-any-via') || {}).value || 'bank';
-    const on = (document.getElementById('fp-any-date') || {}).value || new Date().toISOString().slice(0, 10);
-    if (!(amount > 0)) { alert('Type the amount received in euros.'); return; }
+    const on = (document.getElementById('fp-any-date') || {}).value || FamilyPlan.today();
+    if (!amount) { alert('Type the amount received in euros (negative for a refund).'); return; }
+    if (amount < 0 && !confirm('Record a REFUND of ' + Math.abs(amount) + ' EUR? It lowers what the family has paid.')) return;
     const ref = DB.firestore.collection('accessCodes').doc(entry.code);
     try {
       await DB.firestore.runTransaction(async tx => {
@@ -2043,7 +2046,7 @@ const Tours = {
         const doc = await tx.get(ref);
         const plan = doc.exists && doc.data().payment;
         if (!plan) throw new Error('No payment plan');
-        plan.payments = (plan.payments || []).filter(p => p.id !== payId);
+        plan.payments = (plan.payments || []).filter(p => String(p.id || '').replace(/[^A-Za-z0-9_-]/g, '') !== payId);
         plan.updatedAt = new Date().toISOString();
         tx.update(ref, { payment: plan, updatedAt: plan.updatedAt });
       });

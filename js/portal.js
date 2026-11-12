@@ -2980,7 +2980,8 @@ const Portal = {
              nextLeft: next ? FamilyPlan.r2((Number(next.amount) || 0) - (Number(next.paidPart) || 0)) : 0,
              // Any-amount payments: one reference per family for every payment.
              flex: pay.flex !== false,
-             familyRef: String(((pay.installments || []).find(x => x.key === 'deposit') || {}).reference || this._familyCode || '').replace(/-DEP$/, '') };
+             // Never the portal code itself: it would end up on bank statements.
+             familyRef: String(((pay.installments || []).find(x => x.key === 'deposit') || {}).reference || ('OT-F' + (this._familyId || ''))).replace(/-DEP$/, '') };
   },
 
   // "Make a payment": any amount, any time, by card, Wise or bank transfer.
@@ -2990,6 +2991,7 @@ const Portal = {
     const fmt = v => Portal._fmtCurrency(v, n.cur);
     const row = (k, v) => v ? `<div style="display:flex;justify-content:space-between;gap:1rem;padding:0.25rem 0;font-size:0.84rem;border-bottom:1px solid var(--gray-100)"><span style="color:var(--gray-400)">${esc(k)}</span><strong style="text-align:right;word-break:break-word">${esc(v)}</strong></div>` : '';
     const eur = (n.pay.bank && n.pay.bank.eur) || null;
+    const us = (n.pay.bank && n.pay.bank.usd) || null;
     const cardUrl = /^https:\/\//.test(Portal.CARD_ANY_URL) ? Portal.CARD_ANY_URL.split('?')[0] + '?client_reference_id=' + encodeURIComponent('OT-' + this._familyCode + '-pay') : '';
     const wiseOn = n.pay.wise !== false;
     // Milestones: what the total paid must reach by each date.
@@ -3006,7 +3008,7 @@ const Portal = {
         <p style="font-size:0.9rem;color:var(--gray-600);margin:0.7rem 0 0.8rem">Still to pay by ${Portal._fmtDate(n.next.due)}: <strong style="color:var(--navy)">${fmt(n.nextLeft)}</strong></p>
         <div style="display:flex;flex-direction:column;gap:0.6rem">
           ${cardUrl ? `<a href="${Portal._escapeAttr(cardUrl)}" target="_blank" rel="noopener" style="display:block;text-align:center;padding:0.7rem 1rem;background:var(--navy);color:white;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay any amount by card</a>
-          <p style="font-size:0.8rem;color:var(--gray-500);margin:0">On the card page, type the amount you want to pay <strong>in euros</strong> (minimum ${fmt(Portal.CARD_ANY_MIN)}). Your card converts it from dollars. Card payments show here automatically within a few minutes.</p>` : ''}
+          <p style="font-size:0.8rem;color:var(--gray-500);margin:0">On the card page, type the amount you want to pay <strong>in euros</strong> (minimum ${fmt(Portal.CARD_ANY_MIN)}). Your card converts it from dollars. Card payments show here automatically within a few minutes.${n.nextLeft < Portal.CARD_ANY_MIN ? ` For less than ${fmt(Portal.CARD_ANY_MIN)}, please use Wise or a bank transfer.` : ''}</p>` : ''}
           ${wiseOn ? `
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
             <label for="flex-wise-amt" style="font-size:0.84rem;color:var(--gray-600)">Amount in euros</label>
@@ -3014,11 +3016,15 @@ const Portal = {
           </div>
           <a href="#" onclick="Portal.openFlexWise(event)" style="display:block;text-align:center;padding:0.7rem 1rem;background:#9FE870;color:#163300;border-radius:var(--radius-lg);text-decoration:none;font-weight:600;font-size:0.9rem">Pay by bank transfer with Wise</a>
           <p style="font-size:0.8rem;color:var(--gray-500);margin:0">The Wise page opens with your amount in <strong>EUR</strong> and your reference already filled in. Please keep the currency in EUR: your bank or Wise converts it from dollars and shows you the exact cost before you confirm.</p>` : ''}
-          ${eur ? `<details style="border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:0.7rem 1rem">
+          ${(eur || us) ? `<details style="border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:0.7rem 1rem">
             <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;color:var(--navy)">Or pay from your own bank (account details)</summary>
             <div style="margin-top:0.7rem;font-size:0.84rem;color:var(--gray-600)">
+              ${us ? `<div style="margin-bottom:0.9rem"><div style="font-weight:600;color:var(--navy);margin-bottom:0.3rem">From a US bank, in dollars (ACH)</div>
+                <p style="margin-bottom:0.4rem">Send the dollar amount your bank shows for the euros you want to pay; we credit the euros that arrive.</p>
+                ${row('Account name', us.name)}${row('Routing number', us.routing)}${row('Account number', us.account)}${row('Account type', us.type)}${row('Bank', us.bank)}</div>` : ''}
+              ${eur ? `<div style="font-weight:600;color:var(--navy);margin-bottom:0.3rem">Bank transfer, in euros</div>
               <p style="margin-bottom:0.4rem">Send any amount in euros. Please choose the option where you cover all bank fees, so the full amount arrives.</p>
-              ${row('Account name', eur.name)}${row('IBAN', eur.iban)}${row('BIC / SWIFT', eur.bic)}${row('Bank', eur.bank)}${row('Bank address', eur.address)}${eur.tip ? `<p style="margin-top:0.6rem;font-size:0.8rem;color:var(--gray-500)">${esc(eur.tip)}</p>` : ''}
+              ${row('Account name', eur.name)}${row('IBAN', eur.iban)}${row('BIC / SWIFT', eur.bic)}${row('Bank', eur.bank)}${row('Bank address', eur.address)}${eur.tip ? `<p style="margin-top:0.6rem;font-size:0.8rem;color:var(--gray-500)">${esc(eur.tip)}</p>` : ''}` : ''}
             </div></details>` : ''}
           <div style="background:var(--gray-50);border-radius:var(--radius-lg);padding:0.7rem 0.9rem;font-size:0.84rem;color:var(--gray-600)">
             <div>Your payment reference: <strong style="color:var(--navy)">${esc(n.familyRef)}</strong></div>
@@ -3047,7 +3053,7 @@ const Portal = {
       <div style="background:white;border-radius:var(--radius-lg);padding:1rem 1.2rem;box-shadow:var(--shadow);margin-bottom:1rem">
         <div style="font-weight:700;color:var(--navy);margin-bottom:0.4rem">Payments received</div>
         ${list.slice().reverse().map(p => `<div style="display:flex;justify-content:space-between;gap:1rem;padding:0.3rem 0;font-size:0.84rem;border-bottom:1px solid var(--gray-100)">
-          <span style="color:var(--gray-500)">${p.on ? Portal._fmtDate(p.on) : ''} &middot; ${Portal._escapeHtml(via[p.via] || p.via || '')}</span><strong style="color:var(--green)">${fmt(p.amount)}</strong></div>`).join('')}
+          <span style="color:var(--gray-500)">${p.on ? Portal._fmtDate(p.on) : ''} &middot; ${Portal._escapeHtml(via[p.via] || p.via || '')}</span><strong style="color:${p.amount < 0 ? 'var(--red)' : 'var(--green)'}">${p.amount < 0 ? 'Refund ' : ''}${fmt(p.amount)}</strong></div>`).join('')}
       </div>`;
   },
 

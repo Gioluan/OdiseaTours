@@ -88,7 +88,7 @@ const FamilyPlan = {
   // Valid any-amount payments, oldest first.
   payments(plan) {
     return (Array.isArray(plan && plan.payments) ? plan.payments : [])
-      .filter(p => p && (Number(p.amount) || 0) > 0)
+      .filter(p => p && Math.abs(Number(p.amount) || 0) > 0.001)   // negative = refund
       .map(p => Object.assign({}, p, { amount: this.r2(p.amount) }))
       .sort((a, b) => String(a.on || '').localeCompare(String(b.on || '')));
   },
@@ -150,6 +150,10 @@ const FamilyPlan = {
     const items = [];
     let open = 0;   // unpaid deposit money already shown
     const deposit = stored.find(i => i.key === 'deposit');
+    // Added travelers' money is due by the next scheduled date still ahead
+    // (deposit, second, final), not "today": a fixed date reminders can use.
+    const nextDate = (stored.filter(i => ['deposit', 'second', 'final'].includes(i.key) && i.due && i.due >= today)
+      .map(i => i.due).sort()[0]) || today;
     if (deposit) {
       if (deposit.status === 'paid') items.push(deposit);
       else { items.push(Object.assign({}, deposit, { amount: depositDue })); open += depositDue; }
@@ -159,7 +163,7 @@ const FamilyPlan = {
     if (deposit && deposit.status === 'paid' && depositDue > paidDeposits + 0.005) {
       const n = stored.filter(i => /^extra\d+$/.test(i.key)).length + 1;
       const amount = this.r2(depositDue - paidDeposits);
-      items.push({ key: 'extra' + n, label: 'Deposit for added travelers', due: today, amount, reference: ref('ADD' + n),
+      items.push({ key: 'extra' + n, label: 'Deposit for added travelers', due: nextDate, amount, reference: ref('ADD' + n),
                    status: 'due', extraQty: Math.round(amount / dep) });
       open += amount;
     }
@@ -176,7 +180,7 @@ const FamilyPlan = {
     stored.filter(i => /^balance\d+$/.test(i.key) && i.status === 'paid').forEach(i => items.push(i));
     if (!unpaidLater.length && rest > 0.005) {
       const n = stored.filter(i => /^balance\d+$/.test(i.key)).length + 1;
-      items.push({ key: 'balance' + n, label: 'Balance for added travelers', due: today, amount: rest, reference: ref('BAL' + n), status: 'due' });
+      items.push({ key: 'balance' + n, label: 'Balance for added travelers', due: nextDate, amount: rest, reference: ref('BAL' + n), status: 'due' });
     }
     const a = this._applyPayments(items, pays);
     const credit = this.r2((rest < -0.005 ? -rest : 0) + a.credit);
