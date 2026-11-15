@@ -1724,17 +1724,19 @@ const Tours = {
         ${families.length ? `
         <div style="border-top:1px solid var(--gray-100);padding-top:0.8rem;margin-top:0.2rem">
           <div style="font-size:0.88rem;font-weight:600;color:var(--navy);margin-bottom:0.4rem">Family status <span id="family-status-summary-${t.id}" style="font-weight:400;font-size:0.78rem;color:var(--gray-400)"></span></div>
+          <div id="family-stats-${t.id}" style="margin-bottom:0.6rem"></div>
           <div style="overflow-x:auto">
           <table class="data-table" style="font-size:0.82rem;margin-bottom:0.4rem">
-            <thead><tr><th>Family</th><th>Team</th><th>Link</th><th>Last opened</th><th>Travelers</th><th>Passports</th><th>Flights</th><th>Forms</th><th>Paid</th><th></th></tr></thead>
+            <thead><tr><th>Family</th><th>Team</th><th>Link</th><th title="Last time the family saved something in its portal or a payment was recorded">Last activity</th><th title="Confirmed travelers, and how many are still to be confirmed">Going</th><th>Travelers</th><th>Passports</th><th>Flights</th><th>Forms</th><th>Paid</th><th></th></tr></thead>
             <tbody>${families.map(ic => {
               const entry = famCodes[ic.id];
               const code = entry ? entry.code : null;
-              return `<tr>
+              return `<tr id="fs-row-${t.id}-${ic.id}">
                 <td><strong>${ic.name || '—'}</strong></td>
                 <td>${ic.group || '<span style="color:var(--gray-300)">—</span>'}</td>
                 <td>${code ? '<code style="font-family:monospace;font-size:0.82rem;letter-spacing:0.05em">' + code + '</code>' : '<span style="color:var(--gray-300)">—</span>'}</td>
-                <td>${entry && entry.lastAccess ? new Date(entry.lastAccess).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '<span style="color:var(--gray-300)">Never</span>'}</td>
+                <td id="fs-act-${t.id}-${ic.id}" style="white-space:nowrap;color:var(--gray-300)">·</td>
+                <td id="fs-going-${t.id}-${ic.id}" style="text-align:center;white-space:nowrap;color:var(--gray-300)">·</td>
                 <td id="fs-trav-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
                 <td id="fs-pass-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
                 <td id="fs-fl-${t.id}-${ic.id}" style="text-align:center;color:var(--gray-300)">·</td>
@@ -1877,12 +1879,22 @@ const Tours = {
     const t = DB.getTours().find(x => x.id === tourId);
     if (!t || !DB._firebaseReady) return;
     const eur = v => '€' + Math.round(v).toLocaleString('en-GB');
+    // Per-family money figures, kept for the stats panel and the CSV.
+    const pay = {};
     await Promise.all((t.individualClients || []).map(async ic => {
       const el = document.getElementById(`fs-pay-${tourId}-${ic.id}`);
       if (!el) return;
       try {
         const { plan, live } = await this._getFamilyPlan(t, String(ic.id));
-        if (!plan) { el.innerHTML = '<span style="color:var(--gray-300)">no plan</span>'; return; }
+        if (!plan) { pay[String(ic.id)] = { plan: false }; el.innerHTML = '<span style="color:var(--gray-300)">no plan</span>'; return; }
+        const dep = live.items.find(i => i.key === 'deposit');
+        const stamps = (live.payments || []).map(p => p.recordedAt || p.on).concat(live.items.map(i => i.status === 'paid' ? i.paidOn : null)).filter(Boolean).map(String).sort();
+        pay[String(ic.id)] = {
+          plan: true, paid: Number(live.paid) || 0, total: Number(live.total) || 0,
+          depositPaid: !!(dep && dep.status === 'paid'), dynamic: !!live.dynamic,
+          confirmed: live.dynamic ? live.confirmed : null, tbc: live.dynamic ? live.tbc : null,
+          lastPayment: stamps.length ? stamps[stamps.length - 1] : ''
+        };
         const items = live.items.filter(i => i.status === 'paid' || (Number(i.amount) || 0) > 0);
         const total = live.total;
         const paidItems = items.filter(i => i.status === 'paid');
@@ -1898,6 +1910,117 @@ const Tours = {
         el.innerHTML = `<span style="color:${all ? 'var(--green)' : paid > 0 ? 'var(--amber)' : 'var(--red)'};font-weight:700">${all ? '&#10003;' : paidItems.length + '/' + items.length}</span> <span style="color:var(--gray-400)">${eur(paid)} / ${eur(total)}</span>`;
       } catch (e) { el.innerHTML = '<span style="color:var(--gray-300)">?</span>'; }
     }));
+    this._famStat = this._famStat || {};
+    this._famStat[tourId] = Object.assign(this._famStat[tourId] || {}, { pay });
+    this._renderFamilyStats(tourId);
+  },
+
+  // ── Who has done what: totals, filters and CSV above the Family status table ──
+  // Built from what _loadFamilyStatus and _loadFamilyPayments already fetched.
+  _familyStatData(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    const s = (this._famStat || {})[tourId];
+    if (!t || !s || !s.rows || !s.pay) return null;
+    return s.rows.map(r => {
+      const ic = (t.individualClients || []).find(c => String(c.id) === r.id) || {};
+      const p = s.pay[r.id] || { plan: false };
+      const act = [(s.act || {})[r.id] || '', p.lastPayment || ''].filter(Boolean).sort().pop() || '';
+      const paid = p.plan ? p.paid : 0;
+      return Object.assign({}, r, {
+        email: ic.email || '', hasPlan: !!p.plan, paid, total: p.plan ? p.total : 0, depositPaid: !!p.depositPaid,
+        confirmed: p.confirmed != null ? p.confirmed : r.expected, tbc: p.tbc || 0,
+        passports: (s.passports || {})[r.id] || 0, lastActivity: act,
+        nothing: !act && !r.travelers && !r.formsSigned && !r.flightsOk && !(paid > 0)
+      });
+    });
+  },
+
+  _renderFamilyStats(tourId) {
+    const el = document.getElementById('family-stats-' + tourId);
+    const data = this._familyStatData(tourId);
+    if (!el || !data) return;
+    const eur = v => '€' + Math.round(v).toLocaleString('en-GB');
+    const fmtAct = v => { const d = new Date(String(v).length <= 10 ? v + 'T12:00:00' : v); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }); };
+    data.forEach(r => {
+      const a = document.getElementById(`fs-act-${tourId}-${r.id}`);
+      if (a) a.innerHTML = r.lastActivity ? `<span style="color:var(--gray-600)">${fmtAct(r.lastActivity)}</span>` : '<span style="color:var(--gray-300)">Nothing yet</span>';
+      const g = document.getElementById(`fs-going-${tourId}-${r.id}`);
+      if (g) g.innerHTML = `<span style="color:var(--gray-600)">${r.confirmed}</span>${r.tbc ? ' <span style="color:var(--amber);font-weight:600">+' + r.tbc + ' TBC</span>' : ''}`;
+    });
+    const n = data.length;
+    const payers = data.filter(r => r.hasPlan);
+    const received = payers.reduce((a, r) => a + r.paid, 0);
+    const total = payers.reduce((a, r) => a + r.total, 0);
+    const sum = f => data.reduce((a, r) => a + (Number(f(r)) || 0), 0);
+    const groups = {
+      all: data,
+      nothing: data.filter(r => r.nothing),
+      unpaid: payers.filter(r => !(r.paid > 0)),
+      nodeposit: payers.filter(r => !r.depositPaid),
+      forms: data.filter(r => !r.formsOk),
+      travelers: data.filter(r => !r.travelersOk),
+      tbc: data.filter(r => r.tbc > 0)
+    };
+    const tiles = [
+      ['Paid something', `${payers.filter(r => r.paid > 0).length} / ${payers.length}`, 'families'],
+      ['Deposit covered', `${payers.filter(r => r.depositPaid).length} / ${payers.length}`, 'families'],
+      ['Money received', eur(received), `of ${eur(total)}${total ? ' · ' + Math.round(received / total * 100) + '%' : ''}`],
+      ['Forms complete', `${data.filter(r => r.formsOk).length} / ${n}`, 'families'],
+      ['Travelers entered', `${sum(r => r.travelers)} / ${sum(r => r.confirmed)}`, 'people'],
+      ['Passports entered', `${sum(r => r.passports)} / ${sum(r => r.confirmed)}`, 'people'],
+      ['Flights entered', `${data.filter(r => r.flightsOk).length} / ${n}`, 'families'],
+      ['Still TBC', `${sum(r => r.tbc)}`, `people in ${groups.tbc.length} families`],
+      ['Nothing done yet', `${groups.nothing.length} / ${n}`, 'families']
+    ];
+    const cur = ((this._famStat[tourId] || {}).filter) || 'all';
+    const chips = [['all', 'All'], ['nothing', 'Nothing done'], ['unpaid', 'Not paid'], ['nodeposit', 'Deposit not covered'], ['forms', 'Forms missing'], ['travelers', 'Travelers missing'], ['tbc', 'Has TBC']];
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:0.5rem;margin-bottom:0.6rem">
+        ${tiles.map(([label, big, small]) => `<div style="background:var(--gray-50);border:1px solid var(--gray-100);border-radius:var(--radius-lg);padding:0.5rem 0.65rem">
+          <div style="font-size:0.72rem;color:var(--gray-500)">${label}</div>
+          <div style="font-size:1.05rem;font-weight:700;color:var(--navy);white-space:nowrap">${big}</div>
+          <div style="font-size:0.7rem;color:var(--gray-400)">${small}</div></div>`).join('')}
+      </div>
+      <div style="display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center">
+        <span style="font-size:0.76rem;color:var(--gray-500)">Show:</span>
+        ${chips.map(([k, label]) => `<button class="btn btn-sm btn-outline" style="padding:0.15rem 0.5rem;font-size:0.74rem;${cur === k ? 'background:var(--navy);color:white;border-color:var(--navy)' : ''}" onclick="Tours.filterFamilyStatus(${tourId},'${k}')">${label} (${groups[k].length})</button>`).join('')}
+        <span style="flex:1"></span>
+        <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.5rem;font-size:0.74rem" onclick="Tours.copyFamilyEmails(${tourId})" title="Copies the email addresses of the families shown">Copy emails</button>
+        <button class="btn btn-sm btn-outline" style="padding:0.15rem 0.5rem;font-size:0.74rem" onclick="Tours.downloadFamilyStatusCsv(${tourId})">Download CSV</button>
+      </div>`;
+    const show = new Set(groups[cur].map(r => r.id));
+    data.forEach(r => { const row = document.getElementById(`fs-row-${tourId}-${r.id}`); if (row) row.style.display = show.has(r.id) ? '' : 'none'; });
+    this._famStat[tourId].shown = groups[cur];
+  },
+
+  filterFamilyStatus(tourId, key) {
+    if (!this._famStat || !this._famStat[tourId]) return;
+    this._famStat[tourId].filter = key;
+    this._renderFamilyStats(tourId);
+  },
+
+  copyFamilyEmails(tourId) {
+    const shown = ((this._famStat || {})[tourId] || {}).shown || [];
+    const emails = shown.map(r => r.email).filter(Boolean);
+    if (!emails.length) { alert('No email addresses in this list.'); return; }
+    navigator.clipboard.writeText(emails.join('; ')).then(() => alert(emails.length + ' email addresses copied.'), () => prompt('Copy the addresses:', emails.join('; ')));
+  },
+
+  downloadFamilyStatusCsv(tourId) {
+    const t = DB.getTours().find(x => x.id === tourId);
+    const data = this._familyStatData(tourId);
+    if (!t || !data) return;
+    const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const yn = v => v ? 'Yes' : 'No';
+    const head = ['Family', 'Email', 'Confirmed travelers', 'TBC travelers', 'Travelers entered', 'Passports entered', 'Flights entered', 'Forms signed', 'Forms required', 'Paid EUR', 'Total EUR', 'Deposit covered', 'Last activity', 'Nothing done yet'];
+    const lines = data.map(r => [r.name, r.email, r.confirmed, r.tbc, r.travelers, r.passports, yn(r.flightsOk), r.formsSigned, r.formsRequired,
+      r.hasPlan ? r.paid.toFixed(2) : '', r.hasPlan ? r.total.toFixed(2) : '', r.hasPlan ? yn(r.depositPaid) : 'No payment plan', String(r.lastActivity).slice(0, 10), yn(r.nothing)].map(q).join(','));
+    const blob = new Blob(['﻿' + [head.map(q).join(',')].concat(lines).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${String(t.groupName || t.tourName || 'tour').replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40)}-family-status-${FamilyPlan.today()}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   },
 
   async openFamilyPayments(tourId, familyId) {
@@ -2060,12 +2183,13 @@ const Tours = {
     if (!t || !DB._firebaseReady || !(t.individualClients || []).length) return;
     this._loadFamilyPayments(tourId);
     try {
+      const choiceAt = {};
       const [passengers, flights, sigs, choices] = await Promise.all([
         DB.getTourPassengers(String(tourId)).catch(() => []),
         DB.getAllFamilyFlights(String(tourId)).catch(() => []),
         DB.getTourSignatures(String(tourId), { source: 'server' }),
         DB.firestore.collection('tours').doc(String(tourId)).collection('familyChoices').get({ source: 'server' })
-          .then(snap => { const o = {}; snap.forEach(d => { const c = d.data() || {}; if (c.confirmedCount != null) o[d.id] = c.confirmedCount; }); return o; })
+          .then(snap => { const o = {}; snap.forEach(d => { const c = d.data() || {}; if (c.updatedAt) choiceAt[d.id] = String(c.updatedAt); if (c.confirmedCount != null) o[d.id] = c.confirmedCount; }); return o; })
           .catch(() => ({}))
       ]);
       const codes = {};
@@ -2079,6 +2203,25 @@ const Tours = {
         set(`fs-fl-${tourId}-${r.id}`, mark(r.flightsOk));
         set(`fs-forms-${tourId}-${r.id}`, mark(r.formsOk, `${r.formsSigned}/${r.formsRequired}`));
       });
+      // Last thing each family saved in its portal, and passports per person,
+      // for the stats panel (the link-opened counter is not written by portals).
+      const act = {}, passports = {};
+      const bump = (id, v) => { if (v && String(v) > (act[id] || '')) act[id] = String(v); };
+      rows.forEach(r => {
+        const e = (t.familyAccessCodes || {})[r.id];
+        bump(r.id, e && e.lastAccess);
+        bump(r.id, choiceAt[r.id]);
+        passengers.filter(p => !p._removed && String(p.familyId || '') === r.id).forEach(p => {
+          bump(r.id, p.updatedAt || p.createdAt);
+          if (p.passportNumber) passports[r.id] = (passports[r.id] || 0) + 1;
+        });
+        const fl = flights.find(f => String(f.familyId || f.id) === r.id);
+        bump(r.id, fl && fl.updatedAt);
+        Object.values(DB.familySignatures(sigs || {}, r.id, codes[r.id])).forEach(f => bump(r.id, f && f.date));
+      });
+      this._famStat = this._famStat || {};
+      this._famStat[tourId] = Object.assign(this._famStat[tourId] || {}, { rows, act, passports });
+      this._renderFamilyStats(tourId);
       const done = rows.filter(r => r.complete).length;
       set(`family-status-summary-${tourId}`, `— ${done} of ${rows.length} complete${t.portalDataDeadline ? ' · deadline ' + fmtDate(t.portalDataDeadline) : ''} · the organiser sees this table in the club portal (ticks only)`);
     } catch (e) {}
